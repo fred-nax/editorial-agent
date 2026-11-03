@@ -1,0 +1,787 @@
+CAHIER DES CHARGES
+Projet : Naxialis Content Agent
+Version : 1.0
+Date : 02/10/2026
+
+==================================================
+1. CONTEXTE DU PROJET
+==================================================
+
+Naxialis dispose déjà d’un agent éditorial OpenAI capable de :
+- rechercher des informations récentes et fiables ;
+- rédiger des articles de blog orientés SEO et intention commerciale ;
+- produire un contenu HTML structuré ;
+- générer les champs SEO nécessaires à Slim SEO ;
+- détecter les catégories WordPress pertinentes ;
+- générer des tableaux HTML stylés avec Tailwind ;
+- générer une FAQ en accordéons natifs <details>/<summary> ;
+- créer automatiquement un brouillon dans WordPress via l’API REST ;
+- ne jamais publier automatiquement un article.
+
+Le script actuel fonctionne en local en Node.js et se lance depuis la ligne de commande avec un sujet d’article.
+
+Exemple :
+node index.mjs "Comment utiliser un agent IA pour automatiser les tâches répétitives d’une PME ?"
+
+L’objectif du présent projet est de transformer ce fonctionnement en une application web privée, simple à utiliser et accessible en ligne, réservée à Naxialis.
+
+L’application ne remplace pas l’agent existant : elle sert de tableau de bord pour le piloter, suivre les générations, gérer une file éditoriale et centraliser l’historique.
+
+==================================================
+2. OBJECTIFS PRINCIPAUX
+==================================================
+
+L’application doit permettre de :
+
+1. saisir un sujet d’article depuis une interface web ;
+2. lancer la génération de l’article avec l’agent OpenAI existant ;
+3. suivre visuellement l’état d’avancement de la génération ;
+4. créer le brouillon dans WordPress via le mécanisme existant ;
+5. afficher le résultat de la génération ;
+6. afficher l’identifiant du brouillon WordPress créé ;
+7. fournir un lien direct vers le brouillon ou son édition WordPress ;
+8. enregistrer un historique des générations ;
+9. gérer une file de sujets à traiter ;
+10. afficher les principales métadonnées de chaque génération ;
+11. conserver toutes les clés API et identifiants côté serveur ;
+12. protéger l’application par authentification ;
+13. permettre un déploiement Docker sur un VPS privé.
+
+==================================================
+3. UTILISATEUR CIBLE
+==================================================
+
+L’application est destinée à un usage privé.
+
+Utilisateur principal :
+- administrateur Naxialis ;
+- un seul compte utilisateur dans la première version.
+
+L’application n’est pas destinée au public et ne doit pas proposer d’inscription libre.
+
+==================================================
+4. PÉRIMÈTRE DE LA VERSION 1
+==================================================
+
+La V1 doit rester volontairement simple.
+
+Fonctionnalités obligatoires :
+- authentification privée ;
+- dashboard ;
+- saisie d’un nouveau sujet ;
+- lancement de la génération ;
+- suivi du statut ;
+- création du brouillon WordPress ;
+- affichage du résultat ;
+- historique des générations ;
+- file de sujets ;
+- stockage persistant en base de données ;
+- déploiement Docker ;
+- configuration par variables d’environnement.
+
+Fonctionnalités non obligatoires en V1 :
+- publication automatique ;
+- calendrier éditorial avancé ;
+- programmation automatique de publications ;
+- gestion multi-utilisateurs ;
+- gestion multi-sites ;
+- génération automatique d’images ;
+- workflow de validation complexe ;
+- analytics SEO complets ;
+- synchronisation avec Search Console ;
+- notifications email ou Slack.
+
+==================================================
+5. STACK TECHNIQUE
+==================================================
+
+Frontend / backend web :
+- Next.js ;
+- TypeScript ;
+- App Router ;
+- rendu serveur lorsque pertinent ;
+- Tailwind CSS pour l’interface.
+
+Base de données :
+- PostgreSQL ;
+- Prisma ORM recommandé.
+
+Authentification :
+- Auth.js recommandé ;
+- provider Credentials possible ;
+- un seul compte administrateur en V1.
+
+IA :
+- SDK officiel OpenAI ;
+- réutilisation de l’agent existant ;
+- utilisation de l’identifiant de l’agent existant ;
+- traitement des tool calls existants ;
+- conservation du comportement create_wordpress_draft.
+
+WordPress :
+- WordPress REST API ;
+- authentification via Application Password ;
+- création uniquement avec status=draft.
+
+Déploiement :
+- Docker ;
+- Docker Compose ;
+- reverse proxy Nginx ;
+- HTTPS ;
+- déploiement possible sur VPS Naxialis.
+
+==================================================
+6. ARCHITECTURE GÉNÉRALE
+==================================================
+
+Architecture fonctionnelle :
+
+Navigateur
+   -> HTTPS
+   -> agent.naxialis.com
+   -> Reverse proxy Nginx
+   -> Application Next.js
+      -> Authentification
+      -> Dashboard
+      -> API de génération
+      -> Historique
+      -> File de sujets
+      -> Base PostgreSQL
+      -> OpenAI Agent
+      -> WordPress REST API
+
+WordPress reste indépendant de l’application.
+
+L’application agit uniquement comme client de l’API WordPress.
+
+==================================================
+7. STRUCTURE DU PROJET
+==================================================
+
+Structure cible indicative :
+
+naxialis-content-agent/
+├── app/
+│   ├── login/
+│   │   └── page.tsx
+│   ├── dashboard/
+│   │   └── page.tsx
+│   ├── articles/
+│   │   ├── page.tsx
+│   │   └── [id]/
+│   │       └── page.tsx
+│   ├── topics/
+│   │   └── page.tsx
+│   └── api/
+│       ├── generate/
+│       │   └── route.ts
+│       ├── articles/
+│       │   └── route.ts
+│       └── topics/
+│           └── route.ts
+├── components/
+│   ├── ArticleForm.tsx
+│   ├── ArticleStatus.tsx
+│   ├── ArticleHistory.tsx
+│   ├── TopicQueue.tsx
+│   └── Sidebar.tsx
+├── lib/
+│   ├── openai.ts
+│   ├── wordpress.ts
+│   ├── categories.ts
+│   ├── auth.ts
+│   └── db.ts
+├── prisma/
+│   └── schema.prisma
+├── Dockerfile
+├── docker-compose.yml
+└── .env
+
+Cette structure reste indicative et peut évoluer si une organisation plus propre est pertinente.
+
+==================================================
+8. DASHBOARD
+==================================================
+
+Le dashboard doit être la page principale après connexion.
+
+Il doit contenir au minimum :
+
+Bloc "Nouvel article" :
+- champ sujet ;
+- bouton "Générer l’article" ;
+- validation si le champ est vide ;
+- désactivation du bouton pendant la génération.
+
+Bloc "Générations récentes" :
+- sujet ;
+- statut ;
+- titre final ;
+- date de génération ;
+- ID WordPress ;
+- lien WordPress ;
+- coût estimé si disponible ;
+- bouton pour consulter le détail.
+
+Bloc "File de sujets" :
+- derniers sujets en attente ;
+- statut ;
+- priorité éventuelle ;
+- bouton pour lancer la génération.
+
+Indicateurs simples possibles :
+- nombre de brouillons créés ce mois-ci ;
+- nombre de sujets en attente ;
+- coût estimé du mois ;
+- dernières erreurs.
+
+==================================================
+9. GÉNÉRATION D’UN ARTICLE
+==================================================
+
+L’utilisateur saisit un sujet.
+
+Exemple :
+"Comment automatiser les tâches répétitives d’une PME avec un agent IA ?"
+
+Lorsqu’il clique sur "Générer l’article" :
+
+1. l’application crée un enregistrement en base avec le statut pending ou queued ;
+2. le statut passe à running ;
+3. l’application appelle l’agent OpenAI existant ;
+4. l’agent effectue ses recherches ;
+5. l’agent rédige l’article ;
+6. l’agent appelle la fonction create_wordpress_draft ;
+7. l’application crée le brouillon WordPress via l’API REST ;
+8. le résultat du tool call est retourné à l’agent ;
+9. l’agent termine la session ;
+10. l’application enregistre le résultat ;
+11. le statut passe à completed ;
+12. l’interface affiche l’ID WordPress et le lien vers le brouillon.
+
+En cas d’erreur :
+- statut failed ;
+- message d’erreur stocké ;
+- erreur affichée proprement dans l’interface ;
+- possibilité de relancer ultérieurement.
+
+==================================================
+10. STATUTS DE GÉNÉRATION
+==================================================
+
+Statuts recommandés :
+- pending ;
+- queued ;
+- running ;
+- completed ;
+- failed.
+
+Des sous-états peuvent être affichés dans l’interface sans nécessairement être persistés :
+- préparation ;
+- recherche ;
+- rédaction ;
+- création WordPress ;
+- finalisation.
+
+==================================================
+11. INTÉGRATION OPENAI
+==================================================
+
+L’application doit reprendre la logique du script Node.js existant.
+
+L’agent OpenAI existant doit rester la source de vérité éditoriale.
+
+L’application ne doit pas dupliquer inutilement toutes les instructions de l’agent.
+
+Le prompt dynamique doit rester court.
+
+Exemple :
+
+Crée un article complet pour le blog Naxialis sur :
+"{subject}"
+
+Applique toutes tes règles éditoriales et SEO, puis crée le brouillon WordPress.
+
+L’application doit :
+- créer une session avec l’agent ;
+- écouter les événements de session ;
+- gérer les événements requires_action ;
+- exécuter create_wordpress_draft ;
+- transmettre le tool_result ;
+- récupérer le résultat final ;
+- stocker les informations pertinentes en base.
+
+==================================================
+12. OUTIL CREATE_WORDPRESS_DRAFT
+==================================================
+
+Le tool create_wordpress_draft reste obligatoire pour créer un brouillon WordPress.
+
+Champs attendus :
+- title ;
+- content ;
+- excerpt ;
+- slug ;
+- meta_title ;
+- meta_description.
+
+Les catégories peuvent être ajoutées automatiquement côté application via la logique existante.
+
+La fonction doit :
+- créer uniquement des brouillons ;
+- ne jamais publier automatiquement ;
+- envoyer le contenu via WordPress REST API ;
+- envoyer les catégories ;
+- envoyer les métadonnées Slim SEO ;
+- retourner l’identifiant du post ;
+- retourner le statut ;
+- retourner l’URL du post ou de son édition lorsque disponible.
+
+==================================================
+13. CATÉGORIES WORDPRESS
+==================================================
+
+L’application peut réutiliser la logique de détection de catégories existante.
+
+Catégories principales actuellement utilisées :
+- WooCommerce ;
+- WordPress ;
+- Intelligence artificielle ;
+- Agents IA ;
+- RAG ;
+- Recherche sémantique ;
+- Outils & Automatisation ;
+- N8N ;
+- SEO / GEO ;
+- Facturation électronique ;
+- API et intégrations ;
+- Développement sur mesure ;
+- WordPress headless ;
+- Commerce headless ;
+- Commerce composable ;
+- Commerce Layer ;
+- PIM et ERP.
+
+La détection doit rester configurable dans un fichier dédié.
+
+==================================================
+14. WORDPRESS
+==================================================
+
+Configuration WordPress côté serveur uniquement.
+
+Variables nécessaires :
+- WP_URL ;
+- WP_USERNAME ;
+- WP_APP_PASSWORD.
+
+Utilisateur WordPress dédié :
+- naxialis-ai-writer ;
+- rôle Auteur ;
+- authentification via Application Password.
+
+Règles de sécurité :
+- création en draft uniquement ;
+- aucune suppression ;
+- aucune modification de contenu publié sauf évolution future explicitement prévue ;
+- aucun accès à la configuration WordPress ;
+- aucun accès aux utilisateurs ;
+- aucune installation de plugin ou modification de thème.
+
+==================================================
+15. HISTORIQUE DES GÉNÉRATIONS
+==================================================
+
+L’application doit conserver un historique des générations.
+
+Pour chaque génération, enregistrer au minimum :
+- ID interne ;
+- sujet initial ;
+- titre final ;
+- slug ;
+- statut ;
+- ID WordPress ;
+- URL WordPress ;
+- catégories ;
+- date de création ;
+- date de mise à jour ;
+- message d’erreur éventuel.
+
+Si disponibles :
+- nombre de tokens d’entrée ;
+- nombre de tokens de sortie ;
+- coût estimé ;
+- durée de génération ;
+- identifiant de session OpenAI.
+
+==================================================
+16. FILE DE SUJETS
+==================================================
+
+L’utilisateur doit pouvoir enregistrer des idées d’articles sans les générer immédiatement.
+
+Chaque sujet doit comporter au minimum :
+- sujet ;
+- statut ;
+- date de création.
+
+Statuts possibles :
+- pending ;
+- generating ;
+- completed ;
+- archived.
+
+Optionnel :
+- priorité ;
+- note interne ;
+- catégorie souhaitée ;
+- angle éditorial.
+
+Actions :
+- ajouter un sujet ;
+- lancer la génération ;
+- modifier un sujet non traité ;
+- archiver un sujet ;
+- supprimer un sujet non généré si besoin.
+
+==================================================
+17. MODÈLE DE DONNÉES
+==================================================
+
+Modèle indicatif Prisma :
+
+model ArticleGeneration {
+  id            String   @id @default(cuid())
+  subject       String
+  wpPostId      Int?
+  wpUrl         String?
+  title         String?
+  slug          String?
+  status        String
+  categories    Json?
+  inputTokens   Int?
+  outputTokens  Int?
+  estimatedCost Float?
+  durationMs    Int?
+  sessionId     String?
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Topic {
+  id        String   @id @default(cuid())
+  subject   String
+  status    String   @default("pending")
+  priority  Int      @default(0)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+Le schéma peut être amélioré si nécessaire.
+
+==================================================
+18. AUTHENTIFICATION
+==================================================
+
+L’application doit être privée.
+
+V1 :
+- un seul compte administrateur ;
+- pas d’inscription publique ;
+- page /login ;
+- toutes les pages métier protégées ;
+- session sécurisée ;
+- mot de passe stocké sous forme hashée si Credentials est utilisé.
+
+L’authentification peut être implémentée avec Auth.js.
+
+Variables possibles :
+- AUTH_SECRET ;
+- ADMIN_EMAIL ;
+- ADMIN_PASSWORD_HASH.
+
+==================================================
+19. SÉCURITÉ
+==================================================
+
+Toutes les clés et secrets doivent rester côté serveur.
+
+Ne jamais exposer dans le navigateur :
+- OPENAI_API_KEY ;
+- WP_APP_PASSWORD ;
+- DATABASE_URL ;
+- AUTH_SECRET ;
+- mot de passe administrateur.
+
+Aucune variable sensible ne doit utiliser le préfixe NEXT_PUBLIC_.
+
+Prévoir :
+- HTTPS obligatoire en production ;
+- validation des entrées ;
+- protection des routes API ;
+- limitation des erreurs détaillées côté client ;
+- logs serveur ;
+- secrets via variables d’environnement ;
+- .env exclu de Git ;
+- contrôle des permissions WordPress ;
+- utilisateur WordPress dédié à l’application.
+
+Option future :
+- rate limiting ;
+- 2FA ;
+- restriction IP ;
+- authentification via reverse proxy.
+
+==================================================
+20. VARIABLES D’ENVIRONNEMENT
+==================================================
+
+Exemple :
+
+OPENAI_API_KEY=...
+OPENAI_AGENT_ID=...
+
+WP_URL=https://naxialis.com
+WP_USERNAME=naxialis-ai-writer
+WP_APP_PASSWORD=...
+
+DATABASE_URL=postgresql://...
+POSTGRES_PASSWORD=...
+
+AUTH_SECRET=...
+ADMIN_EMAIL=...
+ADMIN_PASSWORD_HASH=...
+
+Aucune valeur réelle ne doit être committée dans Git.
+
+==================================================
+21. INTERFACE UTILISATEUR
+==================================================
+
+Style :
+- cohérent avec l’identité Naxialis ;
+- moderne ;
+- sobre ;
+- dashboard SaaS ;
+- responsive ;
+- support clair / sombre possible.
+
+Navigation latérale recommandée :
+- Dashboard ;
+- Nouvel article ;
+- Historique ;
+- Sujets ;
+- Paramètres.
+
+Exemple de dashboard :
+
+Naxialis Content Agent
+
+[Nouveau sujet ______________________________]
+[Générer l’article]
+
+Générations récentes
+-------------------------------------------------------------
+Sujet                     Statut      WordPress        Coût
+Agent IA pour PME         Draft       #5898            $0.21
+WooCommerce + Pennylane   Draft       #5881            $0.19
+RAG pour entreprise       En cours    -                -
+
+L’interface doit favoriser la lisibilité plutôt que la densité d’informations.
+
+==================================================
+22. PAGE DÉTAIL D’UNE GÉNÉRATION
+==================================================
+
+Une page de détail doit pouvoir afficher :
+- sujet demandé ;
+- titre final ;
+- statut ;
+- ID WordPress ;
+- lien vers WordPress ;
+- slug ;
+- catégories ;
+- date ;
+- durée ;
+- coût estimé ;
+- tokens ;
+- message d’erreur ;
+- session OpenAI si utile.
+
+Optionnel en V1 :
+- aperçu HTML de l’article ;
+- meta title ;
+- meta description ;
+- extrait.
+
+==================================================
+23. GESTION DES ERREURS
+==================================================
+
+L’application doit gérer proprement :
+- erreur OpenAI ;
+- erreur de session agent ;
+- erreur de tool call ;
+- erreur WordPress REST API ;
+- authentification WordPress invalide ;
+- expiration ou erreur réseau ;
+- erreur PostgreSQL ;
+- génération interrompue.
+
+Une erreur ne doit pas laisser une génération indéfiniment en statut running.
+
+Prévoir un message exploitable côté interface.
+
+Exemples :
+- "Erreur OpenAI pendant la génération" ;
+- "Impossible de créer le brouillon WordPress" ;
+- "Authentification WordPress refusée".
+
+Les détails techniques complets restent dans les logs serveur.
+
+==================================================
+24. DÉPLOIEMENT
+==================================================
+
+L’application doit pouvoir être déployée via Docker Compose.
+
+Services minimum :
+- app Next.js ;
+- PostgreSQL.
+
+Exemple :
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: naxialis_agent
+      POSTGRES_USER: naxialis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+L’application pourra être exposée via un sous-domaine du type :
+- agent.naxialis.com ;
+- content.naxialis.com.
+
+HTTPS obligatoire.
+
+==================================================
+25. JOURNALISATION
+==================================================
+
+Prévoir des logs utiles pour :
+- début de génération ;
+- fin de génération ;
+- ID de génération ;
+- session OpenAI ;
+- tool calls ;
+- création WordPress ;
+- erreurs.
+
+Ne jamais enregistrer dans les logs :
+- clé OpenAI complète ;
+- mot de passe WordPress ;
+- mot de passe administrateur ;
+- secret d’authentification.
+
+==================================================
+26. CRITÈRES D’ACCEPTATION V1
+==================================================
+
+La V1 est considérée comme fonctionnelle si :
+
+1. l’utilisateur peut se connecter ;
+2. l’utilisateur peut saisir un sujet ;
+3. l’application lance l’agent OpenAI ;
+4. l’article est généré avec les règles existantes de l’agent ;
+5. create_wordpress_draft est exécuté ;
+6. un brouillon WordPress est créé ;
+7. l’ID du brouillon est enregistré ;
+8. le résultat apparaît dans le dashboard ;
+9. l’historique persiste après redémarrage ;
+10. un sujet peut être enregistré dans la file éditoriale ;
+11. une erreur de génération est correctement enregistrée ;
+12. les secrets ne sont jamais exposés côté client ;
+13. l’application fonctionne via Docker ;
+14. l’application est accessible en HTTPS derrière le reverse proxy.
+
+==================================================
+27. ÉVOLUTIONS POSSIBLES APRÈS LA V1
+==================================================
+
+Évolutions possibles :
+- calendrier éditorial ;
+- planification automatique de générations ;
+- génération par lot ;
+- suggestions automatiques de sujets ;
+- détection des sujets déjà traités ;
+- scoring d’intention commerciale ;
+- recherche de cannibalisation SEO ;
+- intégration Google Search Console ;
+- suivi des performances des articles ;
+- génération ou suggestion d’images ;
+- validation éditoriale avant création WordPress ;
+- régénération d’une section uniquement ;
+- workflow brouillon -> validation -> publication ;
+- multi-sites WordPress ;
+- multi-agents spécialisés ;
+- génération programmée ;
+- notifications de génération terminée ;
+- intégration Slack ou email ;
+- suggestions de liens internes automatiques ;
+- audit SEO post-publication ;
+- suivi du ROI éditorial.
+
+==================================================
+28. PRINCIPES DE CONCEPTION
+==================================================
+
+Le projet doit respecter les principes suivants :
+
+1. simplicité avant sophistication ;
+2. réutilisation maximale du code Node.js existant ;
+3. agent OpenAI comme source de vérité éditoriale ;
+4. aucune publication automatique en V1 ;
+5. secrets strictement côté serveur ;
+6. séparation claire entre Next.js et WordPress ;
+7. architecture évolutive sans sur-ingénierie ;
+8. interface rapide à utiliser au quotidien ;
+9. historique complet des opérations ;
+10. possibilité de déploiement et maintenance faciles via Docker.
+
+==================================================
+29. RÉSUMÉ DU MVP
+==================================================
+
+Le MVP attendu est un back-office privé Naxialis permettant de :
+
+- se connecter ;
+- saisir un sujet ;
+- lancer l’agent éditorial ;
+- suivre la génération ;
+- créer automatiquement un brouillon WordPress ;
+- récupérer l’ID et le lien du brouillon ;
+- consulter l’historique ;
+- gérer une file d’idées d’articles ;
+- suivre éventuellement les coûts et tokens ;
+- utiliser l’application localement puis sur un VPS via Docker.
+
+Le système doit rester privé, sécurisé, simple et centré sur le workflow éditorial Naxialis existant.
+
+FIN DU CAHIER DES CHARGES

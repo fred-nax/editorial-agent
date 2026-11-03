@@ -1,0 +1,475 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GenerationStatus {
+  pending
+  queued
+  running
+  completed
+  failed
+}
+
+enum TopicStatus {
+  pending
+  generating
+  completed
+  archived
+}
+
+enum OpportunityStatus {
+  new
+  reviewed
+  added_to_queue
+  dismissed
+}
+
+enum OpportunityContentType {
+  news
+  evergreen
+  commercial
+}
+
+/// Qualification de tendance SEO 1.3 (distinct du contentType éditorial).
+enum TrendType {
+  emerging
+  news
+  evergreen
+  unverified
+}
+
+enum TrendConfidence {
+  low
+  medium
+  high
+}
+
+enum EditorialUrgency {
+  low
+  medium
+  high
+}
+
+enum ResearchMode {
+  domains
+  free
+}
+
+enum ResearchGoal {
+  seo
+  trends
+  problems
+  commercial
+}
+
+model ArticleGeneration {
+  id              String             @id @default(cuid())
+  subject         String
+  title           String?
+  excerpt         String?
+  slug            String?
+  status          GenerationStatus
+  wpPostId        Int?
+  wpUrl           String?
+  categories      Json?
+  metaTitle       String?
+  metaDescription String?
+  inputTokens       Int?
+  cachedInputTokens Int?
+  outputTokens      Int?
+  reasoningTokens   Int?
+  estimatedCost     Float?
+  model             String?
+  durationMs        Int?
+  sessionId         String?
+  error             String?
+  topicId           String?
+  progressStage     String?
+  progressMessage   String?
+  progressUpdatedAt DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model Topic {
+  id        String      @id @default(cuid())
+  subject   String
+  status    TopicStatus @default(pending)
+  priority  Int         @default(0)
+  notes     String?
+  category  String?
+  angle     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+/// Inventaire éditorial WordPress (lecture seule, upsert, jamais de suppression).
+model WordPressPost {
+  id          String    @id @default(cuid())
+  wpPostId    Int       @unique
+  title       String
+  slug        String
+  url         String
+  status      String
+  excerpt     String?
+  contentText String?
+  categories  Json?
+  publishedAt DateTime?
+  modifiedAt  DateTime?
+  syncedAt    DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([slug])
+  @@index([status])
+  @@index([modifiedAt])
+}
+
+model WordPressSyncRun {
+  id              String    @id @default(cuid())
+  status          String
+  mode            String
+  fetchedCount    Int       @default(0)
+  upsertedCount   Int       @default(0)
+  expectedTotal   Int?
+  storedCount     Int?
+  pagesFetched    Int?
+  totalPages      Int?
+  statusBreakdown Json?
+  diagnosticNote  String?
+  error           String?
+  startedAt       DateTime  @default(now())
+  finishedAt      DateTime?
+}
+
+/// Thématique personnalisée (sujet libre enregistré).
+model CustomTheme {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  configs ResearchConfig[]
+  runs    OpportunitySearchRun[]
+
+  @@index([active])
+  @@index([name])
+}
+
+/// Configuration de recherche enregistrée (ne mute pas l’historique).
+model ResearchConfig {
+  id                   String       @id @default(cuid())
+  name                 String
+  mode                 ResearchMode
+  researchGoal         ResearchGoal @default(seo)
+  domains              Json?
+  customTopic          String?
+  researchInstructions String?
+  requestedCount       Int          @default(10)
+  customThemeId        String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  customTheme CustomTheme?           @relation(fields: [customThemeId], references: [id], onDelete: SetNull)
+  runs        OpportunitySearchRun[]
+
+  @@index([mode])
+  @@index([customThemeId])
+}
+
+model OpportunitySearchRun {
+  id                   String        @id @default(cuid())
+  status               String
+  themes               Json?
+  mode                 ResearchMode?
+  researchGoal         ResearchGoal?
+  customTopic          String?
+  researchInstructions String?
+  requestedCount       Int?
+  configSnapshot       Json?
+  configId             String?
+  customThemeId        String?
+  foundCount           Int           @default(0)
+  skippedExisting      Int           @default(0)
+  rejectedCount        Int           @default(0)
+  domainBreakdown      Json?
+  error                String?
+  startedAt            DateTime      @default(now())
+  finishedAt           DateTime?
+
+  config      ResearchConfig? @relation(fields: [configId], references: [id], onDelete: SetNull)
+  customTheme CustomTheme?    @relation(fields: [customThemeId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([mode])
+  @@index([configId])
+  @@index([customThemeId])
+  @@index([startedAt])
+}
+
+model SeoOpportunity {
+  id               String                 @id @default(cuid())
+  title            String
+  subject          String
+  angle            String?
+  searchIntent     String?
+  theme            String
+  contentType      OpportunityContentType @default(evergreen)
+  rationale        String?
+  sources          Json?
+  naxialisService  String?
+  status           OpportunityStatus      @default(new)
+  fingerprint      String?                @unique
+  scoreTotal       Int
+  scoreRelevance   Int
+  scoreCommercial  Int
+  scoreIntent      Int
+  scoreTimeliness  Int
+  scoreOriginality Int
+  scoreRationale   Json?
+  similarPosts     Json?
+  similarTopics    Json?
+  duplicateRisk    String?
+  topicId          String?
+  searchRunId      String?
+  /// SEO 1.3 — tendance (nullable pour opportunités historiques)
+  trendType           TrendType?
+  trendScore          Int?
+  trendConfidence     TrendConfidence?
+  trendJustification  String?
+  trendCheckedAt      DateTime?
+  editorialUrgency    EditorialUrgency?
+  trendSignals        Json?
+  trendHistory        Json?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([status])
+  @@index([theme])
+  @@index([contentType])
+  @@index([scoreTotal])
+  @@index([searchRunId])
+  @@index([trendType])
+  @@index([editorialUrgency])
+}
+
+// ─── AI Visibility Monitor (GEO) ───────────────────────────────────────────
+
+enum VisibilityCampaignStatus {
+  pending
+  questions_ready
+  running
+  completed
+  partial
+  failed
+}
+
+enum VisibilityResponseStatus {
+  pending
+  completed
+  failed
+}
+
+enum VisibilityEntityKind {
+  target_brand
+  competitor
+  other
+  source
+}
+
+/// Classification GEO 1.1 (plus fine que kind historique).
+enum VisibilityEntityCategory {
+  target_brand
+  direct_competitor
+  indirect_competitor
+  software_product
+  institution
+  information_source
+  other
+  unknown
+}
+
+enum VisibilityMentionKind {
+  mention
+  recommendation
+  negative
+  citation_only
+}
+
+model VisibilityBrand {
+  id           String   @id @default(cuid())
+  name         String
+  primaryDomain String
+  description  String?
+  sector       String?
+  products     String?
+  country      String   @default("FR")
+  language     String   @default("fr")
+  aliases      Json?
+  domainAliases Json?
+  knownCompetitors Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  campaigns VisibilityCampaign[]
+  entities  VisibilityEntity[]
+
+  @@index([name])
+  @@index([primaryDomain])
+}
+
+model VisibilityCampaign {
+  id                 String                   @id @default(cuid())
+  brandId            String
+  subject            String
+  country            String
+  language           String
+  questionCount      Int
+  repetitions        Int                      @default(1)
+  provider           String                   @default("openai")
+  model              String
+  instructions       String?
+  status             VisibilityCampaignStatus @default(pending)
+  analysisVersion    String                   @default("geo-1.0")
+  estimatedCalls     Int?
+  completedCalls     Int                      @default(0)
+  validResponses     Int                      @default(0)
+  failedResponses    Int                      @default(0)
+  mentionRate        Float?
+  recommendationRate Float?
+  domainCitationRate Float?
+  metricsSnapshot         Json?
+  previousMetricsSnapshot Json?
+  reanalyzeReport         Json?
+  editorialHints          Json?
+  estimatedCostUsd        Float?
+  error                   String?
+  startedAt               DateTime?
+  finishedAt              DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  brand     VisibilityBrand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  questions VisibilityQuestion[]
+  responses VisibilityResponse[]
+
+  @@index([brandId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model VisibilityQuestion {
+  id           String   @id @default(cuid())
+  campaignId   String
+  text         String
+  intent       String?
+  sortOrder    Int      @default(0)
+  validated    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  campaign  VisibilityCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  responses VisibilityResponse[]
+
+  @@index([campaignId])
+}
+
+model VisibilityResponse {
+  id                 String                   @id @default(cuid())
+  campaignId         String
+  questionId         String
+  repetitionIndex    Int                      @default(1)
+  provider           String
+  model              String
+  status             VisibilityResponseStatus @default(pending)
+  promptCountry      String?
+  promptLanguage     String?
+  responseText       String?
+  rawPayload         Json?
+  citations          Json?
+  durationMs         Int?
+  inputTokens        Int?
+  outputTokens       Int?
+  estimatedCostUsd   Float?
+  error              String?
+  createdAt          DateTime                 @default(now())
+  finishedAt         DateTime?
+
+  campaign VisibilityCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  question VisibilityQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  mentions VisibilityMention[]
+
+  @@index([campaignId])
+  @@index([questionId])
+  @@index([status])
+}
+
+model VisibilityEntity {
+  id                    String                    @id @default(cuid())
+  brandId               String?
+  name                  String
+  canonicalName         String?
+  domain                String?
+  kind                  VisibilityEntityKind      @default(other)
+  category              VisibilityEntityCategory  @default(unknown)
+  categoryConfidence    Float?
+  categoryJustification String?
+  categoryManual        Boolean                   @default(false)
+  normalizedKey         String?
+  parentEntityId        String?
+  aliases               Json?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  brand        VisibilityBrand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  parentEntity VisibilityEntity?   @relation("EntityParent", fields: [parentEntityId], references: [id], onDelete: SetNull)
+  childEntities VisibilityEntity[] @relation("EntityParent")
+  mentions     VisibilityMention[]
+
+  @@index([brandId])
+  @@index([name])
+  @@index([canonicalName])
+  @@index([domain])
+  @@index([kind])
+  @@index([category])
+  @@index([normalizedKey])
+  @@index([parentEntityId])
+}
+
+model VisibilityMention {
+  id              String                @id @default(cuid())
+  responseId      String
+  entityId        String
+  kind            VisibilityMentionKind @default(mention)
+  appearanceOrder Int?
+  excerpt         String?
+  confidence      Float?
+  analysisVersion String?
+  rawName         String?
+  createdAt       DateTime              @default(now())
+
+  response VisibilityResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  entity   VisibilityEntity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, entityId, kind])
+  @@index([responseId])
+  @@index([entityId])
+  @@index([kind])
+}
+
+model VisibilityCitation {
+  id         String   @id @default(cuid())
+  responseId String
+  title      String?
+  url        String
+  domain     String?
+  createdAt  DateTime @default(now())
+
+  @@index([responseId])
+  @@index([domain])
+}

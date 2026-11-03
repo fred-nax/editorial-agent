@@ -1,0 +1,66 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/require-auth";
+import { validateResearchConfiguration } from "@/lib/seo/research-config";
+import type { ResearchGoal, ResearchMode } from "@prisma/client";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function unauthorized() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+export async function GET() {
+  if (!(await requireAuth())) {
+    return unauthorized();
+  }
+
+  const configs = await db.researchConfig.findMany({
+    orderBy: { updatedAt: "desc" },
+    include: { customTheme: true },
+  });
+  return NextResponse.json({ configs });
+}
+
+export async function POST(request: Request) {
+  if (!(await requireAuth())) {
+    return unauthorized();
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "JSON invalide." }, { status: 400 });
+  }
+
+  const name =
+    typeof body.name === "string" ? body.name.trim().slice(0, 120) : "";
+  if (!name) {
+    return NextResponse.json(
+      { error: "Le nom de la configuration est obligatoire." },
+      { status: 400 }
+    );
+  }
+
+  const validated = validateResearchConfiguration(body);
+  if (!validated.ok) {
+    return NextResponse.json({ error: validated.error }, { status: 400 });
+  }
+
+  const config = await db.researchConfig.create({
+    data: {
+      name,
+      mode: validated.value.mode as ResearchMode,
+      researchGoal: validated.value.researchGoal as ResearchGoal,
+      domains: validated.value.domainSelections,
+      customTopic: validated.value.customTopic,
+      researchInstructions: validated.value.researchInstructions,
+      requestedCount: validated.value.requestedCount,
+      customThemeId: validated.value.customThemeId,
+    },
+  });
+
+  return NextResponse.json({ config }, { status: 201 });
+}

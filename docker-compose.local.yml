@@ -1,0 +1,17 @@
+# Usage local uniquement :
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Ne pas utiliser ce fichier sur le VPS.
+
+services:
+  app:
+    ports:
+      - "${APP_PORT:-3002}:3000"
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+networks:
+  proxy:
+    name: naxialis-agent-proxy-local
+    external: false

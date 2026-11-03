@@ -1,0 +1,714 @@
+import { inspect } from "node:util";
+import { detectCategories } from "../categories";
+import { env } from "../env";
+import { logInfo } from "../logger";
+import { estimateLlmCostUsd } from "../openai-pricing";
+import {
+  parseTokenUsage,
+  type TokenUsageSnapshot,
+} from "../openai-usage";
+import {
+  PROGRESS_MESSAGES,
+  type AgentProgressEvent,
+  type GenerationStage,
+} from "../progress";
+import { openai } from "../openai";
+import {
+  createWordPressDraft,
+  type WordPressDraftInput,
+  type WordPressDraftResult,
+} from "../wordpress";
+import {
+  buildInternalLinkPlan,
+  sanitizeInternalLinks,
+} from "./internal-links";
+import type { InternalLinkPlan } from "./internal-links/types";
+import { buildArticlePrompt } from "./prompt";
+import {
+  agentSessionTools,
+  CREATE_WORDPRESS_DRAFT_TOOL_NAME,
+} from "./tools";
+
+function siteHostFromWpUrl(wpUrl: string): string {
+  try {
+    return new URL(wpUrl).hostname.replace(/^www\./, "");
+  } catch {
+    return "naxialis.com";
+  }
+}
+
+export type AgentSessionLog = (message: string) => void;
+
+export type AgentProgressHandler = (
+  progress: AgentProgressEvent
+) => void | Promise<void>;
+
+export type RunAgentSessionOptions = {
+  onLog?: AgentSessionLog;
+  onProgress?: AgentProgressHandler;
+};
+
+export type RunAgentSessionResult = {
+  success: true;
+  sessionId: string;
+  subject: string;
+  wordpress: {
+    postId: number;
+    status: string;
+    title: string;
+    link: string;
+    categories: number[];
+    metaTitle: string;
+    metaDescription: string;
+    slug: string;
+    excerpt: string;
+  };
+  detectedCategories: Array<{
+    categoryId: number;
+    name: string;
+  }>;
+  /** Modèle exact retourné par session.agent.model ; null si indisponible. */
+  model: string | null;
+  inputTokens: number | null;
+  cachedInputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  totalTokens: number | null;
+  /** Coût LLM estimé (USD) ; null si modèle sans tarif officiel. Hors tools. */
+  estimatedCost: number | null;
+  /** Métadonnées de récupération différée de usage (observabilité). */
+  usageCollection: {
+    source: "session" | "turns_sum" | null;
+    attempt: number;
+    retries: number;
+    delayMs: number;
+    raw: Record<string, unknown> | null;
+  };
+};
+
+export class AgentSessionError extends Error {
+  readonly sessionId: string | null;
+  readonly code: "turn_failed" | "turn_cancelled" | "no_draft" | "missing_session";
+
+  constructor(
+    message: string,
+    code: AgentSessionError["code"],
+    sessionId: string | null = null
+  ) {
+    super(message);
+    this.name = "AgentSessionError";
+    this.code = code;
+    this.sessionId = sessionId;
+  }
+}
+
+function log(onLog: AgentSessionLog | undefined, message: string): void {
+  onLog?.(message);
+}
+
+async function emitProgress(
+  onProgress: AgentProgressHandler | undefined,
+  stage: GenerationStage,
+  message: string
+): Promise<void> {
+  if (!onProgress) {
+    return;
+  }
+
+  try {
+    await onProgress({ stage, message });
+  } catch {
+    // L'observation ne doit jamais interrompre le moteur éditorial.
+  }
+}
+
+function sessionItemType(event: { type: string; item?: { type?: string } }): string | null {
+  if (
+    event.type !== "agent.session.turn.item.added" &&
+    event.type !== "agent.session.turn.item.done"
+  ) {
+    return null;
+  }
+  return event.item?.type ?? null;
+}
+
+function parseDraftArgs(raw: unknown): WordPressDraftInput {
+  const args = typeof raw === "string" ? JSON.parse(raw) : raw;
+
+  if (!args || typeof args !== "object") {
+    throw new Error("Arguments create_wordpress_draft invalides");
+  }
+
+  const record = args as Record<string, unknown>;
+
+  return {
+    title: String(record.title ?? ""),
+    content: String(record.content ?? ""),
+    excerpt: String(record.excerpt ?? ""),
+    slug: String(record.slug ?? ""),
+    meta_title: String(record.meta_title ?? ""),
+    meta_description: String(record.meta_description ?? ""),
+  };
+}
+
+function toCallerResult(
+  result: WordPressDraftResult,
+  draft: Pick<WordPressDraftInput, "slug" | "excerpt">
+): RunAgentSessionResult["wordpress"] {
+  return {
+    postId: result.post_id,
+    status: result.status,
+    title: result.title,
+    link: result.link,
+    categories: result.categories,
+    metaTitle: result.meta_title,
+    metaDescription: result.meta_description,
+    slug: draft.slug ?? "",
+    excerpt: draft.excerpt ?? "",
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type SessionUsageCollection = {
+  model: string | null;
+  usage: TokenUsageSnapshot | null;
+  source: "session" | "turns_sum" | null;
+  /** Tentative réussie (1 = immédiat, sans attendre). */
+  attempt: number;
+  /** Délai depuis le début du polling jusqu'à l'apparition de usage (ms). */
+  delayMs: number;
+  retries: number;
+};
+
+/**
+ * Prefer session.usage (cumulatif session, pas de double comptage).
+ * Fallback : somme des turn.usage (chaque turn une fois).
+ * usage arrive souvent en différé après turn.completed → polling court.
+ * Aucun calcul de coût.
+ */
+async function collectSessionUsage(
+  sessionId: string
+): Promise<SessionUsageCollection> {
+  const maxAttempts = 16;
+  const delayBetweenAttemptsMs = 2000;
+  const startedAt = Date.now();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const session = await openai.beta.agents.sessions.retrieve(sessionId);
+    const model =
+      typeof session.agent?.model === "string" && session.agent.model.trim()
+        ? session.agent.model.trim()
+        : null;
+
+    const sessionUsage = parseTokenUsage(session.usage);
+    if (sessionUsage) {
+      const delayMs = Date.now() - startedAt;
+      const retries = Math.max(0, attempt - 1);
+      logInfo("agent", "usage collected", {
+        source: "session",
+        attempt,
+        retries,
+        delayMs,
+        model,
+        inputTokens: sessionUsage.inputTokens,
+        outputTokens: sessionUsage.outputTokens,
+        totalTokens: sessionUsage.totalTokens,
+        cachedInputTokens: sessionUsage.cachedInputTokens,
+        reasoningTokens: sessionUsage.reasoningTokens,
+      });
+      return {
+        model,
+        usage: sessionUsage,
+        source: "session",
+        attempt,
+        delayMs,
+        retries,
+      };
+    }
+
+    let turnsSum: TokenUsageSnapshot | null = null;
+    let turnsWithUsage = 0;
+    let turnsRaw: Record<string, unknown> | null = null;
+    const turns = await openai.beta.agents.sessions.turns.list(sessionId, {
+      order: "asc",
+    });
+    for await (const turn of turns) {
+      const turnUsage = parseTokenUsage(turn.usage);
+      if (!turnUsage) {
+        continue;
+      }
+      turnsWithUsage += 1;
+      if (!turnsSum) {
+        turnsSum = { ...turnUsage };
+        turnsRaw = turnUsage.raw;
+      } else {
+        turnsSum = {
+          inputTokens: turnsSum.inputTokens + turnUsage.inputTokens,
+          outputTokens: turnsSum.outputTokens + turnUsage.outputTokens,
+          totalTokens: turnsSum.totalTokens + turnUsage.totalTokens,
+          cachedInputTokens:
+            turnsSum.cachedInputTokens + turnUsage.cachedInputTokens,
+          reasoningTokens:
+            turnsSum.reasoningTokens + turnUsage.reasoningTokens,
+          raw: {
+            summed: true,
+            turnsWithUsage: turnsWithUsage,
+            last: turnUsage.raw,
+          },
+        };
+        turnsRaw = turnsSum.raw;
+      }
+    }
+
+    if (turnsSum && turnsWithUsage > 0) {
+      const delayMs = Date.now() - startedAt;
+      const retries = Math.max(0, attempt - 1);
+      if (turnsRaw) {
+        turnsSum.raw = turnsRaw;
+      }
+      logInfo("agent", "usage collected", {
+        source: "turns_sum",
+        attempt,
+        retries,
+        delayMs,
+        model,
+        turnsWithUsage,
+        inputTokens: turnsSum.inputTokens,
+        outputTokens: turnsSum.outputTokens,
+        totalTokens: turnsSum.totalTokens,
+        cachedInputTokens: turnsSum.cachedInputTokens,
+        reasoningTokens: turnsSum.reasoningTokens,
+      });
+      return {
+        model,
+        usage: turnsSum,
+        source: "turns_sum",
+        attempt,
+        delayMs,
+        retries,
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      await sleep(delayBetweenAttemptsMs);
+    } else {
+      const delayMs = Date.now() - startedAt;
+      logInfo("agent", "usage unavailable", {
+        attempt,
+        retries: maxAttempts - 1,
+        delayMs,
+        model,
+      });
+      return {
+        model,
+        usage: null,
+        source: null,
+        attempt,
+        delayMs,
+        retries: maxAttempts - 1,
+      };
+    }
+  }
+
+  return {
+    model: null,
+    usage: null,
+    source: null,
+    attempt: 0,
+    delayMs: 0,
+    retries: 0,
+  };
+}
+
+export async function runAgentSession(
+  subject: string,
+  options: RunAgentSessionOptions = {}
+): Promise<RunAgentSessionResult> {
+  const trimmedSubject = subject.trim();
+
+  if (!trimmedSubject) {
+    throw new Error("Sujet manquant.");
+  }
+
+  const detectedCategories = detectCategories(trimmedSubject);
+  const categoryIds = detectedCategories.map(
+    (category) => category.categoryId
+  );
+
+  const { onLog, onProgress } = options;
+  const observedEventTypes = new Set<string>();
+  const observedItemTypes = new Set<string>();
+  let sawWebSearch = false;
+  let emittedCombinedWork = false;
+  let emittedWriting = false;
+
+  await emitProgress(
+    onProgress,
+    "preparing",
+    PROGRESS_MESSAGES.preparing
+  );
+
+  log(onLog, "");
+  log(onLog, `Sujet : ${trimmedSubject}`);
+
+  if (detectedCategories.length > 0) {
+    log(
+      onLog,
+      `Catégories détectées : ${detectedCategories
+        .map((category) => `${category.name} (${category.categoryId})`)
+        .join(", ")}`
+    );
+  }
+
+  log(onLog, "");
+  log(onLog, "Préparation du maillage interne…");
+
+  let linkPlan: InternalLinkPlan;
+  try {
+    linkPlan = await buildInternalLinkPlan(trimmedSubject);
+  } catch (error) {
+    log(
+      onLog,
+      `Maillage : inventaire indisponible (${error instanceof Error ? error.message : "erreur"}) — aucun lien interne autorisé.`
+    );
+    linkPlan = {
+      subject: trimmedSubject,
+      themes: [],
+      catalogSize: 0,
+      catalogStale: true,
+      candidates: [],
+      selected: [],
+      rejected: [],
+      minScore: 0.28,
+      maxLinks: 4,
+    };
+  }
+
+  if (linkPlan.catalogStale) {
+    log(
+      onLog,
+      "Maillage : inventaire WordPress potentiellement périmé — lancer une sync SEO si besoin."
+    );
+  }
+  log(
+    onLog,
+    `Maillage : ${linkPlan.selected.length} destination(s) autorisée(s) sur ${linkPlan.catalogSize} publiée(s).`
+  );
+  for (const item of linkPlan.selected) {
+    log(
+      onLog,
+      `  • ${item.title} (${Math.round(item.score * 100)} %) — ${item.url}`
+    );
+  }
+
+  const allowedInternalUrls = linkPlan.selected.map((item) => item.url);
+  const wpHost = siteHostFromWpUrl(env.WP_URL);
+
+  log(onLog, "");
+  log(onLog, "Création de la session...");
+
+  const stream = await openai.beta.agents.sessions.create({
+    agent_id: env.OPENAI_AGENT_ID,
+    agent: {
+      tools: agentSessionTools,
+    },
+    environment: {
+      type: "none",
+    },
+    input: buildArticlePrompt(trimmedSubject, linkPlan),
+    stream: true,
+  });
+
+  let sessionId: string | null = null;
+  let wordpressResult: WordPressDraftResult | null = null;
+  let draftMeta: Pick<WordPressDraftInput, "slug" | "excerpt"> = {
+    slug: "",
+    excerpt: "",
+  };
+
+  try {
+    for await (const event of stream) {
+      observedEventTypes.add(event.type);
+      const itemType = sessionItemType(event);
+      if (itemType) {
+        observedItemTypes.add(itemType);
+      }
+
+      if (
+        event.type !== "agent.session.turn.output_text.delta" &&
+        event.type !== "agent.session.turn.reasoning_summary_text.delta"
+      ) {
+        log(onLog, `EVENT : ${event.type}`);
+      }
+
+      if (event.type === "agent.session.created") {
+        sessionId = event.session.id;
+        log(onLog, `Session : ${sessionId}`);
+        await emitProgress(
+          onProgress,
+          "preparing",
+          PROGRESS_MESSAGES.sessionReady
+        );
+      }
+
+      if (itemType === "web_search_call") {
+        sawWebSearch = true;
+        await emitProgress(
+          onProgress,
+          "researching",
+          PROGRESS_MESSAGES.researching
+        );
+      }
+
+      if (
+        event.type === "agent.session.turn.output_text.delta" ||
+        event.type === "agent.session.turn.output_text.done"
+      ) {
+        if (sawWebSearch) {
+          if (!emittedWriting) {
+            emittedWriting = true;
+            await emitProgress(
+              onProgress,
+              "writing",
+              PROGRESS_MESSAGES.writing
+            );
+          }
+        } else if (!emittedCombinedWork) {
+          emittedCombinedWork = true;
+          await emitProgress(
+            onProgress,
+            "researching",
+            PROGRESS_MESSAGES.researchingAndWriting
+          );
+        }
+      }
+
+      if (event.type === "agent.session.turn.output_text.done") {
+        log(onLog, "");
+        log(onLog, `Agent : ${event.text}`);
+        log(onLog, "");
+      }
+
+      if (
+        itemType === "function_call" &&
+        "item" in event &&
+        event.item &&
+        "name" in event.item &&
+        event.item.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME
+      ) {
+        await emitProgress(
+          onProgress,
+          "creating_wordpress",
+          PROGRESS_MESSAGES.creatingWordpress
+        );
+      }
+
+      if (event.type === "agent.session.requires_action") {
+        if (!sessionId) {
+          throw new AgentSessionError(
+            "Session OpenAI manquante au moment de requires_action.",
+            "missing_session"
+          );
+        }
+
+        const session = await openai.beta.agents.sessions.retrieve(sessionId);
+
+        for (const action of session.required_actions ?? []) {
+          if (
+            action.type === "function_call" &&
+            action.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME
+          ) {
+            await emitProgress(
+              onProgress,
+              "creating_wordpress",
+              PROGRESS_MESSAGES.creatingWordpress
+            );
+
+            const args = parseDraftArgs(action.arguments);
+
+            const sanitized = sanitizeInternalLinks(
+              args.content,
+              allowedInternalUrls,
+              wpHost
+            );
+            if (sanitized.removedUrls.length > 0) {
+              log(
+                onLog,
+                `Maillage : ${sanitized.removedUrls.length} lien(s) interne(s) non autorisé(s) retiré(s).`
+              );
+              for (const url of sanitized.removedUrls.slice(0, 8)) {
+                log(onLog, `  ✗ ${url}`);
+              }
+            }
+            if (sanitized.duplicateUrls.length > 0) {
+              log(
+                onLog,
+                `Maillage : ${sanitized.duplicateUrls.length} doublon(s) d'URL unwrapé(s).`
+              );
+            }
+            if (sanitized.keptUrls.length > 0) {
+              log(
+                onLog,
+                `Maillage : liens retenus — ${sanitized.keptUrls.join(" | ")}`
+              );
+            } else {
+              log(onLog, "Maillage : aucun lien interne dans le brouillon.");
+            }
+
+            args.content = sanitized.content;
+
+            log(onLog, "");
+            log(onLog, "→ Appel create_wordpress_draft");
+            log(onLog, `Titre : ${args.title}`);
+            log(onLog, `Meta title : ${args.meta_title}`);
+            log(
+              onLog,
+              `Meta title length : ${args.meta_title?.length ?? 0}`
+            );
+            log(onLog, `Meta description : ${args.meta_description}`);
+            log(
+              onLog,
+              `Meta description length : ${args.meta_description?.length ?? 0}`
+            );
+            log(
+              onLog,
+              `Catégories : ${detectedCategories.map((c) => c.name).join(", ")}`
+            );
+
+            const result = await createWordPressDraft({
+              ...args,
+              categoryIds,
+            });
+
+            wordpressResult = result;
+            draftMeta = {
+              slug: args.slug ?? "",
+              excerpt: args.excerpt ?? "",
+            };
+
+            log(onLog, "");
+            log(onLog, "✅ Brouillon WordPress créé");
+            log(onLog, `ID : ${result.post_id}`);
+            log(onLog, `Statut : ${result.status}`);
+            log(onLog, `Lien : ${result.link}`);
+
+            await openai.beta.agents.sessions.events.create(sessionId, {
+              events: [
+                {
+                  type: "agent.session.input.tool_result",
+                  turn_id: action.turn_id,
+                  call_id: action.call_id,
+                  success: true,
+                  output: JSON.stringify(result),
+                },
+              ],
+            });
+
+            log(onLog, "→ Résultat renvoyé à l'agent");
+            await emitProgress(
+              onProgress,
+              "finalizing",
+              PROGRESS_MESSAGES.finalizing
+            );
+          }
+        }
+      }
+
+      if (event.type === "agent.session.turn.completed") {
+        log(onLog, "");
+        log(onLog, "✅ Tour terminé.");
+        if (wordpressResult) {
+          await emitProgress(
+            onProgress,
+            "completed",
+            PROGRESS_MESSAGES.completed
+          );
+        }
+        break;
+      }
+
+      if (event.type === "agent.session.turn.failed") {
+        log(onLog, "❌ Tour échoué");
+        log(onLog, inspect(event, { depth: null }));
+        await emitProgress(onProgress, "failed", PROGRESS_MESSAGES.failed);
+        throw new AgentSessionError(
+          "Tour OpenAI échoué.",
+          "turn_failed",
+          sessionId
+        );
+      }
+
+      if (event.type === "agent.session.turn.cancelled") {
+        log(onLog, "⚠️ Tour annulé.");
+        await emitProgress(onProgress, "failed", PROGRESS_MESSAGES.failed);
+        throw new AgentSessionError(
+          "Tour OpenAI annulé.",
+          "turn_cancelled",
+          sessionId
+        );
+      }
+    }
+  } finally {
+    logInfo("agent", "observed events", {
+      types: [...observedEventTypes].join(","),
+      items: [...observedItemTypes].join(",") || null,
+      sawWebSearch: sawWebSearch ? 1 : 0,
+      sawWriting: emittedWriting ? 1 : 0,
+    });
+    stream.controller.abort();
+  }
+
+  if (!sessionId) {
+    throw new AgentSessionError(
+      "Session OpenAI manquante à la fin du tour.",
+      "missing_session"
+    );
+  }
+
+  if (!wordpressResult) {
+    throw new AgentSessionError(
+      "create_wordpress_draft n'a pas été appelé.",
+      "no_draft",
+      sessionId
+    );
+  }
+
+  const collected = await collectSessionUsage(sessionId);
+  const usage = collected.usage;
+  const estimatedCost =
+    usage !== null
+      ? estimateLlmCostUsd(collected.model, {
+          inputTokens: usage.inputTokens,
+          cachedInputTokens: usage.cachedInputTokens,
+          outputTokens: usage.outputTokens,
+        })
+      : null;
+
+  return {
+    success: true,
+    sessionId,
+    subject: trimmedSubject,
+    wordpress: toCallerResult(wordpressResult, draftMeta),
+    detectedCategories: detectedCategories.map((category) => ({
+      categoryId: category.categoryId,
+      name: category.name,
+    })),
+    model: collected.model,
+    inputTokens: usage?.inputTokens ?? null,
+    cachedInputTokens: usage?.cachedInputTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+    reasoningTokens: usage?.reasoningTokens ?? null,
+    totalTokens: usage?.totalTokens ?? null,
+    estimatedCost,
+    usageCollection: {
+      source: collected.source,
+      attempt: collected.attempt,
+      retries: collected.retries,
+      delayMs: collected.delayMs,
+      raw: usage?.raw ?? null,
+    },
+  };
+}

@@ -1,0 +1,527 @@
+import { Prisma } from "@prisma/client";
+import { db } from "../db";
+import { env } from "../env";
+import { logError, logInfo } from "../logger";
+import { stripHtml } from "./normalize";
+import {
+  buildWordPressInventoryUrl,
+  resolveInventoryPagePlan,
+} from "./wordpress-url";
+
+export { buildWordPressInventoryUrl, resolveInventoryPagePlan } from "./wordpress-url";
+
+type WpRestPost = {
+  id: number;
+  slug?: string;
+  link?: string;
+  status?: string;
+  date_gmt?: string;
+  modified_gmt?: string;
+  title?: { rendered?: string };
+  excerpt?: { rendered?: string };
+  content?: { rendered?: string };
+  categories?: number[];
+};
+
+type StatusFetchResult = {
+  status: string;
+  context: "view" | "edit";
+  announcedTotal: number | null;
+  fetchedCount: number;
+  pagesFetched: number;
+  headerInconsistent: boolean;
+  posts: WpRestPost[];
+};
+
+type SyncRunPersistInput = {
+  status: "completed" | "failed";
+  fetchedCount: number;
+  upsertedCount: number;
+  expectedTotal: number | null;
+  storedCount: number;
+  pagesFetched: number;
+  totalPages: number | null;
+  statusBreakdown: Record<string, number>;
+  diagnosticNote: string | null;
+  error: string | null;
+};
+
+const PUBLIC_STATUSES = ["publish"] as const;
+const PRIVATE_STATUSES = ["draft", "future", "private", "pending"] as const;
+
+function getWpAuthHeader(): string {
+  const token = Buffer.from(
+    `${env.WP_USERNAME}:${env.WP_APP_PASSWORD}`
+  ).toString("base64");
+  return `Basic ${token}`;
+}
+
+function parseWpDate(value: string | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(`${value}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+async function fetchWithRetry(url: string, attempts = 3): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: getWpAuthHeader(),
+          Accept: "application/json",
+        },
+      });
+    } catch (error) {
+      lastError =
+        error instanceof Error ? error : new Error("Erreur réseau WordPress.");
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      }
+    }
+  }
+  throw lastError ?? new Error("Erreur réseau WordPress.");
+}
+
+export async function fetchWordPressPage(params: {
+  page: number;
+  perPage: number;
+  status: string;
+  context: "view" | "edit";
+  modifiedAfter?: Date | null;
+}): Promise<{
+  posts: WpRestPost[];
+  totalPages: number | null;
+  totalItems: number | null;
+  headerInconsistent: boolean;
+}> {
+  const url = buildWordPressInventoryUrl({
+    baseUrl: env.WP_URL,
+    page: params.page,
+    perPage: params.perPage,
+    status: params.status,
+    context: params.context,
+    modifiedAfter: params.modifiedAfter,
+  });
+
+  const response = await fetchWithRetry(url);
+
+  if (response.status === 400 && params.page > 1) {
+    return {
+      posts: [],
+      totalPages: params.page - 1,
+      totalItems: null,
+      headerInconsistent: false,
+    };
+  }
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `WordPress inventory error ${response.status}: ${body.slice(0, 300)}`
+    );
+  }
+
+  const posts = (await response.json()) as WpRestPost[];
+  const list = Array.isArray(posts) ? posts : [];
+  const totalPagesHeader = response.headers.get("X-WP-TotalPages");
+  const totalItemsHeader = response.headers.get("X-WP-Total");
+  const totalPages = totalPagesHeader ? Number(totalPagesHeader) : null;
+  const totalItems = totalItemsHeader ? Number(totalItemsHeader) : null;
+
+  const plan = resolveInventoryPagePlan({
+    page: params.page,
+    perPage: params.perPage,
+    postsOnPage: list.length,
+    headerTotal: totalItems !== null && Number.isFinite(totalItems) ? totalItems : null,
+    headerTotalPages:
+      totalPages !== null && Number.isFinite(totalPages) ? totalPages : null,
+  });
+
+  return {
+    posts: list,
+    totalPages: plan.totalPages,
+    totalItems:
+      totalItems !== null && Number.isFinite(totalItems) ? totalItems : null,
+    headerInconsistent: plan.headerInconsistent,
+  };
+}
+
+async function fetchAllPostsForStatus(params: {
+  status: string;
+  context: "view" | "edit";
+  modifiedAfter?: Date | null;
+  perPage?: number;
+}): Promise<StatusFetchResult> {
+  const perPage = params.perPage ?? 100;
+  const posts: WpRestPost[] = [];
+  let page = 1;
+  let totalPages = 1;
+  let announcedTotal: number | null = null;
+  let pagesFetched = 0;
+  let headerInconsistent = false;
+
+  while (page <= totalPages && page <= 200) {
+    const result = await fetchWordPressPage({
+      page,
+      perPage,
+      status: params.status,
+      context: params.context,
+      modifiedAfter: params.modifiedAfter,
+    });
+
+    pagesFetched += 1;
+    if (page === 1) {
+      announcedTotal = result.totalItems;
+      headerInconsistent = result.headerInconsistent;
+    }
+    if (result.totalPages !== null) {
+      totalPages = result.totalPages;
+    }
+    posts.push(...result.posts);
+
+    if (result.posts.length === 0) {
+      break;
+    }
+    // Si une page renvoie moins que per_page et qu’on a déjà tout le contenu
+    // accessible (incohérence header), on tente encore la page suivante une fois
+    // puis on s’arrête sur page vide.
+    page += 1;
+  }
+
+  return {
+    status: params.status,
+    context: params.context,
+    announcedTotal,
+    fetchedCount: posts.length,
+    pagesFetched,
+    headerInconsistent,
+    posts,
+  };
+}
+
+async function upsertPosts(posts: WpRestPost[]): Promise<{
+  upsertedCount: number;
+  statusBreakdown: Record<string, number>;
+}> {
+  let upsertedCount = 0;
+  const statusBreakdown: Record<string, number> = {};
+
+  for (const post of posts) {
+    if (!post.id) {
+      continue;
+    }
+    const title =
+      stripHtml(post.title?.rendered ?? "").slice(0, 500) || `Post #${post.id}`;
+    const excerpt =
+      stripHtml(post.excerpt?.rendered ?? "").slice(0, 2000) || null;
+    const contentText =
+      stripHtml(post.content?.rendered ?? "").slice(0, 20000) || null;
+    const status = post.status ?? "unknown";
+    statusBreakdown[status] = (statusBreakdown[status] ?? 0) + 1;
+
+    await db.wordPressPost.upsert({
+      where: { wpPostId: post.id },
+      create: {
+        wpPostId: post.id,
+        title,
+        slug: post.slug ?? String(post.id),
+        url: post.link ?? `${env.WP_URL}/?p=${post.id}`,
+        status,
+        excerpt,
+        contentText,
+        categories: post.categories ?? [],
+        publishedAt: parseWpDate(post.date_gmt),
+        modifiedAt: parseWpDate(post.modified_gmt),
+        syncedAt: new Date(),
+      },
+      update: {
+        title,
+        slug: post.slug ?? String(post.id),
+        url: post.link ?? `${env.WP_URL}/?p=${post.id}`,
+        status,
+        excerpt,
+        contentText,
+        categories: post.categories ?? [],
+        publishedAt: parseWpDate(post.date_gmt),
+        modifiedAt: parseWpDate(post.modified_gmt),
+        syncedAt: new Date(),
+      },
+    });
+    upsertedCount += 1;
+  }
+
+  return { upsertedCount, statusBreakdown };
+}
+
+function mergeBreakdown(
+  target: Record<string, number>,
+  source: Record<string, number>
+): void {
+  for (const [key, value] of Object.entries(source)) {
+    target[key] = (target[key] ?? 0) + value;
+  }
+}
+
+/**
+ * Persiste le diagnostic de sync.
+ * Fallback sans champs Phase 1.1 si le client Prisma est périmé
+ * (Unknown arg expectedTotal, etc.) — sans masquer l’erreur d’origine.
+ */
+export async function persistWordPressSyncRun(
+  runId: string,
+  input: SyncRunPersistInput
+): Promise<{ usedFallback: boolean; persistError: string | null }> {
+  const finishedAt = new Date();
+  const fullData = {
+    status: input.status,
+    fetchedCount: input.fetchedCount,
+    upsertedCount: input.upsertedCount,
+    expectedTotal: input.expectedTotal,
+    storedCount: input.storedCount,
+    pagesFetched: input.pagesFetched,
+    totalPages: input.totalPages,
+    statusBreakdown: input.statusBreakdown as Prisma.InputJsonValue,
+    diagnosticNote: input.diagnosticNote,
+    error: input.error,
+    finishedAt,
+  };
+
+  try {
+    await db.wordPressSyncRun.update({
+      where: { id: runId },
+      data: fullData,
+    });
+    return { usedFallback: false, persistError: null };
+  } catch (error) {
+    const persistError =
+      error instanceof Error ? error.message.slice(0, 800) : "Erreur Prisma.";
+    logError("seo", "wordpress sync run full persist failed", {
+      runId,
+      persistError,
+    });
+
+    // Fallback : champs historiques uniquement (toujours présents).
+    await db.wordPressSyncRun.update({
+      where: { id: runId },
+      data: {
+        status: input.status,
+        fetchedCount: input.fetchedCount,
+        upsertedCount: input.upsertedCount,
+        error:
+          input.error ??
+          `Diagnostic partiel : client Prisma/migration incomplet. ${persistError.slice(0, 300)}`,
+        finishedAt,
+      },
+    });
+    return { usedFallback: true, persistError };
+  }
+}
+
+/**
+ * Synchronisation lecture seule de l'inventaire WordPress.
+ * - publish via context=view (périmètre public complet)
+ * - draft/private/pending/future via context=edit (selon capacités du compte)
+ * Upsert uniquement — aucune suppression locale destructive.
+ */
+export async function processWordPressInventorySync(options: {
+  runId: string;
+  mode?: "full" | "incremental";
+}): Promise<void> {
+  const mode = options.mode ?? "incremental";
+  let fetchedCount = 0;
+  let upsertedCount = 0;
+  let expectedTotal = 0;
+  let pagesFetched = 0;
+  let maxTotalPages: number | null = null;
+  const statusBreakdown: Record<string, number> = {};
+  const notes: string[] = [];
+  const seenIds = new Set<number>();
+
+  try {
+    let modifiedAfter: Date | null = null;
+    if (mode === "incremental") {
+      const latest = await db.wordPressPost.findFirst({
+        orderBy: { modifiedAt: "desc" },
+        select: { modifiedAt: true },
+      });
+      modifiedAfter = latest?.modifiedAt ?? null;
+    }
+
+    const fetches: StatusFetchResult[] = [];
+
+    for (const status of PUBLIC_STATUSES) {
+      fetches.push(
+        await fetchAllPostsForStatus({
+          status,
+          context: "view",
+          modifiedAfter: mode === "incremental" ? modifiedAfter : null,
+        })
+      );
+    }
+
+    for (const status of PRIVATE_STATUSES) {
+      fetches.push(
+        await fetchAllPostsForStatus({
+          status,
+          context: "edit",
+          modifiedAfter: mode === "incremental" ? modifiedAfter : null,
+        })
+      );
+    }
+
+    const allPosts: WpRestPost[] = [];
+    for (const fetchResult of fetches) {
+      pagesFetched += fetchResult.pagesFetched;
+      if (fetchResult.announcedTotal !== null) {
+        expectedTotal += fetchResult.announcedTotal;
+      }
+      if (fetchResult.headerInconsistent) {
+        notes.push(
+          `Incohérence WP pour « ${fetchResult.status} » (context=${fetchResult.context}) : X-WP-Total=${fetchResult.announcedTotal}, récupérés=${fetchResult.fetchedCount}.`
+        );
+      }
+      for (const post of fetchResult.posts) {
+        if (!post.id || seenIds.has(post.id)) {
+          continue;
+        }
+        seenIds.add(post.id);
+        allPosts.push(post);
+      }
+    }
+
+    fetchedCount = allPosts.length;
+    const upsert = await upsertPosts(allPosts);
+    upsertedCount = upsert.upsertedCount;
+    mergeBreakdown(statusBreakdown, upsert.statusBreakdown);
+
+    const storedCount = await db.wordPressPost.count();
+    maxTotalPages = pagesFetched;
+
+    if (mode === "full" && expectedTotal > fetchedCount) {
+      notes.push(
+        `Annoncés API (somme des statuts) : ${expectedTotal}. Accessibles et récupérés : ${fetchedCount}. Écart souvent dû à context=edit / capacités Application Password.`
+      );
+    } else if (mode === "incremental") {
+      notes.push(
+        `Sync incrémentale : ${fetchedCount} post(s) récupéré(s)${
+          modifiedAfter ? ` depuis ${modifiedAfter.toISOString()}` : ""
+        }.`
+      );
+    } else if (expectedTotal === fetchedCount) {
+      notes.push(
+        "Le nombre récupéré correspond au total annoncé par l’API pour le périmètre accessible."
+      );
+    }
+
+    const persist = await persistWordPressSyncRun(options.runId, {
+      status: "completed",
+      fetchedCount,
+      upsertedCount,
+      expectedTotal: expectedTotal > 0 ? expectedTotal : null,
+      storedCount,
+      pagesFetched,
+      totalPages: maxTotalPages,
+      statusBreakdown,
+      diagnosticNote: notes.join(" ") || null,
+      error: null,
+    });
+
+    if (persist.usedFallback) {
+      notes.push(
+        "Attention : diagnostic Phase 1.1 non persisté (client Prisma périmé). Relancer prisma generate + redémarrer l’app."
+      );
+    }
+
+    logInfo("seo", "wordpress inventory synced", {
+      runId: options.runId,
+      mode,
+      fetchedCount,
+      upsertedCount,
+      expectedTotal,
+      storedCount,
+      usedFallback: persist.usedFallback,
+    });
+  } catch (error) {
+    const storedCount = await db.wordPressPost.count().catch(() => 0);
+    const message =
+      error instanceof Error
+        ? error.message.slice(0, 500)
+        : "Erreur synchronisation WordPress.";
+
+    await persistWordPressSyncRun(options.runId, {
+      status: "failed",
+      fetchedCount,
+      upsertedCount,
+      expectedTotal: expectedTotal > 0 ? expectedTotal : null,
+      storedCount,
+      pagesFetched,
+      totalPages: maxTotalPages,
+      statusBreakdown,
+      diagnosticNote: notes.join(" ") || null,
+      error: message,
+    });
+
+    logError("seo", "wordpress inventory sync failed", {
+      runId: options.runId,
+      message,
+      fetchedCount,
+      upsertedCount,
+    });
+  }
+}
+
+export function enqueueWordPressInventorySync(
+  runId: string,
+  mode: "full" | "incremental"
+): void {
+  void processWordPressInventorySync({ runId, mode }).catch(async (error) => {
+    const message =
+      error instanceof Error ? error.message.slice(0, 500) : "Erreur inattendue.";
+    await persistWordPressSyncRun(runId, {
+      status: "failed",
+      fetchedCount: 0,
+      upsertedCount: 0,
+      expectedTotal: null,
+      storedCount: await db.wordPressPost.count().catch(() => 0),
+      pagesFetched: 0,
+      totalPages: null,
+      statusBreakdown: {},
+      diagnosticNote: null,
+      error: message,
+    }).catch(() => undefined);
+  });
+}
+
+/** Diagnostic lecture seule pour l’UI. */
+export async function getWordPressInventoryDiagnostic(): Promise<{
+  count: number;
+  byStatus: Record<string, number>;
+  lastSync: Awaited<ReturnType<typeof db.wordPressSyncRun.findFirst>>;
+  running: Awaited<ReturnType<typeof db.wordPressSyncRun.findFirst>>;
+}> {
+  const [count, posts, lastSync, running] = await Promise.all([
+    db.wordPressPost.count(),
+    db.wordPressPost.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    }),
+    db.wordPressSyncRun.findFirst({
+      orderBy: { startedAt: "desc" },
+    }),
+    db.wordPressSyncRun.findFirst({
+      where: { status: "running" },
+      orderBy: { startedAt: "desc" },
+    }),
+  ]);
+
+  const byStatus: Record<string, number> = {};
+  for (const row of posts) {
+    byStatus[row.status] = row._count._all;
+  }
+
+  return { count, byStatus, lastSync, running };
+}
