@@ -9,7 +9,7 @@ export const navigation = [
   { href: "/articles", label: "Historique" },
   { href: "/topics", label: "Sujets" },
   { href: "/opportunities", label: "Opportunités SEO" },
-  { href: "/ai-visibility", label: "Visibilité IA" },
+  { href: "/veille", label: "Veille éditoriale" },
   { href: "/settings", label: "Paramètres" },
 ] as const;
 
@@ -51,10 +51,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 ? pathname === "/articles" ||
                   (pathname.startsWith("/articles/") &&
                     pathname !== "/articles/new")
-                : item.href === "/ai-visibility"
-                  ? pathname === "/ai-visibility" ||
-                    pathname.startsWith("/ai-visibility/")
-                  : pathname === item.href;
+                : pathname === item.href;
 
             return (
               <Link

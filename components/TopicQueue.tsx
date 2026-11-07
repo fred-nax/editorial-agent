@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArticleStatus } from "@/components/ArticleStatus";
 import { formatDate } from "@/lib/format";
 import type { TopicStatus } from "@/lib/status";
+import { transmitsVeilleContext } from "@/lib/topics/build-generation-context";
 
 export type TopicListItem = {
   id: string;
@@ -14,6 +15,12 @@ export type TopicListItem = {
   notes: string | null;
   category: string | null;
   angle: string | null;
+  origin?: string | null;
+  sourceUrl?: string | null;
+  sourceTitle?: string | null;
+  sourceName?: string | null;
+  sourcePublishedOn?: string | null;
+  sourceKind?: string | null;
   createdAt: Date | string;
 };
 
@@ -181,12 +188,44 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900">
                   {topic.subject}
+                  {topic.origin === "veille" ? (
+                    <span className="ml-2 align-middle rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                      Veille éditoriale
+                    </span>
+                  ) : null}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {formatDate(topic.createdAt)}
-                  {topic.notes ? ` · ${topic.notes}` : ""}
-                  {topic.category ? ` · ${topic.category}` : ""}
-                </p>
+                {transmitsVeilleContext(topic) ? (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Contexte de veille transmis à l'agent
+                  </p>
+                ) : null}
+                {topic.origin === "veille" ? (
+                  <div className="mt-1 space-y-1 text-xs text-slate-600">
+                    <p className="text-slate-500">{formatDate(topic.createdAt)}</p>
+                    {topic.angle ? <p>Angle : {topic.angle}</p> : null}
+                    {topic.notes ? <p>{topic.notes}</p> : null}
+                    {topic.sourceUrl ? (
+                      <a
+                        href={topic.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-naxialis underline-offset-2 hover:underline"
+                      >
+                        {topic.sourceName || "Publication source"}
+                        {topic.sourceTitle ? ` — ${topic.sourceTitle}` : ""}
+                      </a>
+                    ) : null}
+                    {topic.sourcePublishedOn ? (
+                      <p>Publication vérifiée : {topic.sourcePublishedOn}</p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatDate(topic.createdAt)}
+                    {topic.notes ? ` · ${topic.notes}` : ""}
+                    {topic.category ? ` · ${topic.category}` : ""}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs text-slate-600">

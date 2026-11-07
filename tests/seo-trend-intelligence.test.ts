@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { resolve } from "node:path";
 import {
@@ -8,7 +8,6 @@ import {
   compareTrendHistory,
   dedupeSourcesByDomain,
 } from "../lib/seo/trend-signals";
-import { ANALYSIS_VERSION } from "../lib/ai-visibility/constants";
 
 const FIXED_NOW = new Date("2026-10-30T12:00:00.000Z");
 
@@ -245,15 +244,19 @@ describe("SEO 1.3 — Trend Intelligence", () => {
     assert.match(api, /requireAuth/);
   });
 
-  it("aucun effet sur GEO 1.1.3 ni create_wordpress_draft", () => {
-    assert.match(ANALYSIS_VERSION, /^geo-1\.1\.\d+$/);
+  it("aucun effet sur le moteur éditorial ni réintroduction GEO", () => {
     const search = readFileSync(
       resolve(process.cwd(), "lib/seo/opportunity-search.ts"),
       "utf8"
     );
     assert.doesNotMatch(search, /create_wordpress_draft/);
     assert.doesNotMatch(search, /OPENAI_AGENT_ID/);
+    assert.doesNotMatch(search, /ai-visibility/);
     assert.match(search, /assessTrendSignals/);
+    assert.equal(
+      existsSync(resolve(process.cwd(), "lib/ai-visibility/constants.ts")),
+      false
+    );
   });
 
   it("quotas de recherche toujours définis côté config (pas à l’affichage)", () => {

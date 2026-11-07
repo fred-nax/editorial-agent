@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { resolve } from "node:path";
-import { ANALYSIS_VERSION } from "../lib/ai-visibility/constants";
 import {
   TREND_ANALYSIS_VERSION,
   assessTrendSignals,
@@ -265,13 +264,14 @@ describe("SEO 1.3.1 — Source Evidence Quality", () => {
     assert.doesNotMatch(getBlock, /assessTrendSignals/);
   });
 
-  it("12. aucun changement moteur éditorial / GEO", () => {
-    assert.match(ANALYSIS_VERSION, /^geo-1\.1\.\d+$/);
+  it("12. aucun changement moteur éditorial / GEO retiré", () => {
     const search = readSource("lib/seo/opportunity-search.ts");
     assert.doesNotMatch(search, /OPENAI_AGENT_ID/);
     assert.doesNotMatch(search, /create_wordpress_draft/);
     assert.doesNotMatch(search, /runAgentSession/);
+    assert.doesNotMatch(search, /ai-visibility/);
     assert.match(search, /analysisVersion/);
+    assert.equal(existsSync(resolve(process.cwd(), "lib/ai-visibility")), false);
   });
 
   it("dates : ISO strict, futures rejetées, pas d’invention URL", () => {

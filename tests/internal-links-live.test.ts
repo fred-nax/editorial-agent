@@ -31,7 +31,9 @@ describe("internal links — inventaire live", () => {
 });
 
 describe("internal links — brouillon WordPress (sanitized)", () => {
-  it("crée un brouillon draft avec contenu déjà filtré", async () => {
+  it("crée un brouillon draft avec contenu déjà filtré", {
+    skip: process.env.RUN_EXTERNAL_TESTS === "1" ? false : "réservé à RUN_EXTERNAL_TESTS=1",
+  }, async () => {
     const plan = await buildInternalLinkPlan(
       "Sécurité MCP pour les agents IA"
     );

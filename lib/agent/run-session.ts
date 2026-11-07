@@ -23,6 +23,13 @@ import {
   sanitizeInternalLinks,
 } from "./internal-links";
 import type { InternalLinkPlan } from "./internal-links/types";
+import {
+  attachObservedEvents,
+  createEventTraceState,
+  eventTraceFromState,
+  observeAgentEvent,
+  type GenerationEventTrace,
+} from "../generation-trace";
 import { buildArticlePrompt } from "./prompt";
 import {
   agentSessionTools,
@@ -46,6 +53,8 @@ export type AgentProgressHandler = (
 export type RunAgentSessionOptions = {
   onLog?: AgentSessionLog;
   onProgress?: AgentProgressHandler;
+  /** Message ponctuel. Absent : le sujet seul, comme aujourd'hui. */
+  generationMessage?: string;
 };
 
 export type RunAgentSessionResult = {
@@ -76,6 +85,8 @@ export type RunAgentSessionResult = {
   totalTokens: number | null;
   /** Coût LLM estimé (USD) ; null si modèle sans tarif officiel. Hors tools. */
   estimatedCost: number | null;
+  /** Événements observés pendant le flux. Absent sur un double de test. */
+  trace?: GenerationEventTrace;
   /** Métadonnées de récupération différée de usage (observabilité). */
   usageCollection: {
     source: "session" | "turns_sum" | null;
@@ -341,6 +352,7 @@ export async function runAgentSession(
   const { onLog, onProgress } = options;
   const observedEventTypes = new Set<string>();
   const observedItemTypes = new Set<string>();
+  const eventTrace = createEventTraceState();
   let sawWebSearch = false;
   let emittedCombinedWork = false;
   let emittedWriting = false;
@@ -418,7 +430,10 @@ export async function runAgentSession(
     environment: {
       type: "none",
     },
-    input: buildArticlePrompt(trimmedSubject, linkPlan),
+    input: buildArticlePrompt(
+      options.generationMessage?.trim() || trimmedSubject,
+      linkPlan
+    ),
     stream: true,
   });
 
@@ -431,6 +446,7 @@ export async function runAgentSession(
 
   try {
     for await (const event of stream) {
+      observeAgentEvent(eventTrace, event);
       observedEventTypes.add(event.type);
       const itemType = sessionItemType(event);
       if (itemType) {
@@ -651,6 +667,16 @@ export async function runAgentSession(
         );
       }
     }
+  } catch (error) {
+    attachObservedEvents(
+      error,
+      eventTraceFromState(eventTrace, sessionId),
+      wordpressResult?.status ?? null,
+      wordpressResult
+        ? { postId: wordpressResult.post_id, link: wordpressResult.link }
+        : undefined
+    );
+    throw error;
   } finally {
     logInfo("agent", "observed events", {
       types: [...observedEventTypes].join(","),
@@ -662,18 +688,26 @@ export async function runAgentSession(
   }
 
   if (!sessionId) {
-    throw new AgentSessionError(
+    const error = new AgentSessionError(
       "Session OpenAI manquante à la fin du tour.",
       "missing_session"
     );
+    attachObservedEvents(error, eventTraceFromState(eventTrace, sessionId), null);
+    throw error;
   }
 
   if (!wordpressResult) {
-    throw new AgentSessionError(
+    const error = new AgentSessionError(
       "create_wordpress_draft n'a pas été appelé.",
       "no_draft",
       sessionId
     );
+    attachObservedEvents(
+      error,
+      eventTraceFromState(eventTrace, sessionId),
+      null
+    );
+    throw error;
   }
 
   const collected = await collectSessionUsage(sessionId);
@@ -710,5 +744,6 @@ export async function runAgentSession(
       delayMs: collected.delayMs,
       raw: usage?.raw ?? null,
     },
+    trace: eventTraceFromState(eventTrace, sessionId),
   };
 }

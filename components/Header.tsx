@@ -9,7 +9,7 @@ const titles: Record<string, string> = {
   "/articles/new": "Nouvel article",
   "/topics": "Sujets",
   "/opportunities": "Opportunités SEO",
-  "/ai-visibility": "Visibilité IA",
+  "/veille": "Veille éditoriale",
   "/settings": "Paramètres",
 };
 
@@ -32,9 +32,7 @@ export function Header({
     titles[pathname] ??
     (pathname.startsWith("/articles/")
       ? "Détail de la génération"
-      : pathname.startsWith("/ai-visibility/")
-        ? "Visibilité IA"
-        : "Naxialis Content Agent");
+      : "Naxialis Content Agent");
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">

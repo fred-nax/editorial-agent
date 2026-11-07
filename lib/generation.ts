@@ -1,4 +1,11 @@
+import { Prisma } from "@prisma/client";
 import { db } from "./db";
+import {
+  completedTraceUpdate,
+  contextSnapshot,
+  failedTraceUpdate,
+} from "./generation-trace";
+import { buildGenerationMessage } from "./topics/build-generation-context";
 import {
   AgentSessionError,
   runAgentSession,
@@ -137,10 +144,28 @@ export async function processArticleGeneration(
   }
 
   const startedAt = Date.now();
+  const topic = generation.topicId
+    ? await db.topic.findUnique({ where: { id: generation.topicId } })
+    : null;
+  const contextInput = {
+    subject: generation.subject,
+    origin: topic?.origin,
+    angle: topic?.angle,
+    notes: topic?.notes,
+    sourceTitle: topic?.sourceTitle,
+    sourceName: topic?.sourceName,
+    sourceUrl: topic?.sourceUrl,
+    sourcePublishedOn: topic?.sourcePublishedOn,
+    sourceKind: topic?.sourceKind,
+  };
+  const generationMessage = buildGenerationMessage(contextInput);
+  const transmittedContext = contextSnapshot(contextInput);
   const run =
     options.run ??
     ((subject) =>
       runAgentSession(subject, {
+        generationMessage:
+          generationMessage === subject ? undefined : generationMessage,
         onProgress: async (progress) => {
           await updateGenerationProgress(id, progress.stage, progress.message);
         },
@@ -156,12 +181,19 @@ export async function processArticleGeneration(
   try {
     const result = await run(generation.subject);
     const durationMs = Date.now() - startedAt;
+    const storedTrace = completedTraceUpdate(
+      transmittedContext,
+      result.trace,
+      result.wordpress.status
+    );
 
     await db.articleGeneration.update({
       where: { id },
       data: {
         status: "completed",
         sessionId: result.sessionId,
+        trace: storedTrace.trace as Prisma.InputJsonValue,
+        wpStatus: storedTrace.wpStatus,
         wpPostId: result.wordpress.postId,
         wpUrl: result.wordpress.link || null,
         title: result.wordpress.title || null,
@@ -204,6 +236,7 @@ export async function processArticleGeneration(
     const durationMs = Date.now() - startedAt;
     const sessionId =
       error instanceof AgentSessionError ? error.sessionId : generation.sessionId;
+    const storedTrace = failedTraceUpdate(transmittedContext, error);
 
     await db.articleGeneration.update({
       where: { id },
@@ -212,6 +245,11 @@ export async function processArticleGeneration(
         error: toStoredError(error),
         durationMs,
         sessionId,
+        trace: storedTrace.trace as Prisma.InputJsonValue,
+        wpStatus: storedTrace.wpStatus,
+        ...(storedTrace.wpPostId
+          ? { wpPostId: storedTrace.wpPostId, wpUrl: storedTrace.wpUrl }
+          : {}),
         progressStage: "failed",
         progressMessage: PROGRESS_MESSAGES.failed,
         progressUpdatedAt: new Date(),

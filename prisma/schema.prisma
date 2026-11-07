@@ -75,6 +75,8 @@ model ArticleGeneration {
   status          GenerationStatus
   wpPostId        Int?
   wpUrl           String?
+  /// Statut renvoyé par WordPress à la création du brouillon. Null si non enregistré.
+  wpStatus        String?
   categories      Json?
   metaTitle       String?
   metaDescription String?
@@ -86,6 +88,8 @@ model ArticleGeneration {
   model             String?
   durationMs        Int?
   sessionId         String?
+  /// Contexte transmis et événements observés. Null pour les générations antérieures.
+  trace             Json?
   error             String?
   topicId           String?
   progressStage     String?
@@ -103,8 +107,32 @@ model Topic {
   notes     String?
   category  String?
   angle     String?
+  /// "veille" pour un sujet issu de la veille. Null pour un sujet manuel ou SEO.
+  origin            String?
+  sourceUrl         String?
+  sourceTitle       String?
+  sourceName        String?
+  sourcePublishedOn String?
+  sourceKind        String?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+
+  @@unique([sourceUrl, subject])
+  @@index([sourceUrl])
+}
+
+/// Recherche de veille réussie. Le JSON contient les publications validées, jamais la réponse OpenAI brute.
+model EditorialWatchSearch {
+  id           String   @id @default(cuid())
+  theme        String
+  periodDays   Int
+  country      String
+  searchedAt   DateTime @default(now())
+  articleCount Int
+  results      Json
+  status       String   @default("completed")
+
+  @@index([searchedAt])
 }
 
 /// Inventaire éditorial WordPress (lecture seule, upsert, jamais de suppression).
@@ -257,219 +285,4 @@ model SeoOpportunity {
   @@index([searchRunId])
   @@index([trendType])
   @@index([editorialUrgency])
-}
-
-// ─── AI Visibility Monitor (GEO) ───────────────────────────────────────────
-
-enum VisibilityCampaignStatus {
-  pending
-  questions_ready
-  running
-  completed
-  partial
-  failed
-}
-
-enum VisibilityResponseStatus {
-  pending
-  completed
-  failed
-}
-
-enum VisibilityEntityKind {
-  target_brand
-  competitor
-  other
-  source
-}
-
-/// Classification GEO 1.1 (plus fine que kind historique).
-enum VisibilityEntityCategory {
-  target_brand
-  direct_competitor
-  indirect_competitor
-  software_product
-  institution
-  information_source
-  other
-  unknown
-}
-
-enum VisibilityMentionKind {
-  mention
-  recommendation
-  negative
-  citation_only
-}
-
-model VisibilityBrand {
-  id           String   @id @default(cuid())
-  name         String
-  primaryDomain String
-  description  String?
-  sector       String?
-  products     String?
-  country      String   @default("FR")
-  language     String   @default("fr")
-  aliases      Json?
-  domainAliases Json?
-  knownCompetitors Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  campaigns VisibilityCampaign[]
-  entities  VisibilityEntity[]
-
-  @@index([name])
-  @@index([primaryDomain])
-}
-
-model VisibilityCampaign {
-  id                 String                   @id @default(cuid())
-  brandId            String
-  subject            String
-  country            String
-  language           String
-  questionCount      Int
-  repetitions        Int                      @default(1)
-  provider           String                   @default("openai")
-  model              String
-  instructions       String?
-  status             VisibilityCampaignStatus @default(pending)
-  analysisVersion    String                   @default("geo-1.0")
-  estimatedCalls     Int?
-  completedCalls     Int                      @default(0)
-  validResponses     Int                      @default(0)
-  failedResponses    Int                      @default(0)
-  mentionRate        Float?
-  recommendationRate Float?
-  domainCitationRate Float?
-  metricsSnapshot         Json?
-  previousMetricsSnapshot Json?
-  reanalyzeReport         Json?
-  editorialHints          Json?
-  estimatedCostUsd        Float?
-  error                   String?
-  startedAt               DateTime?
-  finishedAt              DateTime?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-
-  brand     VisibilityBrand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  questions VisibilityQuestion[]
-  responses VisibilityResponse[]
-
-  @@index([brandId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-model VisibilityQuestion {
-  id           String   @id @default(cuid())
-  campaignId   String
-  text         String
-  intent       String?
-  sortOrder    Int      @default(0)
-  validated    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-
-  campaign  VisibilityCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  responses VisibilityResponse[]
-
-  @@index([campaignId])
-}
-
-model VisibilityResponse {
-  id                 String                   @id @default(cuid())
-  campaignId         String
-  questionId         String
-  repetitionIndex    Int                      @default(1)
-  provider           String
-  model              String
-  status             VisibilityResponseStatus @default(pending)
-  promptCountry      String?
-  promptLanguage     String?
-  responseText       String?
-  rawPayload         Json?
-  citations          Json?
-  durationMs         Int?
-  inputTokens        Int?
-  outputTokens       Int?
-  estimatedCostUsd   Float?
-  error              String?
-  createdAt          DateTime                 @default(now())
-  finishedAt         DateTime?
-
-  campaign VisibilityCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  question VisibilityQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  mentions VisibilityMention[]
-
-  @@index([campaignId])
-  @@index([questionId])
-  @@index([status])
-}
-
-model VisibilityEntity {
-  id                    String                    @id @default(cuid())
-  brandId               String?
-  name                  String
-  canonicalName         String?
-  domain                String?
-  kind                  VisibilityEntityKind      @default(other)
-  category              VisibilityEntityCategory  @default(unknown)
-  categoryConfidence    Float?
-  categoryJustification String?
-  categoryManual        Boolean                   @default(false)
-  normalizedKey         String?
-  parentEntityId        String?
-  aliases               Json?
-  createdAt             DateTime                  @default(now())
-  updatedAt             DateTime                  @updatedAt
-
-  brand        VisibilityBrand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  parentEntity VisibilityEntity?   @relation("EntityParent", fields: [parentEntityId], references: [id], onDelete: SetNull)
-  childEntities VisibilityEntity[] @relation("EntityParent")
-  mentions     VisibilityMention[]
-
-  @@index([brandId])
-  @@index([name])
-  @@index([canonicalName])
-  @@index([domain])
-  @@index([kind])
-  @@index([category])
-  @@index([normalizedKey])
-  @@index([parentEntityId])
-}
-
-model VisibilityMention {
-  id              String                @id @default(cuid())
-  responseId      String
-  entityId        String
-  kind            VisibilityMentionKind @default(mention)
-  appearanceOrder Int?
-  excerpt         String?
-  confidence      Float?
-  analysisVersion String?
-  rawName         String?
-  createdAt       DateTime              @default(now())
-
-  response VisibilityResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
-  entity   VisibilityEntity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@unique([responseId, entityId, kind])
-  @@index([responseId])
-  @@index([entityId])
-  @@index([kind])
-}
-
-model VisibilityCitation {
-  id         String   @id @default(cuid())
-  responseId String
-  title      String?
-  url        String
-  domain     String?
-  createdAt  DateTime @default(now())
-
-  @@index([responseId])
-  @@index([domain])
 }

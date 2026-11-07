@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArticleDetailTabs } from "@/components/ArticleDetailTabs";
+import { ArticleSeoPanel } from "@/components/ArticleSeoPanel";
 import { ArticleStatus } from "@/components/ArticleStatus";
 import { GenerationLiveRefresh } from "@/components/GenerationLiveRefresh";
 import { GenerationProgress } from "@/components/GenerationProgress";
+import { GenerationReport } from "@/components/GenerationReport";
+import { GenerationUsage } from "@/components/GenerationUsage";
 import { db } from "@/lib/db";
 import { toPublicGenerationError } from "@/lib/generation-errors";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
@@ -36,23 +40,6 @@ export async function generateMetadata({
   };
 }
 
-function DetailItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number | null | undefined;
-}) {
-  return (
-    <div className="border-b border-slate-100 py-3 last:border-0">
-      <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-        {label}
-      </dt>
-      <dd className="mt-1 text-sm text-slate-900">{value || "—"}</dd>
-    </div>
-  );
-}
-
 export default async function ArticleDetailPage({
   params,
 }: ArticleDetailPageProps) {
@@ -66,17 +53,40 @@ export default async function ArticleDetailPage({
     notFound();
   }
 
+  const publicError = toPublicGenerationError(article.error);
+  const totalTokens =
+    article.inputTokens !== null && article.outputTokens !== null
+      ? formatTokenCount(article.inputTokens + article.outputTokens)
+      : null;
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold break-words text-slate-900">
             {article.title ?? article.subject}
           </h1>
-          <p className="mt-1 text-sm text-slate-600">{article.subject}</p>
+          <p className="mt-1 text-sm break-words text-slate-500">
+            {article.title ? `Sujet demandé · ${article.subject}` : "Sujet demandé"}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">{formatDate(article.createdAt)}</p>
         </div>
-        <ArticleStatus status={article.status} />
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <ArticleStatus status={article.status} />
+          {article.wpUrl ? (
+            <Link
+              href={article.wpUrl}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-naxialis hover:text-naxialis-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-naxialis"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Brouillon WordPress
+              <span className="sr-only">, nouvel onglet</span>
+            </Link>
+          ) : null}
+        </div>
       </div>
+
       <GenerationLiveRefresh
         id={article.id}
         status={article.status}
@@ -98,95 +108,49 @@ export default async function ArticleDetailPage({
         />
       ) : null}
 
-      <section className="rounded-lg border border-slate-200 bg-white px-5">
-        <dl>
-          <DetailItem label="Sujet demandé" value={article.subject} />
-          <DetailItem label="Titre final" value={article.title} />
-          <DetailItem label="Extrait" value={article.excerpt} />
-          <DetailItem
-            label="ID WordPress"
-            value={article.wpPostId ? `#${article.wpPostId}` : null}
+      {publicError ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {publicError}
+        </p>
+      ) : null}
+
+      <ArticleDetailTabs
+        report={
+          <GenerationReport
+            trace={article.trace}
+            status={article.status}
+            wpPostId={article.wpPostId}
+            wpUrl={article.wpUrl}
+            wpStatus={article.wpStatus}
           />
-          <div className="border-b border-slate-100 py-3">
-            <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-              Lien WordPress
-            </dt>
-            <dd className="mt-1 text-sm">
-              {article.wpUrl ? (
-                <Link
-                  href={article.wpUrl}
-                  className="break-all text-naxialis hover:text-naxialis-dark"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {article.wpUrl}
-                </Link>
-              ) : (
-                "—"
-              )}
-            </dd>
-          </div>
-          <DetailItem label="Slug" value={article.slug} />
-          <DetailItem
-            label="Catégories"
-            value={formatCategories(article.categories)}
+        }
+        article={
+          <ArticleSeoPanel
+            subject={article.subject}
+            title={article.title}
+            excerpt={article.excerpt}
+            slug={article.slug}
+            categories={formatCategories(article.categories)}
+            metaTitle={article.metaTitle}
+            metaDescription={article.metaDescription}
+            wpPostId={article.wpPostId}
+            wpUrl={article.wpUrl}
           />
-          <DetailItem label="Meta title" value={article.metaTitle} />
-          <DetailItem
-            label="Meta description"
-            value={article.metaDescription}
+        }
+        usage={
+          <GenerationUsage
+            cost={formatEstimatedCost(article.estimatedCost)}
+            inputTokens={formatTokenCount(article.inputTokens)}
+            cachedTokens={formatTokenCount(article.cachedInputTokens)}
+            outputTokens={formatTokenCount(article.outputTokens)}
+            reasoningTokens={formatTokenCount(article.reasoningTokens)}
+            totalTokens={totalTokens ?? "—"}
+            model={formatModelLabel(article.model) ?? "—"}
+            duration={formatDuration(article.durationMs)}
+            sessionId={article.sessionId}
           />
-          <DetailItem label="Date" value={formatDate(article.createdAt)} />
-          <DetailItem
-            label="Durée"
-            value={formatDuration(article.durationMs)}
-          />
-          <DetailItem
-            label="Modèle"
-            value={formatModelLabel(article.model)}
-          />
-          <DetailItem
-            label="Tokens entrée"
-            value={formatTokenCount(article.inputTokens)}
-          />
-          <DetailItem
-            label="dont cache"
-            value={formatTokenCount(article.cachedInputTokens)}
-          />
-          <DetailItem
-            label="Tokens sortie"
-            value={formatTokenCount(article.outputTokens)}
-          />
-          <DetailItem
-            label="dont reasoning"
-            value={formatTokenCount(article.reasoningTokens)}
-          />
-          <DetailItem
-            label="Tokens total"
-            value={
-              article.inputTokens !== null && article.outputTokens !== null
-                ? formatTokenCount(article.inputTokens + article.outputTokens)
-                : null
-            }
-          />
-          <div className="border-b border-slate-100 py-3 last:border-0">
-            <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-              Coût LLM estimé
-            </dt>
-            <dd className="mt-1 text-sm text-slate-900">
-              {formatEstimatedCost(article.estimatedCost)}
-            </dd>
-            <p className="mt-1 text-xs text-slate-500">
-              Hors éventuels frais liés aux outils.
-            </p>
-          </div>
-          <DetailItem label="Session OpenAI" value={article.sessionId} />
-          <DetailItem
-            label="Message d’erreur"
-            value={toPublicGenerationError(article.error)}
-          />
-        </dl>
-      </section>
+        }
+      />
     </div>
   );
 }

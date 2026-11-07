@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { EditorialAgentSettings } from "@/components/EditorialAgentSettings";
 import { getServiceStatuses } from "@/lib/config-status";
 
 export const metadata: Metadata = {
@@ -15,12 +16,16 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Paramètres</h1>
         <p className="mt-1 text-sm text-slate-600">
-          État de configuration côté serveur. Aucun secret n’est affiché.
+          Configuration de l’agent éditorial et état des services. Aucun secret
+          n’est affiché.
         </p>
       </div>
 
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <ul className="divide-y divide-slate-100">
+      <EditorialAgentSettings />
+
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold text-slate-900">Services</h2>
+        <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
           {services.map((service) => (
             <li
               key={service.label}

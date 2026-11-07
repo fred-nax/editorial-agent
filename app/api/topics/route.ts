@@ -1,36 +1,73 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
+import {
+  hasSimilar,
+  queueHasExact,
+} from "@/lib/veille/editorial-duplicates";
+import { assessVeilleProposal } from "@/lib/veille/editorial-corpus";
+import {
+  handleCreateTopic,
+  type StoredTopic,
+  type TopicStore,
+} from "@/lib/topics/create";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
-const MAX_SUBJECT_LENGTH = 500;
-
-function parseJsonBody(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Corps JSON invalide.");
-  }
-  return value as Record<string, unknown>;
+function toStored(topic: {
+  id: string;
+  subject: string;
+  priority: number;
+  notes: string | null;
+  category: string | null;
+  angle: string | null;
+  origin: string | null;
+  sourceUrl: string | null;
+  sourceTitle: string | null;
+  sourceName: string | null;
+  sourcePublishedOn: string | null;
+  sourceKind: string | null;
+}): StoredTopic {
+  return {
+    id: topic.id,
+    status: "pending",
+    priority: topic.priority,
+    subject: topic.subject,
+    angle: topic.angle,
+    notes: topic.notes,
+    category: topic.category,
+    origin: topic.origin === "veille" ? "veille" : null,
+    sourceUrl: topic.sourceUrl,
+    sourceTitle: topic.sourceTitle,
+    sourceName: topic.sourceName,
+    sourcePublishedOn: topic.sourcePublishedOn,
+    sourceKind: topic.sourceKind,
+  };
 }
 
-function parseSubject(value: unknown): string {
-  if (typeof value !== "string") {
-    throw new Error("Le sujet est obligatoire.");
-  }
-
-  const subject = value.trim();
-
-  if (!subject) {
-    throw new Error("Le sujet est obligatoire.");
-  }
-
-  if (subject.length > MAX_SUBJECT_LENGTH) {
-    throw new Error(`Le sujet ne peut pas dépasser ${MAX_SUBJECT_LENGTH} caractères.`);
-  }
-
-  return subject;
+function topicStore(): TopicStore {
+  return {
+    async findExactSource(sourceUrl, subject) {
+      const found = await db.topic.findFirst({
+        where: {
+          sourceUrl,
+          subject: { equals: subject, mode: "insensitive" },
+        },
+      });
+      return found ? toStored(found) : null;
+    },
+    async create(data) {
+      const topic = await db.topic.create({
+        data: {
+          ...data,
+          status: "pending",
+        },
+      });
+      return toStored(topic);
+    },
+  };
 }
 
 export async function GET() {
@@ -46,26 +83,20 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!(await requireAuth())) {
-    return unauthorized();
-  }
-
-  try {
-    const body = parseJsonBody(await request.json());
-    const subject = parseSubject(body.subject);
-
-    const topic = await db.topic.create({
-      data: {
-        subject,
-        status: "pending",
-      },
-    });
-
-    return NextResponse.json({ topic }, { status: 201 });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Impossible de créer le sujet.";
-    const status = message === "Corps JSON invalide." || message.includes("sujet") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
-  }
+  const session = await requireAuth();
+  const result = await handleCreateTopic(request, {
+    authenticated: Boolean(session?.user),
+    store: topicStore(),
+    assess: async (input) => {
+      const assessment = await assessVeilleProposal(input);
+      return {
+        queueExact: queueHasExact(assessment.result),
+        similar: hasSimilar(assessment.result),
+        matches: assessment.result.matches,
+        coverage: assessment.coverage,
+        coverageNote: assessment.coverageNote,
+      };
+    },
+  });
+  return NextResponse.json(result.body, { status: result.status });
 }
