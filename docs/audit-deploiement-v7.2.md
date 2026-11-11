@@ -35,9 +35,9 @@ La V7.2 locale est cohérente (typecheck, `prisma validate`, tests, build webpac
 |---|---|
 | Branche | `feat/dashboard-shadcn` |
 | Baseline | `283e424` — *Ship V6.1 editorial prep UI with additive editorialContext migration.* |
-| Commit livrable | **`133c83a198675ed9a3a9cd125ca38af94138fe6e`** (`133c83a`) |
+| Commit livrable (code V7) | **`e076856905f4548f00a9b52e79880019957a5ca3`** (`e076856`) |
 | Message | `Ship V7.0-V7.2 featured images, optional auto image, and title suggestions.` |
-| Tag proposé (non créé) | `v7.2.0` |
+| Tag proposé (non créé) | `v7.2.0` — à poser sur `e076856` (ou sur HEAD après ce commit d’audit) |
 | Remote local | Aucun remote configuré dans cet environnement (pas de push effectué). |
 
 ### Archive reproductible
