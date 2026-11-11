@@ -14,26 +14,58 @@ const ANGLE =
   "Expliquer aux PME comment surveiller les actions des agents IA, mettre en place une traçabilité, définir les validations humaines et limiter les risques opérationnels.";
 
 describe("contexte de génération", () => {
-  it("laisse inchangé le message d'un sujet manuel", () => {
+  it("laisse inchangé le message d'un sujet manuel sans indications", () => {
     const message = buildGenerationMessage({
       subject: SUBJECT,
       origin: null,
-      angle: ANGLE,
-      notes: "Notes qui ne doivent pas partir.",
     });
     assert.equal(message, SUBJECT);
     assert.equal(buildArticlePrompt(message), buildArticlePrompt(SUBJECT));
   });
 
-  it("laisse inchangé le message d'un sujet SEO", () => {
+  it("transmet les indications éditoriales d'un sujet manuel", () => {
+    const message = buildGenerationMessage({
+      subject: SUBJECT,
+      origin: null,
+      angle: ANGLE,
+      audience: "Dirigeants de PME",
+      objective: "Informer et expliquer",
+      seoKeywords: "agent IA PME, automatisation",
+      notes: "Évoquer les limites.",
+    });
+    assert.match(message, new RegExp(SUBJECT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(message, /Indications éditoriales facultatives/);
+    assert.match(message, /Angle :/);
+    assert.match(message, /Public cible :\nDirigeants de PME/);
+    assert.match(message, /Objectif :\nInformer et expliquer/);
+    assert.match(message, /Mots-clés suggérés :\nagent IA PME, automatisation/);
+    assert.match(message, /Consignes complémentaires :\nÉvoquer les limites\./);
+    assert.match(message, /préférences éditoriales/);
+    assert.match(message, /brouillon WordPress/);
+    assert.doesNotMatch(message, /Langue souhaitée/);
+    assert.equal(transmitsVeilleContext({ subject: SUBJECT, origin: null, angle: ANGLE }), false);
+  });
+
+  it("transmet la langue en-GB sans confondre avec en-US", () => {
+    const message = buildGenerationMessage({
+      subject: SUBJECT,
+      language: "en-GB",
+    });
+    assert.match(message, /Langue souhaitée : Anglais britannique \(en-GB\)\./);
+    assert.doesNotMatch(message, /en-US/);
+  });
+
+  it("réutilise angle et notes d'un sujet de file sans contexte veille", () => {
     const message = buildGenerationMessage({
       subject: "Agents IA pour automatiser la relation client",
       origin: null,
       angle: "Montrer le gain de temps pour une PME.",
       notes: "Opportunité issue du SEO.",
     });
-    assert.equal(message, "Agents IA pour automatiser la relation client");
-    assert.equal(transmitsVeilleContext({ subject: message, origin: null, angle: ANGLE }), false);
+    assert.match(message, /Agents IA pour automatiser la relation client/);
+    assert.match(message, /Montrer le gain de temps pour une PME/);
+    assert.match(message, /Opportunité issue du SEO/);
+    assert.doesNotMatch(message, /<<<DONNEES_DOCUMENTAIRES>>>/);
   });
 
   it("transmet le titre et l'angle d'un sujet de veille", () => {

@@ -11,3 +11,7 @@ callback-body.txt
 
 # Prepared locally; must not be shipped or applied in production.
 prisma/migrations/20261103173400_drop_ai_visibility_monitor/
+
+# Local release archives / dumps — never commit.
+*.tar.gz
+naxialis-release-*.tar.gz

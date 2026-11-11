@@ -1,3 +1,4 @@
+import { languageLabel } from "./editorial-context";
 import { VEILLE_KIND_LABELS, type VeilleKind } from "./veille/types";
 import type { GenerationTrace, ObservedPage } from "./generation-trace";
 
@@ -124,8 +125,13 @@ export function parseGenerationTrace(value: unknown): GenerationTrace | null {
       origin: text(context.origin),
       subject: context.subject,
       veilleContextTransmitted: context.veilleContextTransmitted === true,
+      editorialContextTransmitted: context.editorialContextTransmitted === true,
       angle: text(context.angle),
       notes: text(context.notes),
+      audience: text(context.audience),
+      objective: text(context.objective),
+      seoKeywords: text(context.seoKeywords),
+      language: text(context.language),
       sourceUrl: httpUrl(context.sourceUrl),
       sourceTitle: text(context.sourceTitle),
       sourceName: text(context.sourceName),
@@ -178,43 +184,72 @@ function contextLines(trace: GenerationTrace): ReportLine[] {
     { label: "Origine", value: originLabel(context.origin) },
     { label: "Titre demandé", value: context.subject },
   ];
-  if (!context.veilleContextTransmitted) {
-    lines.push({
-      label: "Contexte documentaire",
-      value: "Non transmis. Le sujet a été envoyé seul.",
-    });
+  if (context.veilleContextTransmitted) {
+    if (context.angle) {
+      lines.push({ label: "Angle transmis", value: context.angle });
+    }
+    if (context.notes) {
+      lines.push({ label: "Notes transmises", value: context.notes });
+    }
+    if (context.sourceTitle) {
+      lines.push({ label: "Titre de la publication", value: context.sourceTitle });
+    }
+    if (context.sourceName) {
+      lines.push({ label: "Média", value: context.sourceName });
+    }
+    if (context.sourceUrl) {
+      lines.push({ label: "URL transmise", value: context.sourceUrl });
+    }
+    const hasPublication = Boolean(
+      context.sourceTitle || context.sourceName || context.sourceUrl
+    );
+    if (context.sourcePublishedOn) {
+      lines.push({
+        label: "Date vérifiée",
+        value: context.sourcePublishedOn,
+      });
+    } else if (hasPublication) {
+      lines.push({ label: "Date vérifiée", value: "Non vérifiée" });
+    }
+    const kind = kindLabel(context.sourceKind);
+    if (kind) {
+      lines.push({ label: "Type de publication", value: kind });
+    }
     return lines;
   }
-  if (context.angle) {
-    lines.push({ label: "Angle transmis", value: context.angle });
+
+  if (context.editorialContextTransmitted) {
+    if (context.language) {
+      const label = languageLabel(context.language);
+      lines.push({
+        label: "Langue de rédaction",
+        value: label
+          ? `${label} (${context.language})`
+          : context.language,
+      });
+    }
+    if (context.angle) {
+      lines.push({ label: "Angle transmis", value: context.angle });
+    }
+    if (context.audience) {
+      lines.push({ label: "Public cible", value: context.audience });
+    }
+    if (context.objective) {
+      lines.push({ label: "Objectif éditorial", value: context.objective });
+    }
+    if (context.seoKeywords) {
+      lines.push({ label: "Mots-clés suggérés", value: context.seoKeywords });
+    }
+    if (context.notes) {
+      lines.push({ label: "Notes transmises", value: context.notes });
+    }
+    return lines;
   }
-  if (context.notes) {
-    lines.push({ label: "Notes transmises", value: context.notes });
-  }
-  if (context.sourceTitle) {
-    lines.push({ label: "Titre de la publication", value: context.sourceTitle });
-  }
-  if (context.sourceName) {
-    lines.push({ label: "Média", value: context.sourceName });
-  }
-  if (context.sourceUrl) {
-    lines.push({ label: "URL transmise", value: context.sourceUrl });
-  }
-  const hasPublication = Boolean(
-    context.sourceTitle || context.sourceName || context.sourceUrl
-  );
-  if (context.sourcePublishedOn) {
-    lines.push({
-      label: "Date vérifiée",
-      value: context.sourcePublishedOn,
-    });
-  } else if (hasPublication) {
-    lines.push({ label: "Date vérifiée", value: "Non vérifiée" });
-  }
-  const kind = kindLabel(context.sourceKind);
-  if (kind) {
-    lines.push({ label: "Type de publication", value: kind });
-  }
+
+  lines.push({
+    label: "Contexte documentaire",
+    value: "Non transmis. Le sujet a été envoyé seul.",
+  });
   return lines;
 }
 

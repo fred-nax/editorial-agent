@@ -90,6 +90,8 @@ model ArticleGeneration {
   sessionId         String?
   /// Contexte transmis et événements observés. Null pour les générations antérieures.
   trace             Json?
+  /// Indications éditoriales facultatives (angle, public, objectif, mots-clés, notes).
+  editorialContext  Json?
   error             String?
   topicId           String?
   progressStage     String?

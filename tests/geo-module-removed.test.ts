@@ -25,9 +25,10 @@ function walk(dir: string, acc: string[] = []): string[] {
 
 describe("retrait du module AI Visibility Monitor", () => {
   it("la navigation ne contient plus Visibilité IA", () => {
+    const nav = readSource("components/navigation.ts");
     const sidebar = readSource("components/Sidebar.tsx");
     const header = readSource("components/Header.tsx");
-    const hrefs = [...sidebar.matchAll(/href:\s*"([^"]+)"/g)].map(
+    const hrefs = [...nav.matchAll(/href:\s*"([^"]+)"/g)].map(
       (match) => match[1]
     );
     assert.deepEqual(hrefs, [
@@ -39,6 +40,8 @@ describe("retrait du module AI Visibility Monitor", () => {
       "/veille",
       "/settings",
     ]);
+    assert.doesNotMatch(nav, /Visibilité IA/);
+    assert.doesNotMatch(nav, /ai-visibility/);
     assert.doesNotMatch(sidebar, /Visibilité IA/);
     assert.doesNotMatch(sidebar, /ai-visibility/);
     assert.doesNotMatch(header, /ai-visibility/);

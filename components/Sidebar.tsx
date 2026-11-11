@@ -2,78 +2,136 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-export const navigation = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/articles/new", label: "Nouvel article" },
-  { href: "/articles", label: "Historique" },
-  { href: "/topics", label: "Sujets" },
-  { href: "/opportunities", label: "Opportunités SEO" },
-  { href: "/veille", label: "Veille éditoriale" },
-  { href: "/settings", label: "Paramètres" },
-] as const;
+import { PanelLeftClose, PanelLeft } from "lucide-react";
+import {
+  isNavActive,
+  navigation,
+  SIDEBAR_WIDTH_COLLAPSED,
+  SIDEBAR_WIDTH_EXPANDED,
+} from "@/components/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 type SidebarProps = {
-  open: boolean;
-  onClose: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 };
 
-export function Sidebar({ open, onClose }: SidebarProps) {
+export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label="Fermer le menu"
-        className={`fixed inset-0 z-30 bg-slate-900/40 lg:hidden ${
-          open ? "block" : "hidden"
-        }`}
-        onClick={onClose}
-      />
-
+    <TooltipProvider delay={200}>
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-naxialis-dark text-white transition-transform duration-200 lg:translate-x-0 ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className="fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-[#E2E8F0] bg-white transition-[width] duration-200 ease-out lg:flex"
+        style={{
+          width: collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
+        }}
+        aria-label="Navigation principale"
       >
-        <div className="border-b border-white/10 px-5 py-5">
-          <p className="text-xs font-medium tracking-wide text-white/60 uppercase">
-            Naxialis
-          </p>
-          <p className="mt-1 text-base font-semibold">Content Agent</p>
+        <div
+          className={cn(
+            "flex h-16 items-center border-b border-[#E2E8F0]",
+            collapsed ? "justify-center px-2" : "px-4"
+          )}
+        >
+          {collapsed ? (
+            <span className="text-sm font-bold tracking-wide text-[#0F5270]">N</span>
+          ) : (
+            <div className="min-w-0">
+              <p className="text-xs font-semibold tracking-[0.14em] text-[#0F5270] uppercase">
+                Naxialis
+              </p>
+              <p className="truncate text-sm font-medium text-[#0F172A]">
+                Content Agent
+              </p>
+            </div>
+          )}
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1 p-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
           {navigation.map((item) => {
-            const active =
-              item.href === "/articles"
-                ? pathname === "/articles" ||
-                  (pathname.startsWith("/articles/") &&
-                    pathname !== "/articles/new")
-                : pathname === item.href;
+            const active = isNavActive(pathname, item.href);
+            const Icon = item.icon;
+            const linkClass = cn(
+              "flex items-center rounded-lg text-sm font-medium transition-colors duration-150",
+              collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5",
+              active
+                ? "bg-[#E8F2F7] text-[#0F5270]"
+                : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+            );
+
+            if (collapsed) {
+              return (
+                <Tooltip key={item.href}>
+                  <TooltipTrigger
+                    render={
+                      <Link
+                        href={item.href}
+                        className={linkClass}
+                        aria-label={item.label}
+                        aria-current={active ? "page" : undefined}
+                      />
+                    }
+                  >
+                    <Icon className="size-5 shrink-0" aria-hidden />
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {item.label}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
 
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={onClose}
-                className={`rounded-md px-3 py-2 text-sm font-medium ${
-                  active
-                    ? "bg-white/15 text-white"
-                    : "text-white/75 hover:bg-white/10 hover:text-white"
-                }`}
+                className={linkClass}
+                aria-current={active ? "page" : undefined}
               >
-                {item.label}
+                <Icon className="size-5 shrink-0" aria-hidden />
+                <span className="truncate">{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="border-t border-white/10 px-5 py-4 text-xs text-white/50">
-          Usage privé Naxialis
+        <div className="border-t border-[#E2E8F0] p-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size={collapsed ? "icon" : "sm"}
+            onClick={onToggleCollapsed}
+            className={cn(
+              "w-full text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]",
+              collapsed ? "mx-auto" : "justify-start gap-2 px-3"
+            )}
+            aria-label={collapsed ? "Déplier la navigation" : "Replier la navigation"}
+            aria-expanded={!collapsed}
+          >
+            {collapsed ? (
+              <PanelLeft className="size-5" aria-hidden />
+            ) : (
+              <>
+                <PanelLeftClose className="size-5" aria-hidden />
+                <span className="text-sm">Replier</span>
+              </>
+            )}
+          </Button>
+          {collapsed ? null : (
+            <p className="mt-2 px-3 pb-1 text-xs text-[#64748B]">
+              Usage privé Naxialis
+            </p>
+          )}
         </div>
       </aside>
-    </>
+    </TooltipProvider>
   );
 }

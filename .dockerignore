@@ -17,3 +17,10 @@ scripts/_*.ts
 tsconfig.tsbuildinfo
 npm-debug.log*
 .DS_Store
+*.tar.gz
+naxialis-release-*.tar.gz
+
+# Destructive GEO drop — must never enter a production image build context.
+# Also gitignored; keep this explicit because .gitignore alone does not filter Docker COPY.
+prisma/migrations/20261103173400_drop_ai_visibility_monitor
+prisma/migrations/20261103173400_drop_ai_visibility_monitor/

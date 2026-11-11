@@ -1,10 +1,20 @@
 import type { Metadata } from "next";
-import { ArticleForm } from "@/components/ArticleForm";
-import { ArticleHistory } from "@/components/ArticleHistory";
-import { TopicQueue } from "@/components/TopicQueue";
+import Link from "next/link";
+import { Plus } from "lucide-react";
+import {
+  DashboardEditorialWatchPreview,
+  type EditorialWatchPreviewItem,
+} from "@/components/dashboard/editorial-watch-preview";
+import { DashboardFrame } from "@/components/dashboard/frame";
+import { DashboardGenerateCard } from "@/components/dashboard/generate-card";
+import { DashboardKpiCards } from "@/components/dashboard/kpi-cards";
+import { DashboardRecentGenerations } from "@/components/dashboard/recent-generations";
+import { DashboardTopicPreview } from "@/components/dashboard/topic-preview";
+import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db";
 import { formatEstimatedCost } from "@/lib/format";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
+import { parseWatchSnapshot } from "@/lib/veille/history";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -12,29 +22,43 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-function StatCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string | number;
-  hint?: string;
-}) {
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-sm text-slate-500" title={hint}>
-        {label}
-      </p>
-      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
-    </section>
-  );
-}
-
 function startOfCurrentMonth(): Date {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+/** Publications persistées dans EditorialWatchSearch.results (pas les suggestions SEO éphémères). */
+function recentWatchPublications(
+  rows: Array<{ searchedAt: Date; results: unknown }>
+): EditorialWatchPreviewItem[] {
+  const items: EditorialWatchPreviewItem[] = [];
+  const seenUrls = new Set<string>();
+
+  for (const row of rows) {
+    const snapshot = parseWatchSnapshot(row.results);
+    if (!snapshot) {
+      continue;
+    }
+    for (const article of snapshot.articles) {
+      const urlKey = article.url.toLowerCase();
+      if (seenUrls.has(urlKey)) {
+        continue;
+      }
+      seenUrls.add(urlKey);
+      items.push({
+        title: article.title,
+        sourceName: article.sourceName,
+        kind: article.kind,
+        detectedAt: row.searchedAt,
+        publishedOn: article.publishedOn,
+      });
+      if (items.length >= 3) {
+        return items;
+      }
+    }
+  }
+
+  return items;
 }
 
 export default async function DashboardPage() {
@@ -48,6 +72,7 @@ export default async function DashboardPage() {
     llmCostThisMonth,
     recentArticles,
     recentTopics,
+    recentWatchSearches,
   ] = await Promise.all([
     db.articleGeneration.count({
       where: {
@@ -74,55 +99,90 @@ export default async function DashboardPage() {
     db.articleGeneration.findMany({
       orderBy: { createdAt: "desc" },
       take: 8,
+      select: {
+        id: true,
+        subject: true,
+        title: true,
+        status: true,
+        createdAt: true,
+        wpPostId: true,
+        wpUrl: true,
+        estimatedCost: true,
+        progressStage: true,
+        error: true,
+      },
     }),
     db.topic.findMany({
       orderBy: { createdAt: "desc" },
-      take: 5,
+      take: 3,
+      select: {
+        id: true,
+        subject: true,
+        status: true,
+        origin: true,
+        createdAt: true,
+      },
+    }),
+    db.editorialWatchSearch.findMany({
+      where: { status: "completed" },
+      orderBy: { searchedAt: "desc" },
+      take: 8,
+      select: {
+        searchedAt: true,
+        results: true,
+      },
     }),
   ]);
 
+  const watchPreviewItems = recentWatchPublications(recentWatchSearches);
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Bonjour</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Pilotez votre agent éditorial et vos brouillons WordPress.
-        </p>
+    <DashboardFrame>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A]">
+            Dashboard
+          </h1>
+          <p className="text-sm text-slate-600">
+            Pilotez votre agent éditorial et vos brouillons WordPress.
+          </p>
+        </div>
+        <Button
+          size="lg"
+          className="h-10 bg-naxialis text-sm text-white hover:bg-naxialis-dark"
+          nativeButton={false}
+          render={<Link href="#nouveau-sujet" />}
+        >
+          <Plus data-icon="inline-start" />
+          Nouvel article
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Brouillons ce mois" value={draftsThisMonth} />
-        <StatCard label="Sujets en attente" value={pendingTopics} />
-        <StatCard label="Générations en cours" value={runningGenerations} />
-        <StatCard
-          label="Coût LLM ce mois"
-          value={formatEstimatedCost(llmCostThisMonth._sum.estimatedCost)}
-          hint="Hors éventuels frais liés aux outils."
-        />
+      <DashboardKpiCards
+        items={[
+          { label: "Brouillons créés ce mois", value: draftsThisMonth },
+          { label: "Sujets en attente", value: pendingTopics },
+          { label: "Générations en cours", value: runningGenerations },
+          {
+            label: "Coût LLM estimé du mois",
+            value: formatEstimatedCost(llmCostThisMonth._sum.estimatedCost),
+            hint: "Hors éventuels frais liés aux outils.",
+          },
+        ]}
+      />
+
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-5 lg:gap-6">
+        <div className="lg:col-span-3">
+          <DashboardGenerateCard />
+        </div>
+        <div className="lg:col-span-2">
+          <DashboardTopicPreview topics={recentTopics} />
+        </div>
       </div>
 
-      <section
-        id="nouveau-sujet"
-        className="rounded-lg border border-slate-200 bg-white p-5"
-      >
-        <h2 className="text-base font-semibold text-slate-900">Nouvel article</h2>
-        <p className="mt-1 mb-4 text-sm text-slate-500">
-          Saisissez un sujet. La génération crée un brouillon WordPress.
-        </p>
-        <ArticleForm />
-      </section>
+      <DashboardEditorialWatchPreview items={watchPreviewItems} />
 
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-slate-900">
-          Générations récentes
-        </h2>
-        <ArticleHistory articles={recentArticles} />
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold text-slate-900">File de sujets</h2>
-        <TopicQueue topics={recentTopics} />
-      </section>
-    </div>
+      <DashboardRecentGenerations articles={recentArticles} />
+    </DashboardFrame>
   );
 }

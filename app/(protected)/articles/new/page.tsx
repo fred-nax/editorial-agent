@@ -7,16 +7,17 @@ export const metadata: Metadata = {
 
 export default function NewArticlePage() {
   return (
-    <div className="space-y-6">
+    <div className="w-full max-w-5xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Nouvel article</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A]">
+          Nouvel article
+        </h1>
         <p className="mt-1 text-sm text-slate-600">
-          Saisissez un sujet. La génération crée un brouillon WordPress, sans publication.
+          Préparez le sujet, lancez la génération, puis finalisez le brouillon
+          dans WordPress.
         </p>
       </div>
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <ArticleForm />
-      </section>
+      <ArticleForm />
     </div>
   );
 }

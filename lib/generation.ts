@@ -1,6 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import {
+  hasEditorialContext,
+  parseStoredEditorialContext,
+  type EditorialContext,
+} from "./editorial-context";
+import {
   completedTraceUpdate,
   contextSnapshot,
   failedTraceUpdate,
@@ -93,12 +98,21 @@ export async function updateGenerationProgress(
 export async function createQueuedGeneration(input: {
   subject: string;
   topicId?: string;
+  editorialContext?: EditorialContext | null;
 }) {
+  const editorial =
+    input.editorialContext && hasEditorialContext(input.editorialContext)
+      ? input.editorialContext
+      : null;
+
   const generation = await db.articleGeneration.create({
     data: {
       subject: input.subject,
       status: "queued",
       topicId: input.topicId,
+      editorialContext: editorial
+        ? (editorial as Prisma.InputJsonValue)
+        : undefined,
       progressStage: "queued",
       progressMessage: PROGRESS_MESSAGES.queued,
       progressUpdatedAt: new Date(),
@@ -147,11 +161,16 @@ export async function processArticleGeneration(
   const topic = generation.topicId
     ? await db.topic.findUnique({ where: { id: generation.topicId } })
     : null;
+  const storedEditorial = parseStoredEditorialContext(generation.editorialContext);
   const contextInput = {
     subject: generation.subject,
     origin: topic?.origin,
-    angle: topic?.angle,
-    notes: topic?.notes,
+    angle: storedEditorial?.angle ?? topic?.angle,
+    notes: storedEditorial?.notes ?? topic?.notes,
+    audience: storedEditorial?.audience,
+    objective: storedEditorial?.objective,
+    seoKeywords: storedEditorial?.seoKeywords,
+    language: storedEditorial?.language,
     sourceTitle: topic?.sourceTitle,
     sourceName: topic?.sourceName,
     sourceUrl: topic?.sourceUrl,

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArticleDetailTabs } from "@/components/ArticleDetailTabs";
 import { ArticleSeoPanel } from "@/components/ArticleSeoPanel";
 import { ArticleStatus } from "@/components/ArticleStatus";
+import { EditorialContextPanel } from "@/components/EditorialContextPanel";
 import { GenerationLiveRefresh } from "@/components/GenerationLiveRefresh";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { GenerationReport } from "@/components/GenerationReport";
@@ -113,6 +114,8 @@ export default async function ArticleDetailPage({
           {publicError}
         </p>
       ) : null}
+
+      <EditorialContextPanel value={article.editorialContext} />
 
       <ArticleDetailTabs
         report={

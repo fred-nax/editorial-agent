@@ -90,12 +90,10 @@ describe("rapport de génération", () => {
     assert.match(message, /https:\/\/exemple\.fr\/agents-ia-production/);
   });
 
-  it("n'enregistre pas de contexte documentaire pour un sujet manuel", () => {
+  it("n'enregistre pas de contexte documentaire pour un sujet manuel sans indications", () => {
     const input = {
       subject: SUBJECT,
       origin: null,
-      angle: ANGLE,
-      notes: "Notes qui ne doivent pas partir.",
       sourceUrl: "https://exemple.fr/ne-doit-pas-partir",
     };
     const message = buildGenerationMessage(input);
@@ -103,25 +101,31 @@ describe("rapport de génération", () => {
     assert.equal(message, SUBJECT);
     assert.equal(buildArticlePrompt(message), buildArticlePrompt(SUBJECT));
     assert.equal(snapshot.veilleContextTransmitted, false);
+    assert.equal(snapshot.editorialContextTransmitted, false);
     assert.equal(snapshot.angle, null);
     assert.equal(snapshot.notes, null);
     assert.equal(snapshot.sourceUrl, null);
   });
 
-  it("laisse le sujet SEO inchangé et sans source transmise", () => {
+  it("enregistre les indications éditoriales sans source documentaire", () => {
     const input = {
       subject: "Agents IA pour automatiser la relation client",
       origin: null,
       angle: "Montrer le gain de temps pour une PME.",
       notes: "Opportunité issue du SEO.",
+      audience: "Dirigeants de PME",
       sourceUrl: "https://exemple.fr/seo",
     };
-    assert.equal(buildGenerationMessage(input), input.subject);
+    const message = buildGenerationMessage(input);
     const snapshot = contextSnapshot(input);
+    assert.match(message, /Indications éditoriales facultatives/);
     assert.equal(snapshot.subject, input.subject);
     assert.equal(snapshot.veilleContextTransmitted, false);
+    assert.equal(snapshot.editorialContextTransmitted, true);
     assert.equal(snapshot.sourceUrl, null);
-    assert.equal(snapshot.angle, null);
+    assert.equal(snapshot.angle, input.angle);
+    assert.equal(snapshot.notes, input.notes);
+    assert.equal(snapshot.audience, "Dirigeants de PME");
   });
 
   it("collecte les requêtes web_search et ignore une URL posée sur la recherche", () => {

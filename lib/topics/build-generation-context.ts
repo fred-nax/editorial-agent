@@ -1,3 +1,8 @@
+import {
+  formatEditorialGenerationMessage,
+  hasEditorialContext,
+  type EditorialContext,
+} from "../editorial-context";
 import { kindLabel } from "../veille/classify";
 import { VEILLE_KINDS, type VeilleKind } from "../veille/types";
 
@@ -11,6 +16,10 @@ export type GenerationContextInput = {
   origin?: string | null;
   angle?: string | null;
   notes?: string | null;
+  audience?: string | null;
+  objective?: string | null;
+  seoKeywords?: string | null;
+  language?: string | null;
   sourceTitle?: string | null;
   sourceName?: string | null;
   sourceUrl?: string | null;
@@ -99,14 +108,45 @@ export type TransmittedContextSnapshot = {
   origin: string | null;
   subject: string;
   veilleContextTransmitted: boolean;
+  editorialContextTransmitted: boolean;
   angle: string | null;
   notes: string | null;
+  audience: string | null;
+  objective: string | null;
+  seoKeywords: string | null;
+  language: string | null;
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceName: string | null;
   sourcePublishedOn: string | null;
   sourceKind: string | null;
 };
+
+function editorialFromInput(input: GenerationContextInput): EditorialContext {
+  const languageRaw = cleanText(input.language, 16);
+  const language =
+    languageRaw === "fr" ||
+    languageRaw === "en-GB" ||
+    languageRaw === "en-US" ||
+    languageRaw === "es"
+      ? languageRaw
+      : null;
+  return {
+    angle: cleanText(input.angle, 500),
+    audience: cleanText(input.audience, 150),
+    objective: cleanText(input.objective, 200),
+    seoKeywords: cleanText(input.seoKeywords, 300),
+    notes: cleanText(input.notes, MAX_GENERATION_NOTES_LENGTH),
+    language,
+  };
+}
+
+export function transmitsEditorialContext(input: GenerationContextInput): boolean {
+  if (transmitsVeilleContext(input)) {
+    return false;
+  }
+  return hasEditorialContext(editorialFromInput(input));
+}
 
 function recordedOrigin(value: string | null | undefined): string | null {
   if (value === "veille") {
@@ -124,32 +164,44 @@ export function transmittedContextSnapshot(
 ): TransmittedContextSnapshot {
   const subject = input.subject.trim();
   const transmitted = transmitsVeilleContext(input);
-  if (!transmitted) {
+  if (transmitted) {
     return {
-      origin: recordedOrigin(input.origin),
-      subject,
-      veilleContextTransmitted: false,
-      angle: null,
-      notes: null,
-      sourceUrl: null,
-      sourceTitle: null,
-      sourceName: null,
-      sourcePublishedOn: null,
-      sourceKind: null,
+      origin: "veille",
+      subject: cleanText(input.subject, 500) ?? subject,
+      veilleContextTransmitted: true,
+      editorialContextTransmitted: false,
+      angle: cleanText(input.angle, 240),
+      notes: cleanText(input.notes, MAX_GENERATION_NOTES_LENGTH),
+      audience: null,
+      objective: null,
+      seoKeywords: null,
+      language: null,
+      sourceUrl: referenceUrl(input.sourceUrl),
+      sourceTitle: cleanText(input.sourceTitle, 180),
+      sourceName: cleanText(input.sourceName, 120),
+      sourcePublishedOn: verifiedDate(input.sourcePublishedOn),
+      sourceKind: knownKind(input.sourceKind),
     };
   }
 
+  const editorial = editorialFromInput(input);
+  const editorialTransmitted = hasEditorialContext(editorial);
   return {
-    origin: "veille",
-    subject: cleanText(input.subject, 500) ?? subject,
-    veilleContextTransmitted: true,
-    angle: cleanText(input.angle, 240),
-    notes: cleanText(input.notes, MAX_GENERATION_NOTES_LENGTH),
-    sourceUrl: referenceUrl(input.sourceUrl),
-    sourceTitle: cleanText(input.sourceTitle, 180),
-    sourceName: cleanText(input.sourceName, 120),
-    sourcePublishedOn: verifiedDate(input.sourcePublishedOn),
-    sourceKind: knownKind(input.sourceKind),
+    origin: recordedOrigin(input.origin),
+    subject,
+    veilleContextTransmitted: false,
+    editorialContextTransmitted: editorialTransmitted,
+    angle: editorialTransmitted ? editorial.angle : null,
+    notes: editorialTransmitted ? editorial.notes : null,
+    audience: editorialTransmitted ? editorial.audience : null,
+    objective: editorialTransmitted ? editorial.objective : null,
+    seoKeywords: editorialTransmitted ? editorial.seoKeywords : null,
+    language: editorialTransmitted ? editorial.language : null,
+    sourceUrl: null,
+    sourceTitle: null,
+    sourceName: null,
+    sourcePublishedOn: null,
+    sourceKind: null,
   };
 }
 
@@ -183,6 +235,10 @@ function publicationLines(input: GenerationContextInput): string[] {
 export function buildGenerationMessage(input: GenerationContextInput): string {
   const subject = input.subject.trim();
   if (!transmitsVeilleContext(input)) {
+    const editorial = editorialFromInput(input);
+    if (hasEditorialContext(editorial)) {
+      return formatEditorialGenerationMessage(subject, editorial);
+    }
     return subject;
   }
   const safeSubject = cleanText(input.subject, 500) ?? subject;

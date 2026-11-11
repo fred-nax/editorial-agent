@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
+  editorialContextFromTopic,
+  parseEditorialContext,
+} from "@/lib/editorial-context";
+import {
   createQueuedGeneration,
   enqueueArticleGeneration,
   parseSubject,
@@ -39,6 +43,7 @@ export async function POST(request: Request) {
 
     let subject: string;
     let resolvedTopicId: string | undefined;
+    let editorialContext = parseEditorialContext(body);
 
     if (topicId) {
       const claimed = await db.topic.updateMany({
@@ -60,6 +65,10 @@ export async function POST(request: Request) {
 
       subject = topic.subject;
       resolvedTopicId = topic.id;
+      // Depuis la file : réutiliser angle/notes du sujet si le client n'envoie rien.
+      if (!editorialContext) {
+        editorialContext = editorialContextFromTopic(topic);
+      }
     } else {
       subject = parseSubject(body.subject);
     }
@@ -67,6 +76,7 @@ export async function POST(request: Request) {
     const generation = await createQueuedGeneration({
       subject,
       topicId: resolvedTopicId,
+      editorialContext,
     });
 
     enqueueArticleGeneration(generation.id);
@@ -86,7 +96,13 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Impossible de lancer la génération.";
     const status =
-      message === "Corps JSON invalide." || message.includes("sujet") ? 400 : 500;
+      message === "Corps JSON invalide." ||
+      message.includes("sujet") ||
+      message.includes("caractères") ||
+      message.includes("non reconnu") ||
+      message.includes("invalide")
+        ? 400
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

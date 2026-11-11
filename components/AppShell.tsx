@@ -1,9 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Header } from "./Header";
+import { MobileNav } from "./MobileNav";
 import { Sidebar } from "./Sidebar";
+import { cn } from "@/lib/utils";
 
 export function AppShell({
   children,
@@ -16,21 +18,41 @@ export function AppShell({
   userEmail?: string | null;
   signOutButton: ReactNode;
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (!mobileOpen) {
+      return;
+    }
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [mobileOpen]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="lg:pl-64">
+    <div className="min-h-screen overflow-x-hidden bg-[#F8FAFC]">
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((value) => !value)}
+      />
+      <MobileNav open={mobileOpen} onOpenChange={setMobileOpen} />
+
+      <div
+        className={cn(
+          "min-h-screen min-w-0 transition-[padding] duration-200 ease-out",
+          collapsed ? "lg:pl-[4.5rem]" : "lg:pl-60"
+        )}
+      >
         <Header
-          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenMobileNav={() => setMobileOpen(true)}
           userName={userName}
           userEmail={userEmail}
           signOutButton={signOutButton}
         />
-        <main className="px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
-        </main>
+        <main className="px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

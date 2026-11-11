@@ -9,6 +9,10 @@ const DISPLAY_LABELS: Record<string, string> = {
   "Titre demandé": "Titre demandé",
   "Angle transmis": "Angle éditorial",
   "Notes transmises": "Notes",
+  "Public cible": "Public cible",
+  "Objectif éditorial": "Objectif éditorial",
+  "Langue de rédaction": "Langue de rédaction",
+  "Mots-clés suggérés": "Mots-clés suggérés",
   "Titre de la publication": "Publication source",
   Média: "Média",
   "URL transmise": "URL",
@@ -27,7 +31,12 @@ function ContextFields({ lines }: { lines: ReportLine[] }) {
       {lines.map((line) => (
         <div
           key={line.label}
-          className={line.label === "Notes transmises" ? "sm:col-span-2" : undefined}
+          className={
+            line.label === "Notes transmises" ||
+            line.label === "Mots-clés suggérés"
+              ? "sm:col-span-2"
+              : undefined
+          }
         >
           <dt className="text-xs font-medium text-slate-500">
             {DISPLAY_LABELS[line.label] ?? line.label}
