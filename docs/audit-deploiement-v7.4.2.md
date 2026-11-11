@@ -37,19 +37,10 @@ La release locale V7.4.2 est cohérente (typecheck, `prisma validate`, tests, bu
 | Branche | `feat/dashboard-shadcn` |
 | Baseline production | `8905075` — *docs: pin V7.2 deployment audit to commit e076856* |
 | Code V7.2 sous-jacent | `e076856` — *Ship V7.0-V7.2 featured images, optional auto image, and title suggestions.* |
-| Commit livrable | **à renseigner après `git commit`** (voir §1.1) |
+| Commit livrable (code V7.3–V7.4.2) | **`7339aab1d8cd6e83f54aadbc3421c4728bc03a1d`** (`7339aab`) |
 | Message | `Release V7.4.2 editorial queue and similarity improvements` |
-| Tag proposé (non créé) | `v7.4.2` |
+| Tag proposé (non créé) | `v7.4.2` — à poser sur `7339aab` (ou sur HEAD après ce commit d’audit) |
 | Remote local | Aucun remote configuré dans cet environnement (pas de push effectué). |
-
-### 1.1 Remplissage post-commit
-
-Après création du commit :
-
-```text
-SHA plein : <git rev-parse HEAD>
-SHA court : <git rev-parse --short HEAD>
-```
 
 ### Archive reproductible
 
