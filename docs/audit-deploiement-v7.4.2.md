@@ -39,9 +39,9 @@ La release locale V7.4.2 est cohérente (typecheck, `prisma validate`, tests, bu
 | Code V7.2 sous-jacent | `e076856` — *Ship V7.0-V7.2 featured images, optional auto image, and title suggestions.* |
 | Commit livrable (code V7.3–V7.4.2) | **`7339aab1d8cd6e83f54aadbc3421c4728bc03a1d`** (`7339aab`) |
 | Message | `Release V7.4.2 editorial queue and similarity improvements` |
-| Commit docs (pin + notes) | **`59e3fe3`** (HEAD audit) — suite de `4dcea6b` |
-| Tag proposé (non créé) | `v7.4.2` — à poser sur **`7339aab`** (code) ; archive recommandée depuis **HEAD docs** (`59e3fe3` ou ultérieur) |
-| Archive locale vérifiée | `naxialis-v7.4.2-59e3fe3.tar.gz` (17 migrations, GEO drop absent) |
+| Commit docs (pin SHA) | commits docs suivants le release (voir `git log 7339aab..HEAD`) |
+| Tag proposé (non créé) | `v7.4.2` — à poser sur **`7339aab`** (code) |
+| Archive | `git archive … HEAD` → `naxialis-v7.4.2-$(git rev-parse --short HEAD).tar.gz` (contrôles §1) |
 | Remote local | Aucun remote configuré dans cet environnement (pas de push effectué). |
 
 ### Archive reproductible
