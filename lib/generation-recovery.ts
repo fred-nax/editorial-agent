@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { INTERRUPTED_ERROR, STALE_GENERATION_MS } from "./generation-errors";
+import { recoverFeaturedImageJobs } from "./images/pipeline";
 import { logInfo } from "./logger";
 
 export async function recoverStaleGenerations(
@@ -82,6 +83,10 @@ export async function recoverStaleGenerations(
         : "stale generations recovered",
       { count: stale.length }
     );
+  }
+
+  if (!fromBoot) {
+    await recoverFeaturedImageJobs();
   }
 
   return stale.length;

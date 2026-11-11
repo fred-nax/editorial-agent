@@ -26,6 +26,7 @@ function Field({
 
 export function ArticleSeoPanel({
   subject,
+  preferredTitle,
   title,
   excerpt,
   slug,
@@ -36,6 +37,7 @@ export function ArticleSeoPanel({
   wpUrl,
 }: {
   subject: string;
+  preferredTitle?: string | null;
   title: string | null;
   excerpt: string | null;
   slug: string | null;
@@ -50,6 +52,13 @@ export function ArticleSeoPanel({
       <h2 className="text-sm font-semibold text-slate-900">Article et référencement</h2>
       <dl className="mt-4 grid gap-4 sm:grid-cols-2">
         <Field label="Sujet demandé" value={displayField(subject)} wide />
+        {preferredTitle ? (
+          <Field
+            label="Titre souhaité"
+            value={displayField(preferredTitle)}
+            wide
+          />
+        ) : null}
         <Field label="Titre final" value={displayField(title)} wide />
         <Field label="Extrait" value={displayField(excerpt)} wide />
         <Field label="Slug" value={displayField(slug)} />

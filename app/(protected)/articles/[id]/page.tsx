@@ -4,6 +4,10 @@ import { notFound } from "next/navigation";
 import { ArticleDetailTabs } from "@/components/ArticleDetailTabs";
 import { ArticleSeoPanel } from "@/components/ArticleSeoPanel";
 import { ArticleStatus } from "@/components/ArticleStatus";
+import {
+  FeaturedImagePanel,
+  FeaturedImageUnavailable,
+} from "@/components/articles/FeaturedImagePanel";
 import { EditorialContextPanel } from "@/components/EditorialContextPanel";
 import { GenerationLiveRefresh } from "@/components/GenerationLiveRefresh";
 import { GenerationProgress } from "@/components/GenerationProgress";
@@ -19,10 +23,13 @@ import {
   formatEstimatedCost,
   formatTokenCount,
 } from "@/lib/format";
+import { parseStoredEditorialContext } from "@/lib/editorial-context";
+import { toFeaturedImagePublic } from "@/lib/images/types";
 import { formatModelLabel } from "@/lib/openai-pricing";
 
 type ArticleDetailPageProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -43,8 +50,10 @@ export async function generateMetadata({
 
 export default async function ArticleDetailPage({
   params,
+  searchParams,
 }: ArticleDetailPageProps) {
   const { id } = await params;
+  const { tab } = await searchParams;
   await recoverStaleGenerations();
   const article = await db.articleGeneration.findUnique({
     where: { id },
@@ -54,6 +63,19 @@ export default async function ArticleDetailPage({
     notFound();
   }
 
+  const canManageFeaturedImage =
+    article.status === "completed" &&
+    typeof article.wpPostId === "number" &&
+    article.wpPostId > 0;
+
+  const latestFeaturedImage = canManageFeaturedImage
+    ? await db.articleFeaturedImage.findFirst({
+        where: { generationId: article.id },
+        orderBy: { createdAt: "desc" },
+      })
+    : null;
+
+  const editorial = parseStoredEditorialContext(article.editorialContext);
   const publicError = toPublicGenerationError(article.error);
   const totalTokens =
     article.inputTokens !== null && article.outputTokens !== null
@@ -93,6 +115,7 @@ export default async function ArticleDetailPage({
         status={article.status}
         progressStage={article.progressStage}
         progressMessage={article.progressMessage}
+        featuredImageStatus={latestFeaturedImage?.status ?? null}
       />
 
       {article.status === "queued" ||
@@ -118,6 +141,7 @@ export default async function ArticleDetailPage({
       <EditorialContextPanel value={article.editorialContext} />
 
       <ArticleDetailTabs
+        initialTab={tab === "featured" ? "featured" : "report"}
         report={
           <GenerationReport
             trace={article.trace}
@@ -130,6 +154,7 @@ export default async function ArticleDetailPage({
         article={
           <ArticleSeoPanel
             subject={article.subject}
+            preferredTitle={editorial?.preferredTitle ?? null}
             title={article.title}
             excerpt={article.excerpt}
             slug={article.slug}
@@ -152,6 +177,21 @@ export default async function ArticleDetailPage({
             duration={formatDuration(article.durationMs)}
             sessionId={article.sessionId}
           />
+        }
+        featured={
+          canManageFeaturedImage ? (
+            <FeaturedImagePanel
+              generationId={article.id}
+              wpUrl={article.wpUrl}
+              initialImage={
+                latestFeaturedImage
+                  ? toFeaturedImagePublic(latestFeaturedImage)
+                  : null
+              }
+            />
+          ) : (
+            <FeaturedImageUnavailable />
+          )
         }
       />
     </div>

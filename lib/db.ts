@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -10,7 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /** Change quand le schéma Prisma change, pour ne pas réutiliser un client généré avant. */
-const PRISMA_CLIENT_TOKEN = "editorial-watch-search-20261107";
+const PRISMA_CLIENT_TOKEN = "featured-image-v7-1-20261111";
 
 type PrismaModule = {
   PrismaClient: typeof PrismaClient;
@@ -33,11 +34,18 @@ function editorialWatchSearchExists(prisma: typeof Prisma): boolean {
   return prisma.dmmf.datamodel.models.some((model) => model.name === "EditorialWatchSearch");
 }
 
+function articleFeaturedImageExists(prisma: typeof Prisma): boolean {
+  return prisma.dmmf.datamodel.models.some(
+    (model) => model.name === "ArticleFeaturedImage"
+  );
+}
+
 function clientMatchesSchema(prisma: typeof Prisma): boolean {
   return (
     topicHasOrigin(prisma) &&
     articleGenerationHasTrace(prisma) &&
-    editorialWatchSearchExists(prisma)
+    editorialWatchSearchExists(prisma) &&
+    articleFeaturedImageExists(prisma)
   );
 }
 

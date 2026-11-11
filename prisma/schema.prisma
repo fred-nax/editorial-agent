@@ -99,6 +99,41 @@ model ArticleGeneration {
   progressUpdatedAt DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
+
+  featuredImages ArticleFeaturedImage[]
+}
+
+/// Image à la une (manuelle V7.0 ou demandée avec l’article V7.1).
+model ArticleFeaturedImage {
+  id           String   @id @default(cuid())
+  generationId String
+  generation   ArticleGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  /// Chemin relatif sous le répertoire de stockage (jamais un path absolu client).
+  relativePath String
+  mimeType     String   @default("image/webp")
+  byteSize     Int?
+  prompt       String
+  style        String
+  aspectRatio  String
+  size         String
+  model        String
+  /// Instructions visuelles saisies à la demande (auto ou manuelle).
+  visualInstructions String?
+  /// auto = demandé avec l’article ; manual = panneau détail.
+  origin       String   @default("manual")
+  altText      String?
+  altModel     String?
+  /// pending | generating | ready | failed | uploading | attached
+  status       String   @default("ready")
+  wpMediaId    Int?
+  wpMediaUrl   String?
+  error        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([generationId, createdAt])
+  @@index([status])
+  @@index([status, updatedAt])
 }
 
 model Topic {

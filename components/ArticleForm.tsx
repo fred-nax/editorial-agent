@@ -1,9 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useRouter } from "next/navigation";
+import { Lightbulb, Loader2, Sparkles } from "lucide-react";
 import { GenerationProgress } from "@/components/GenerationProgress";
+import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
 import {
   Accordion,
   AccordionContent,
@@ -13,11 +21,20 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -37,6 +54,13 @@ import {
   MAX_EDITORIAL_OBJECTIVE_LENGTH,
   OBJECTIVE_OPTIONS,
 } from "@/lib/editorial-context";
+import {
+  FEATURED_IMAGE_ASPECTS,
+  FEATURED_IMAGE_STYLES,
+  MAX_VISUAL_INSTRUCTIONS_LENGTH,
+} from "@/lib/images/config";
+import type { FeaturedImagePublic } from "@/lib/images/types";
+import type { TitleSuggestion } from "@/lib/titles/types";
 import type { GenerationStatus } from "@/lib/status";
 
 type GenerationSnapshot = {
@@ -52,6 +76,7 @@ type GenerationSnapshot = {
   progressUpdatedAt?: string | null;
   createdAt?: string | null;
   durationMs?: number | null;
+  featuredImage?: FeaturedImagePublic | null;
 };
 
 const POLL_MS = 2500;
@@ -88,6 +113,8 @@ export function ArticleForm({
 } = {}) {
   const router = useRouter();
   const isFull = layout === "full";
+  const reactId = useId();
+  const formId = `article-generation-form-${reactId.replaceAll(":", "")}`;
   const [subject, setSubject] = useState("");
   const [angle, setAngle] = useState("");
   const [language, setLanguage] = useState(AGENT_DECIDES_VALUE);
@@ -97,6 +124,28 @@ export function ArticleForm({
   const [objectiveCustom, setObjectiveCustom] = useState("");
   const [seoKeywords, setSeoKeywords] = useState("");
   const [notes, setNotes] = useState("");
+  const [generateFeaturedImage, setGenerateFeaturedImage] = useState(false);
+  const [featuredStyle, setFeaturedStyle] = useState("photographic");
+  const [featuredAspect, setFeaturedAspect] = useState("3:2");
+  const [featuredInstructions, setFeaturedInstructions] = useState("");
+  const [featuredImageRequested, setFeaturedImageRequested] = useState(false);
+  const [titleSuggestions, setTitleSuggestions] = useState<
+    TitleSuggestion[] | null
+  >(null);
+  const [titleSuggestBusy, setTitleSuggestBusy] = useState(false);
+  const [titleSuggestError, setTitleSuggestError] = useState<string | null>(
+    null
+  );
+  const [suggestionsFingerprint, setSuggestionsFingerprint] = useState<
+    string | null
+  >(null);
+  const [suggestionsStale, setSuggestionsStale] = useState(false);
+  const [leaveAgentTitle, setLeaveAgentTitle] = useState(true);
+  const [preferredTitle, setPreferredTitle] = useState("");
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<
+    number | null
+  >(null);
+  const [titlesDialogOpen, setTitlesDialogOpen] = useState(false);
   const [phase, setPhase] = useState<"idle" | "preparing" | GenerationStatus>(
     "idle"
   );
@@ -107,6 +156,52 @@ export function ArticleForm({
   const lastProgressRef = useRef<string | null>(null);
 
   const busy = phase === "preparing" || phase === "queued" || phase === "running";
+  const featuredStatus = generation?.featuredImage?.status ?? null;
+  const featuredBusy =
+    featuredImageRequested &&
+    (featuredStatus === "pending" ||
+      featuredStatus === "generating" ||
+      (phase === "completed" && !featuredStatus));
+
+  function resolvedAudienceValue() {
+    if (audience === CUSTOM_OPTION_VALUE) {
+      return audienceCustom.trim();
+    }
+    return audience !== AGENT_DECIDES_VALUE ? audience : "";
+  }
+
+  function resolvedObjectiveValue() {
+    if (objective === CUSTOM_OPTION_VALUE) {
+      return objectiveCustom.trim();
+    }
+    return objective !== AGENT_DECIDES_VALUE ? objective : "";
+  }
+
+  function titleContextFingerprint() {
+    return JSON.stringify({
+      subject: subject.trim(),
+      angle: angle.trim(),
+      language,
+      audience: resolvedAudienceValue(),
+      objective: resolvedObjectiveValue(),
+      seoKeywords: seoKeywords.trim(),
+    });
+  }
+
+  function invalidateTitleSuggestions() {
+    if (!titleSuggestions && leaveAgentTitle && !preferredTitle.trim()) {
+      return;
+    }
+    if (titleSuggestions && suggestionsFingerprint) {
+      const current = titleContextFingerprint();
+      if (current !== suggestionsFingerprint) {
+        setSuggestionsStale(true);
+        setLeaveAgentTitle(true);
+        setPreferredTitle("");
+        setSelectedSuggestionIndex(null);
+      }
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -129,10 +224,81 @@ export function ArticleForm({
       setGeneration(null);
       setError(null);
       setStartedAt(null);
+      setFeaturedImageRequested(false);
     }
   }
 
-  function startPolling(id: string) {
+  function clearTitleSelection() {
+    setLeaveAgentTitle(true);
+    setPreferredTitle("");
+    setSelectedSuggestionIndex(null);
+  }
+
+  function selectTitleSuggestion(index: number, title: string) {
+    setLeaveAgentTitle(false);
+    setSelectedSuggestionIndex(index);
+    setPreferredTitle(title);
+    setSuggestionsStale(false);
+  }
+
+  function updatePreferredTitle(value: string) {
+    setPreferredTitle(value);
+    setSelectedSuggestionIndex(null);
+    setLeaveAgentTitle(false);
+  }
+
+  function openTitleSuggestionsDialog() {
+    setTitlesDialogOpen(true);
+    if (!titleSuggestions || suggestionsStale) {
+      void requestTitleSuggestions();
+    }
+  }
+
+  async function requestTitleSuggestions() {
+    const value = subject.trim();
+    if (!value || titleSuggestBusy || busy) {
+      return;
+    }
+    setTitleSuggestBusy(true);
+    setTitleSuggestError(null);
+    clearTitleSelection();
+    try {
+      const body: Record<string, string> = { subject: value };
+      if (angle.trim()) body.angle = angle.trim();
+      if (language && language !== AGENT_DECIDES_VALUE) {
+        body.language = language;
+      }
+      const aud = resolvedAudienceValue();
+      const obj = resolvedObjectiveValue();
+      if (aud) body.audience = aud;
+      if (obj) body.objective = obj;
+      if (seoKeywords.trim()) body.seoKeywords = seoKeywords.trim();
+
+      const response = await fetch("/api/titles/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = (await response.json()) as {
+        suggestions?: TitleSuggestion[];
+        error?: string;
+      };
+      if (!response.ok || !payload.suggestions) {
+        throw new Error(payload.error ?? "Impossible de suggérer des titres.");
+      }
+      setTitleSuggestions(payload.suggestions);
+      setSuggestionsFingerprint(titleContextFingerprint());
+      setSuggestionsStale(false);
+    } catch (err) {
+      setTitleSuggestError(
+        err instanceof Error ? err.message : "Suggestion impossible."
+      );
+    } finally {
+      setTitleSuggestBusy(false);
+    }
+  }
+
+  function startPolling(id: string, expectFeaturedImage: boolean) {
     stopPolling();
     pollRef.current = window.setInterval(async () => {
       try {
@@ -148,18 +314,32 @@ export function ArticleForm({
         setGeneration(payload);
         setPhase(payload.status);
 
-        const progressKey = `${payload.status}:${payload.progressStage ?? ""}:${payload.progressMessage ?? ""}`;
+        const featuredKey = payload.featuredImage?.status ?? "";
+        const progressKey = `${payload.status}:${payload.progressStage ?? ""}:${payload.progressMessage ?? ""}:${featuredKey}`;
         if (lastProgressRef.current !== progressKey) {
           lastProgressRef.current = progressKey;
           router.refresh();
         }
 
-        if (payload.status === "completed" || payload.status === "failed") {
+        if (payload.status === "failed") {
           stopPolling();
-          if (payload.status === "failed") {
-            setError(payload.error ?? "La génération a échoué.");
-          }
+          setError(payload.error ?? "La génération a échoué.");
           router.refresh();
+          return;
+        }
+
+        if (payload.status === "completed") {
+          const imageStatus = payload.featuredImage?.status ?? null;
+          const imageDone =
+            !expectFeaturedImage ||
+            imageStatus === "ready" ||
+            imageStatus === "failed" ||
+            imageStatus === "attached" ||
+            imageStatus === "uploading";
+          if (imageDone) {
+            stopPolling();
+            router.refresh();
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Suivi impossible.");
@@ -178,18 +358,8 @@ export function ArticleForm({
       return;
     }
 
-    const resolvedAudience =
-      audience === CUSTOM_OPTION_VALUE
-        ? audienceCustom.trim()
-        : audience !== AGENT_DECIDES_VALUE
-          ? audience
-          : "";
-    const resolvedObjective =
-      objective === CUSTOM_OPTION_VALUE
-        ? objectiveCustom.trim()
-        : objective !== AGENT_DECIDES_VALUE
-          ? objective
-          : "";
+    const resolvedAudience = resolvedAudienceValue();
+    const resolvedObjective = resolvedObjectiveValue();
 
     if (audience === CUSTOM_OPTION_VALUE && !resolvedAudience) {
       setError("Précisez le public cible personnalisé.");
@@ -200,13 +370,30 @@ export function ArticleForm({
       return;
     }
 
+    if (
+      suggestionsStale ||
+      (suggestionsFingerprint &&
+        suggestionsFingerprint !== titleContextFingerprint())
+    ) {
+      clearTitleSelection();
+      setSuggestionsStale(true);
+    }
+
+    const titlePreference =
+      !leaveAgentTitle && preferredTitle.trim()
+        ? preferredTitle.trim()
+        : "";
+
     setError(null);
     setGeneration(null);
     setPhase("preparing");
     setStartedAt(new Date().toISOString());
     lastProgressRef.current = null;
 
-    const payloadBody: Record<string, string> = { subject: value };
+    const wantFeatured = isFull && generateFeaturedImage;
+    setFeaturedImageRequested(wantFeatured);
+
+    const payloadBody: Record<string, unknown> = { subject: value };
     if (angle.trim()) {
       payloadBody.angle = angle.trim();
     }
@@ -225,6 +412,17 @@ export function ArticleForm({
     if (notes.trim()) {
       payloadBody.notes = notes.trim();
     }
+    if (titlePreference) {
+      payloadBody.preferredTitle = titlePreference;
+    }
+    if (wantFeatured) {
+      payloadBody.featuredImage = {
+        enabled: true,
+        style: featuredStyle,
+        aspectRatio: featuredAspect,
+        instructions: featuredInstructions.trim() || undefined,
+      };
+    }
 
     try {
       const response = await fetch("/api/generate", {
@@ -239,12 +437,16 @@ export function ArticleForm({
         progressMessage?: string | null;
         progressUpdatedAt?: string | null;
         createdAt?: string;
+        featuredImageRequested?: boolean;
         error?: string;
       };
 
       if (!response.ok || !payload.id) {
         throw new Error(payload.error ?? "Impossible de lancer la génération.");
       }
+
+      const expectFeatured = Boolean(payload.featuredImageRequested);
+      setFeaturedImageRequested(expectFeatured);
 
       setGeneration({
         id: payload.id,
@@ -258,11 +460,32 @@ export function ArticleForm({
         progressMessage: payload.progressMessage ?? "En file d’attente…",
         progressUpdatedAt: payload.progressUpdatedAt ?? null,
         createdAt: payload.createdAt ?? new Date().toISOString(),
+        featuredImage: expectFeatured
+          ? {
+              id: "pending",
+              generationId: payload.id,
+              style: featuredStyle,
+              aspectRatio: featuredAspect,
+              size: "",
+              model: "",
+              prompt: "",
+              altText: null,
+              altModel: null,
+              status: "pending",
+              wpMediaId: null,
+              wpMediaUrl: null,
+              error: null,
+              fileUrl: "",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            }
+          : null,
       });
       setPhase(payload.status ?? "queued");
-      startPolling(payload.id);
+      startPolling(payload.id, expectFeatured);
     } catch (err) {
       setPhase("failed");
+      setFeaturedImageRequested(false);
       setError(err instanceof Error ? err.message : "La génération a échoué.");
     }
   }
@@ -274,18 +497,32 @@ export function ArticleForm({
       phase === "running" ||
       phase === "failed");
 
+  const submitButton = (
+    <Button
+      type="submit"
+      form={formId}
+      disabled={busy}
+      size="lg"
+      className="h-10 w-full shrink-0 bg-naxialis text-sm text-white hover:bg-naxialis-dark sm:w-auto"
+    >
+      <Sparkles className="size-4" aria-hidden="true" />
+      {statusLabel(busy ? phase : "idle")}
+    </Button>
+  );
+
   const fields = (
     <>
       <div className="space-y-2">
-        <Label htmlFor="article-subject" className="text-[#0F172A]">
+        <Label htmlFor={`${formId}-subject`} className="text-[#0F172A]">
           Sujet de l’article
         </Label>
         <Textarea
-          id="article-subject"
+          id={`${formId}-subject`}
           value={subject}
           onChange={(event) => {
             setSubject(event.target.value);
             resetOutcomeState();
+            invalidateTitleSuggestions();
           }}
           rows={3}
           required
@@ -295,17 +532,170 @@ export function ArticleForm({
         />
       </div>
 
+      {isFull ? (
+        <section className="space-y-3 rounded-lg border border-[#E2E8F0] bg-slate-50/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-[#0F172A]">
+                Suggestions de titres
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Facultatif · l’agent reste libre d’ajuster le titre retenu
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-[#E2E8F0] bg-white"
+              disabled={busy || titleSuggestBusy || !subject.trim()}
+              onClick={() => void requestTitleSuggestions()}
+            >
+              {titleSuggestBusy ? (
+                <Loader2 className="animate-spin" data-icon="inline-start" />
+              ) : (
+                <Lightbulb data-icon="inline-start" />
+              )}
+              {titleSuggestions
+                ? "Régénérer les propositions"
+                : "Suggérer 5 titres"}
+            </Button>
+          </div>
+
+          <TitleSuggestionsPicker
+            formId={formId}
+            radioName={`${formId}-title-choice`}
+            busy={busy}
+            titleSuggestBusy={titleSuggestBusy}
+            titleSuggestError={titleSuggestError}
+            suggestionsStale={suggestionsStale}
+            titleSuggestions={titleSuggestions}
+            leaveAgentTitle={leaveAgentTitle}
+            preferredTitle={preferredTitle}
+            selectedSuggestionIndex={selectedSuggestionIndex}
+            onClearSelection={clearTitleSelection}
+            onSelectSuggestion={selectTitleSuggestion}
+            onPreferredTitleChange={updatePreferredTitle}
+          />
+        </section>
+      ) : (
+        <div className="space-y-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-[#E2E8F0] bg-white"
+            disabled={busy || !subject.trim()}
+            onClick={openTitleSuggestionsDialog}
+          >
+            <Lightbulb data-icon="inline-start" />
+            Suggérer des titres
+          </Button>
+
+          {!leaveAgentTitle && preferredTitle.trim() ? (
+            <div className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-[#E2E8F0] bg-slate-50/80 px-3 py-2 text-xs text-[#0F172A]">
+              <p className="min-w-0 flex-1 break-words">
+                <span className="font-medium">Titre souhaité :</span>{" "}
+                {preferredTitle.trim()}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="shrink-0 text-naxialis hover:bg-white hover:text-naxialis-dark"
+                disabled={busy}
+                onClick={openTitleSuggestionsDialog}
+              >
+                Modifier
+              </Button>
+            </div>
+          ) : null}
+
+          {suggestionsStale && titleSuggestions ? (
+            <p className="text-xs text-amber-800">
+              Les propositions de titres peuvent être obsolètes. Ouvrez à
+              nouveau les suggestions pour les régénérer.
+            </p>
+          ) : null}
+
+          <Dialog
+            open={titlesDialogOpen}
+            onOpenChange={(open) => setTitlesDialogOpen(open)}
+          >
+            <DialogContent className="gap-4">
+              <DialogHeader>
+                <DialogTitle>Suggestions de titres</DialogTitle>
+                <DialogDescription>
+                  Facultatif · l’agent reste libre d’ajuster le titre retenu
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-[#E2E8F0] bg-white"
+                  disabled={busy || titleSuggestBusy || !subject.trim()}
+                  onClick={() => void requestTitleSuggestions()}
+                >
+                  {titleSuggestBusy ? (
+                    <Loader2
+                      className="animate-spin"
+                      data-icon="inline-start"
+                    />
+                  ) : (
+                    <Lightbulb data-icon="inline-start" />
+                  )}
+                  {titleSuggestions
+                    ? "Régénérer les propositions"
+                    : "Suggérer 5 titres"}
+                </Button>
+              </div>
+
+              <TitleSuggestionsPicker
+                formId={`${formId}-embedded`}
+                radioName={`${formId}-title-choice-embedded`}
+                busy={busy}
+                titleSuggestBusy={titleSuggestBusy}
+                titleSuggestError={titleSuggestError}
+                suggestionsStale={suggestionsStale}
+                titleSuggestions={titleSuggestions}
+                leaveAgentTitle={leaveAgentTitle}
+                preferredTitle={preferredTitle}
+                selectedSuggestionIndex={selectedSuggestionIndex}
+                onClearSelection={clearTitleSelection}
+                onSelectSuggestion={selectTitleSuggestion}
+                onPreferredTitleChange={updatePreferredTitle}
+              />
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[#E2E8F0] bg-white"
+                  onClick={() => setTitlesDialogOpen(false)}
+                >
+                  Fermer
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
       <div className="space-y-2">
-        <Label htmlFor="article-angle" className="text-[#0F172A]">
+        <Label htmlFor={`${formId}-angle`} className="text-[#0F172A]">
           Angle éditorial
           <span className="font-normal text-slate-500"> (facultatif)</span>
         </Label>
         <Textarea
-          id="article-angle"
+          id={`${formId}-angle`}
           value={angle}
           onChange={(event) => {
             setAngle(event.target.value);
             resetOutcomeState();
+            invalidateTitleSuggestions();
           }}
           rows={2}
           disabled={busy}
@@ -328,6 +718,7 @@ export function ArticleForm({
             if (typeof value === "string") {
               setLanguage(value);
               resetOutcomeState();
+              invalidateTitleSuggestions();
             }
           }}
           disabled={busy}
@@ -360,6 +751,7 @@ export function ArticleForm({
               if (typeof value === "string") {
                 setAudience(value);
                 resetOutcomeState();
+                invalidateTitleSuggestions();
               }
             }}
             disabled={busy}
@@ -383,11 +775,12 @@ export function ArticleForm({
           </Select>
           {audience === CUSTOM_OPTION_VALUE ? (
             <Input
-              id="article-audience-custom"
+              id={`${formId}-audience-custom`}
               value={audienceCustom}
               onChange={(event) => {
                 setAudienceCustom(event.target.value);
                 resetOutcomeState();
+                invalidateTitleSuggestions();
               }}
               disabled={busy}
               maxLength={MAX_EDITORIAL_AUDIENCE_LENGTH}
@@ -409,6 +802,7 @@ export function ArticleForm({
               if (typeof value === "string") {
                 setObjective(value);
                 resetOutcomeState();
+                invalidateTitleSuggestions();
               }
             }}
             disabled={busy}
@@ -432,11 +826,12 @@ export function ArticleForm({
           </Select>
           {objective === CUSTOM_OPTION_VALUE ? (
             <Input
-              id="article-objective-custom"
+              id={`${formId}-objective-custom`}
               value={objectiveCustom}
               onChange={(event) => {
                 setObjectiveCustom(event.target.value);
                 resetOutcomeState();
+                invalidateTitleSuggestions();
               }}
               disabled={busy}
               maxLength={MAX_EDITORIAL_OBJECTIVE_LENGTH}
@@ -456,16 +851,17 @@ export function ArticleForm({
           <AccordionContent>
             <div className="space-y-4 pb-1">
               <div className="space-y-2">
-                <Label htmlFor="article-keywords" className="text-[#0F172A]">
+                <Label htmlFor={`${formId}-keywords`} className="text-[#0F172A]">
                   Mots-clés SEO
                   <span className="font-normal text-slate-500"> (facultatif)</span>
                 </Label>
                 <Input
-                  id="article-keywords"
+                  id={`${formId}-keywords`}
                   value={seoKeywords}
                   onChange={(event) => {
                     setSeoKeywords(event.target.value);
                     resetOutcomeState();
+                    invalidateTitleSuggestions();
                   }}
                   disabled={busy}
                   placeholder="agent IA PME, automatisation entreprise, productivité"
@@ -473,12 +869,12 @@ export function ArticleForm({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="article-notes" className="text-[#0F172A]">
+                <Label htmlFor={`${formId}-notes`} className="text-[#0F172A]">
                   Consignes complémentaires
                   <span className="font-normal text-slate-500"> (facultatif)</span>
                 </Label>
                 <Textarea
-                  id="article-notes"
+                  id={`${formId}-notes`}
                   value={notes}
                   onChange={(event) => {
                     setNotes(event.target.value);
@@ -494,49 +890,136 @@ export function ArticleForm({
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+
+      {isFull ? (
+        <section className="space-y-4 rounded-lg border border-[#E2E8F0] bg-slate-50/60 p-4">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-[#0F172A]">Image à la une</p>
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-[#0F172A]">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 rounded border-[#E2E8F0] accent-naxialis"
+                checked={generateFeaturedImage}
+                disabled={busy}
+                onChange={(event) => {
+                  setGenerateFeaturedImage(event.target.checked);
+                  resetOutcomeState();
+                }}
+              />
+              <span>Générer également une image à la une</span>
+            </label>
+          </div>
+
+          {generateFeaturedImage ? (
+            <div className="space-y-4">
+              <p className="text-xs leading-relaxed text-slate-600">
+                L’image sera générée après la création du brouillon. Vous pourrez
+                vérifier son aperçu et son texte ALT avant de l’envoyer dans
+                WordPress. Un appel API supplémentaire sera effectué.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-[#0F172A]">Style visuel</Label>
+                  <Select
+                    value={featuredStyle}
+                    onValueChange={(value) => {
+                      if (typeof value === "string") {
+                        setFeaturedStyle(value);
+                        resetOutcomeState();
+                      }
+                    }}
+                    disabled={busy}
+                  >
+                    <SelectTrigger className="h-9 w-full border-[#E2E8F0] bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="start" className="w-(--anchor-width)">
+                      {FEATURED_IMAGE_STYLES.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[#0F172A]">Format</Label>
+                  <Select
+                    value={featuredAspect}
+                    onValueChange={(value) => {
+                      if (typeof value === "string") {
+                        setFeaturedAspect(value);
+                        resetOutcomeState();
+                      }
+                    }}
+                    disabled={busy}
+                  >
+                    <SelectTrigger className="h-9 w-full border-[#E2E8F0] bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="start" className="w-(--anchor-width)">
+                      {FEATURED_IMAGE_ASPECTS.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label
+                  htmlFor={`${formId}-featured-instructions`}
+                  className="text-[#0F172A]"
+                >
+                  Instructions visuelles
+                  <span className="font-normal text-slate-500">
+                    {" "}
+                    (facultatif)
+                  </span>
+                </Label>
+                <Textarea
+                  id={`${formId}-featured-instructions`}
+                  value={featuredInstructions}
+                  onChange={(event) => {
+                    setFeaturedInstructions(event.target.value);
+                    resetOutcomeState();
+                  }}
+                  maxLength={MAX_VISUAL_INSTRUCTIONS_LENGTH}
+                  rows={2}
+                  disabled={busy}
+                  placeholder="Bureau moderne, ambiance professionnelle, éclairage naturel."
+                  className="border-[#E2E8F0] bg-white text-[#0F172A] placeholder:text-slate-400 focus-visible:border-naxialis focus-visible:ring-naxialis/20"
+                />
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </>
   );
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {isFull ? (
-        <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0">
-          <CardHeader className="gap-1.5 border-b border-[#E2E8F0] p-5">
-            <CardTitle className="text-base font-semibold text-[#0F172A]">
-              Préparer votre article
-            </CardTitle>
-            <CardDescription className="text-sm text-slate-600">
-              Indiquez le sujet et, si besoin, des préférences pour orienter la
-              rédaction.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5 p-5">{fields}</CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-5">{fields}</div>
-      )}
+  const formBody = (
+    <form id={formId} onSubmit={handleSubmit} className="space-y-5">
+      {fields}
+    </form>
+  );
 
-      <p className="text-sm leading-relaxed text-slate-600">
-        Ces paramètres orientent la rédaction sans remplacer les consignes de
-        votre agent. Vous pourrez modifier librement le brouillon dans WordPress
-        avant publication.
-      </p>
+  const formHint = (
+    <p className="text-sm leading-relaxed text-slate-600">
+      Ces paramètres orientent la rédaction sans remplacer les consignes de
+      votre agent. Vous pourrez modifier librement le brouillon dans WordPress
+      avant publication.
+    </p>
+  );
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Button
-          type="submit"
-          disabled={busy}
-          size="lg"
-          className="bg-naxialis text-white hover:bg-naxialis-dark"
-        >
-          {statusLabel(busy ? phase : "idle")}
-        </Button>
-        {phase !== "idle" && !showProgress ? (
-          <p className="text-xs text-slate-500">{statusLabel(phase)}</p>
-        ) : null}
-      </div>
+  const statusPanel = (
+    <>
+      {phase !== "idle" && !showProgress ? (
+        <p className="text-xs text-slate-500">{statusLabel(phase)}</p>
+      ) : null}
 
-      {showProgress ? (
+      {showProgress && generation ? (
         <GenerationProgress
           status={phase === "preparing" ? "queued" : phase}
           progressStage={generation.progressStage}
@@ -559,38 +1042,118 @@ export function ArticleForm({
       ) : null}
 
       {generation && phase === "completed" ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
-          <p className="font-medium">{generation.title ?? "Brouillon créé"}</p>
-          {generation.wpPostId ? (
-            <p className="mt-1 text-emerald-900">
-              WordPress #{generation.wpPostId}
+        <div className="space-y-3">
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
+            <p className="font-medium">
+              {featuredStatus === "ready" || featuredStatus === "attached"
+                ? "Article et image prêts"
+                : generation.title ?? "Article terminé"}
             </p>
-          ) : null}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {generation.wpUrl ? (
+            {generation.wpPostId ? (
+              <p className="mt-1 text-emerald-900">
+                WordPress #{generation.wpPostId}
+              </p>
+            ) : null}
+            {featuredBusy ? (
+              <p className="mt-2 text-emerald-900">
+                Génération de l’image en cours…
+              </p>
+            ) : null}
+            {featuredStatus === "ready" ? (
+              <p className="mt-2 text-emerald-900">Image prête à valider</p>
+            ) : null}
+            {featuredStatus === "failed" ? (
+              <p className="mt-2 text-amber-900">
+                Échec de génération de l’image — l’article reste disponible.
+              </p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {generation.wpUrl ? (
+                <Button
+                  size="sm"
+                  className="bg-naxialis text-white hover:bg-naxialis-dark"
+                  nativeButton={false}
+                  render={
+                    <a
+                      href={generation.wpUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    />
+                  }
+                >
+                  Ouvrir dans WordPress
+                </Button>
+              ) : null}
               <Button
                 size="sm"
-                className="bg-naxialis text-white hover:bg-naxialis-dark"
+                variant="outline"
+                className="border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100"
                 nativeButton={false}
-                render={
-                  <a href={generation.wpUrl} target="_blank" rel="noreferrer" />
-                }
+                render={<Link href={`/articles/${generation.id}`} />}
               >
-                Ouvrir dans WordPress
+                Voir le détail
               </Button>
-            ) : null}
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100"
-              nativeButton={false}
-              render={<Link href={`/articles/${generation.id}`} />}
-            >
-              Voir le détail
-            </Button>
+              {featuredImageRequested ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100"
+                  nativeButton={false}
+                  render={
+                    <Link
+                      href={`/articles/${generation.id}?tab=featured`}
+                    />
+                  }
+                >
+                  Image à la une
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
-    </form>
+    </>
+  );
+
+  const hasStatusPanel =
+    phase !== "idle" || Boolean(error) || Boolean(showProgress);
+
+  if (isFull) {
+    return (
+      <div className="space-y-5">
+        {hasStatusPanel ? (
+          <div className="space-y-3">{statusPanel}</div>
+        ) : null}
+        <Card className="gap-0 border border-[#E2E8F0] bg-white py-0 shadow-none ring-0">
+          <CardHeader className="border-b border-[#E2E8F0] p-5">
+            <CardTitle className="text-base font-semibold text-[#0F172A]">
+              Préparer votre article
+            </CardTitle>
+            <CardDescription className="text-sm text-slate-600">
+              Indiquez le sujet et, si besoin, des préférences pour orienter la
+              rédaction.
+            </CardDescription>
+            <CardAction className="max-sm:col-span-2 max-sm:mt-2 max-sm:w-full max-sm:justify-self-stretch sm:self-start">
+              {submitButton}
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-5 p-5">
+            {formBody}
+            {formHint}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        {submitButton}
+      </div>
+      {formBody}
+      {formHint}
+      {statusPanel}
+    </div>
   );
 }

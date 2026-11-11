@@ -34,7 +34,9 @@ ENV HOSTNAME=0.0.0.0
 ENV NODE_PATH=/usr/local/lib/node_modules/prisma/node_modules:/usr/local/lib/node_modules
 
 RUN addgroup -S nodejs -g 1001 && adduser -S nextjs -u 1001 \
-  && npm install -g prisma@7.10.0
+  && npm install -g prisma@7.10.0 \
+  && mkdir -p /app/storage/featured-images \
+  && chown -R nextjs:nodejs /app/storage
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

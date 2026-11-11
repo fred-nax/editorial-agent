@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Image } from "lucide-react";
 import {
   ARTICLE_DETAIL_TABS,
   moveArticleDetailTab,
@@ -11,14 +12,18 @@ export function ArticleDetailTabs({
   report,
   article,
   usage,
+  featured,
+  initialTab = "report",
 }: {
   report: ReactNode;
   article: ReactNode;
   usage: ReactNode;
+  featured: ReactNode;
+  initialTab?: ArticleDetailTabId;
 }) {
-  const [active, setActive] = useState<ArticleDetailTabId>("report");
+  const [active, setActive] = useState<ArticleDetailTabId>(initialTab);
   const tabRefs = useRef<Partial<Record<ArticleDetailTabId, HTMLButtonElement | null>>>({});
-  const panels = { report, article, usage };
+  const panels = { report, article, usage, featured };
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const next = moveArticleDetailTab(active, event.key);
@@ -52,13 +57,16 @@ export function ArticleDetailTabs({
               aria-selected={selected}
               aria-controls={`generation-panel-${tab.id}`}
               tabIndex={selected ? 0 : -1}
-              className={`shrink-0 border-b-2 px-3 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-naxialis ${
+              className={`inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-naxialis ${
                 selected
                   ? "border-naxialis text-naxialis"
                   : "border-transparent text-slate-600 hover:text-slate-900"
               }`}
               onClick={() => setActive(tab.id)}
             >
+              {tab.id === "featured" ? (
+                <Image className="size-3.5 shrink-0" aria-hidden />
+              ) : null}
               {tab.label}
             </button>
           );

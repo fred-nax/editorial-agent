@@ -12,9 +12,9 @@ export function DashboardGenerateCard() {
   return (
     <Card
       id="nouveau-sujet"
-      className="scroll-mt-24 border border-[#E2E8F0] bg-white shadow-none ring-0"
+      className="scroll-mt-24 gap-0 border border-[#E2E8F0] bg-white py-0 shadow-none ring-0"
     >
-      <CardHeader className="gap-1.5 border-b border-[#E2E8F0] p-5">
+      <CardHeader className="border-b border-[#E2E8F0] p-5">
         <div className="flex items-center gap-2">
           <span className="inline-flex size-8 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F5270]">
             <PenLine className="size-4" aria-hidden />
@@ -24,7 +24,8 @@ export function DashboardGenerateCard() {
           </CardTitle>
         </div>
         <CardDescription className="text-sm leading-relaxed text-slate-600">
-          Saisissez un sujet. La génération crée un brouillon WordPress (status draft).
+          Saisissez un sujet. La génération crée un brouillon WordPress (status
+          draft).
         </CardDescription>
       </CardHeader>
       <CardContent className="p-5">

@@ -10,6 +10,8 @@ import {
   parseSubject,
 } from "@/lib/generation";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
+import { recoverFeaturedImageJobs } from "@/lib/images/pipeline";
+import { parseFeaturedImageRequest } from "@/lib/images/request";
 import { requireAuth } from "@/lib/require-auth";
 
 export const runtime = "nodejs";
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
   }
 
   await recoverStaleGenerations();
+  await recoverFeaturedImageJobs();
 
   try {
     const body = parseJsonBody(await request.json());
@@ -40,6 +43,7 @@ export async function POST(request: Request) {
       typeof body.topicId === "string" && body.topicId.trim()
         ? body.topicId.trim()
         : undefined;
+    const featuredImageRequest = parseFeaturedImageRequest(body);
 
     let subject: string;
     let resolvedTopicId: string | undefined;
@@ -77,6 +81,7 @@ export async function POST(request: Request) {
       subject,
       topicId: resolvedTopicId,
       editorialContext,
+      featuredImageRequest,
     });
 
     enqueueArticleGeneration(generation.id);
@@ -89,6 +94,7 @@ export async function POST(request: Request) {
         progressMessage: generation.progressMessage,
         progressUpdatedAt: generation.progressUpdatedAt,
         createdAt: generation.createdAt,
+        featuredImageRequested: Boolean(featuredImageRequest?.enabled),
       },
       { status: 201 }
     );
@@ -100,7 +106,11 @@ export async function POST(request: Request) {
       message.includes("sujet") ||
       message.includes("caractères") ||
       message.includes("non reconnu") ||
-      message.includes("invalide")
+      message.includes("invalide") ||
+      message.includes("image") ||
+      message.includes("style") ||
+      message.includes("format") ||
+      message.includes("instructions")
         ? 400
         : 500;
     return NextResponse.json({ error: message }, { status });

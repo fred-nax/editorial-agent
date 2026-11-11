@@ -42,10 +42,13 @@ services:
       AUTH_URL: https://agent.naxialis.com
       AUTH_TRUST_HOST: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER:-naxialis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-naxialis_agent}
+      FEATURED_IMAGE_STORAGE_DIR: /app/storage/featured-images
       VIRTUAL_HOST: agent.naxialis.com
       VIRTUAL_PORT: "3000"
       LETSENCRYPT_HOST: agent.naxialis.com
       LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-contact@naxialis.com}
+    volumes:
+      - featured_images_data:/app/storage/featured-images
     networks:
       - internal
       - proxy
@@ -64,6 +67,7 @@ services:
 
 volumes:
   postgres_data:
+  featured_images_data:
 
 networks:
   internal:

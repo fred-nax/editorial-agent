@@ -132,6 +132,7 @@ export function parseGenerationTrace(value: unknown): GenerationTrace | null {
       objective: text(context.objective),
       seoKeywords: text(context.seoKeywords),
       language: text(context.language),
+      preferredTitle: text(context.preferredTitle),
       sourceUrl: httpUrl(context.sourceUrl),
       sourceTitle: text(context.sourceTitle),
       sourceName: text(context.sourceName),
@@ -219,6 +220,12 @@ function contextLines(trace: GenerationTrace): ReportLine[] {
   }
 
   if (context.editorialContextTransmitted) {
+    if (context.preferredTitle) {
+      lines.push({
+        label: "Titre souhaité",
+        value: context.preferredTitle,
+      });
+    }
     if (context.language) {
       const label = languageLabel(context.language);
       lines.push({

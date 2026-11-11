@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
 import { toPublicGenerationError } from "@/lib/generation-errors";
+import { toFeaturedImagePublic } from "@/lib/images/types";
 import { requireAuth } from "@/lib/require-auth";
 
 export const runtime = "nodejs";
@@ -31,6 +32,11 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Génération introuvable." }, { status: 404 });
   }
 
+  const latestFeatured = await db.articleFeaturedImage.findFirst({
+    where: { generationId: article.id },
+    orderBy: { createdAt: "desc" },
+  });
+
   return NextResponse.json({
     id: article.id,
     subject: article.subject,
@@ -57,5 +63,8 @@ export async function GET(_request: Request, context: RouteContext) {
     progressUpdatedAt: article.progressUpdatedAt,
     createdAt: article.createdAt,
     updatedAt: article.updatedAt,
+    featuredImage: latestFeatured
+      ? toFeaturedImagePublic(latestFeatured)
+      : null,
   });
 }

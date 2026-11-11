@@ -20,6 +20,7 @@ export type GenerationContextInput = {
   objective?: string | null;
   seoKeywords?: string | null;
   language?: string | null;
+  preferredTitle?: string | null;
   sourceTitle?: string | null;
   sourceName?: string | null;
   sourceUrl?: string | null;
@@ -115,6 +116,7 @@ export type TransmittedContextSnapshot = {
   objective: string | null;
   seoKeywords: string | null;
   language: string | null;
+  preferredTitle: string | null;
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceName: string | null;
@@ -138,6 +140,7 @@ function editorialFromInput(input: GenerationContextInput): EditorialContext {
     seoKeywords: cleanText(input.seoKeywords, 300),
     notes: cleanText(input.notes, MAX_GENERATION_NOTES_LENGTH),
     language,
+    preferredTitle: cleanText(input.preferredTitle, 180),
   };
 }
 
@@ -176,6 +179,7 @@ export function transmittedContextSnapshot(
       objective: null,
       seoKeywords: null,
       language: null,
+      preferredTitle: null,
       sourceUrl: referenceUrl(input.sourceUrl),
       sourceTitle: cleanText(input.sourceTitle, 180),
       sourceName: cleanText(input.sourceName, 120),
@@ -197,6 +201,7 @@ export function transmittedContextSnapshot(
     objective: editorialTransmitted ? editorial.objective : null,
     seoKeywords: editorialTransmitted ? editorial.seoKeywords : null,
     language: editorialTransmitted ? editorial.language : null,
+    preferredTitle: editorialTransmitted ? editorial.preferredTitle : null,
     sourceUrl: null,
     sourceTitle: null,
     sourceName: null,

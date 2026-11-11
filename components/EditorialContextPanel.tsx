@@ -25,7 +25,8 @@ export function EditorialContextPanel({ value }: { value: unknown }) {
             key={line.label}
             className={
               line.label === "Consignes complémentaires" ||
-              line.label === "Angle éditorial"
+              line.label === "Angle éditorial" ||
+              line.label === "Titre souhaité"
                 ? "sm:col-span-2"
                 : undefined
             }

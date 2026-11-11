@@ -2,6 +2,7 @@ import { db } from "./db";
 import { assertRequiredEnv } from "./env-check";
 import { enqueueArticleGeneration } from "./generation";
 import { recoverStaleGenerations } from "./generation-recovery";
+import { recoverFeaturedImageJobs } from "./images/pipeline";
 import { logError, logInfo } from "./logger";
 
 export async function bootServer(): Promise<void> {
@@ -10,6 +11,9 @@ export async function bootServer(): Promise<void> {
 
   const recovered = await recoverStaleGenerations({ fromBoot: true });
   logInfo("boot", "recovery complete", { count: recovered });
+
+  const featuredRecovery = await recoverFeaturedImageJobs({ fromBoot: true });
+  logInfo("boot", "featured image recovery complete", featuredRecovery);
 
   const queued = await db.articleGeneration.findMany({
     where: { status: "queued" },

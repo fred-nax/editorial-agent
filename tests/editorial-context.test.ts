@@ -44,6 +44,7 @@ describe("indications éditoriales", () => {
       language: "fr",
       seoKeywords: "agent IA, PME",
       notes: "Évoquer les coûts.",
+      preferredTitle: null,
     });
     assert.equal(hasEditorialContext(context), true);
   });
@@ -149,6 +150,7 @@ describe("indications éditoriales", () => {
       language: "en-GB",
       seoKeywords: "agent IA PME, automatisation entreprise",
       notes: "Évoquer les coûts et les limites.",
+      preferredTitle: null,
     });
     assert.match(message, /^Sujet :\nComment automatiser/);
     assert.match(message, /Langue souhaitée : Anglais britannique \(en-GB\)\./);
@@ -171,6 +173,7 @@ describe("indications éditoriales", () => {
       seoKeywords: null,
       notes: "Notes file",
       language: null,
+      preferredTitle: null,
     });
   });
 
@@ -192,6 +195,7 @@ describe("indications éditoriales", () => {
         seoKeywords: null,
         notes: null,
         language: null,
+        preferredTitle: null,
       }
     );
     assert.deepEqual(
@@ -210,6 +214,7 @@ describe("indications éditoriales", () => {
         seoKeywords: null,
         notes: null,
         language: "es",
+        preferredTitle: null,
       }
     );
   });

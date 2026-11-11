@@ -19,6 +19,12 @@ import {
 import { toStoredError } from "./generation-errors";
 import { logError, logInfo } from "./logger";
 import {
+  cancelPendingFeaturedImagesForFailedArticle,
+  createPendingFeaturedImageRequest,
+  enqueueFeaturedImageAfterArticle,
+} from "./images/pipeline";
+import type { FeaturedImageRequest } from "./images/request";
+import {
   PROGRESS_MESSAGES,
   isProgressAhead,
   type GenerationStage,
@@ -99,6 +105,7 @@ export async function createQueuedGeneration(input: {
   subject: string;
   topicId?: string;
   editorialContext?: EditorialContext | null;
+  featuredImageRequest?: FeaturedImageRequest | null;
 }) {
   const editorial =
     input.editorialContext && hasEditorialContext(input.editorialContext)
@@ -118,6 +125,13 @@ export async function createQueuedGeneration(input: {
       progressUpdatedAt: new Date(),
     },
   });
+
+  if (input.featuredImageRequest?.enabled) {
+    await createPendingFeaturedImageRequest(
+      generation.id,
+      input.featuredImageRequest
+    );
+  }
 
   logInfo("generation", "queued", { generationId: generation.id });
   return generation;
@@ -171,6 +185,7 @@ export async function processArticleGeneration(
     objective: storedEditorial?.objective,
     seoKeywords: storedEditorial?.seoKeywords,
     language: storedEditorial?.language,
+    preferredTitle: storedEditorial?.preferredTitle,
     sourceTitle: topic?.sourceTitle,
     sourceName: topic?.sourceName,
     sourceUrl: topic?.sourceUrl,
@@ -251,6 +266,9 @@ export async function processArticleGeneration(
       usageDelayMs: result.usageCollection.delayMs,
       usageRetries: result.usageCollection.retries,
     });
+
+    // Image V7.1 : indépendante de l’agent ; jamais injectée dans le prompt éditorial.
+    await enqueueFeaturedImageAfterArticle(id);
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const sessionId =
@@ -276,6 +294,7 @@ export async function processArticleGeneration(
     });
 
     await syncTopicStatus(generation.topicId, "pending");
+    await cancelPendingFeaturedImagesForFailedArticle(id);
 
     logError("generation", "failed", {
       generationId: id,

@@ -8,6 +8,7 @@ export const MAX_EDITORIAL_NOTES_LENGTH = 1200;
 export const MAX_EDITORIAL_KEYWORDS_LENGTH = 300;
 export const MAX_EDITORIAL_AUDIENCE_LENGTH = 150;
 export const MAX_EDITORIAL_OBJECTIVE_LENGTH = 200;
+export const MAX_PREFERRED_TITLE_LENGTH = 180;
 
 export const AGENT_DECIDES_VALUE = "__agent__";
 export const CUSTOM_OPTION_VALUE = "__custom__";
@@ -50,6 +51,8 @@ export type EditorialContext = {
   seoKeywords: string | null;
   notes: string | null;
   language: LanguageCode | null;
+  /** Titre éditorial souhaité (préférence V7.2, jamais une obligation absolue). */
+  preferredTitle: string | null;
 };
 
 const AUDIENCE_SET = new Set<string>(AUDIENCE_OPTIONS);
@@ -172,6 +175,7 @@ export function emptyEditorialContext(): EditorialContext {
     seoKeywords: null,
     notes: null,
     language: null,
+    preferredTitle: null,
   };
 }
 
@@ -187,7 +191,8 @@ export function hasEditorialContext(
       value.objective ||
       value.seoKeywords ||
       value.notes ||
-      value.language
+      value.language ||
+      value.preferredTitle
   );
 }
 
@@ -223,6 +228,7 @@ export function parseEditorialContext(
     seoKeywords: normalizeSeoKeywords(body.seoKeywords),
     notes: cleanText(body.notes, MAX_EDITORIAL_NOTES_LENGTH),
     language: optionalLanguage(body.language),
+    preferredTitle: cleanText(body.preferredTitle, MAX_PREFERRED_TITLE_LENGTH),
   };
   return hasEditorialContext(context) ? context : null;
 }
@@ -239,6 +245,7 @@ export function editorialContextFromTopic(topic: {
     seoKeywords: null,
     notes: cleanText(topic.notes ?? null, MAX_EDITORIAL_NOTES_LENGTH),
     language: null,
+    preferredTitle: null,
   };
   return hasEditorialContext(context) ? context : null;
 }
@@ -258,6 +265,7 @@ export function parseStoredEditorialContext(
       seoKeywords: record.seoKeywords,
       notes: record.notes,
       language: record.language,
+      preferredTitle: record.preferredTitle,
     });
   } catch {
     return null;
@@ -276,6 +284,12 @@ export function formatEditorialGenerationMessage(
     "",
   ];
 
+  if (context.preferredTitle) {
+    lines.push(
+      `Titre éditorial souhaité : ${context.preferredTitle}. Il s'agit d'une préférence ; adapte-le si nécessaire à tes règles éditoriales et SEO habituelles.`,
+      ""
+    );
+  }
   if (context.language) {
     lines.push(formatLanguagePreference(context.language), "");
   }
@@ -318,6 +332,9 @@ export function editorialContextLines(
     return [];
   }
   const lines: EditorialReportLine[] = [];
+  if (context.preferredTitle) {
+    lines.push({ label: "Titre souhaité", value: context.preferredTitle });
+  }
   if (context.language) {
     const label = languageLabel(context.language) ?? context.language;
     lines.push({
