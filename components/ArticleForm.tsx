@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Lightbulb, Loader2, Sparkles } from "lucide-react";
+import { EditorialRapprochementPanel } from "@/components/EditorialRapprochementPanel";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
 import {
@@ -105,25 +106,37 @@ function statusLabel(
   return "Générer l’article";
 }
 
+export type ArticleFormInitial = {
+  topicId?: string;
+  subject?: string;
+  angle?: string;
+  notes?: string;
+  preferredTitle?: string;
+};
+
 export function ArticleForm({
   layout = "full",
+  initial,
 }: {
   /** `embedded` : version compacte pour la carte Dashboard. */
   layout?: "full" | "embedded";
+  /** Préremplissage depuis la file éditoriale (`/articles/new?topicId=…`). */
+  initial?: ArticleFormInitial;
 } = {}) {
   const router = useRouter();
   const isFull = layout === "full";
   const reactId = useId();
   const formId = `article-generation-form-${reactId.replaceAll(":", "")}`;
-  const [subject, setSubject] = useState("");
-  const [angle, setAngle] = useState("");
+  const topicId = initial?.topicId?.trim() || null;
+  const [subject, setSubject] = useState(initial?.subject ?? "");
+  const [angle, setAngle] = useState(initial?.angle ?? "");
   const [language, setLanguage] = useState(AGENT_DECIDES_VALUE);
   const [audience, setAudience] = useState(AGENT_DECIDES_VALUE);
   const [audienceCustom, setAudienceCustom] = useState("");
   const [objective, setObjective] = useState(AGENT_DECIDES_VALUE);
   const [objectiveCustom, setObjectiveCustom] = useState("");
   const [seoKeywords, setSeoKeywords] = useState("");
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
   const [generateFeaturedImage, setGenerateFeaturedImage] = useState(false);
   const [featuredStyle, setFeaturedStyle] = useState("photographic");
   const [featuredAspect, setFeaturedAspect] = useState("3:2");
@@ -140,8 +153,9 @@ export function ArticleForm({
     string | null
   >(null);
   const [suggestionsStale, setSuggestionsStale] = useState(false);
-  const [leaveAgentTitle, setLeaveAgentTitle] = useState(true);
-  const [preferredTitle, setPreferredTitle] = useState("");
+  const initialPreferred = initial?.preferredTitle?.trim() ?? "";
+  const [leaveAgentTitle, setLeaveAgentTitle] = useState(!initialPreferred);
+  const [preferredTitle, setPreferredTitle] = useState(initialPreferred);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<
     number | null
   >(null);
@@ -425,6 +439,25 @@ export function ArticleForm({
     }
 
     try {
+      if (topicId) {
+        const syncResponse = await fetch(`/api/topics/${topicId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subject: value,
+            angle: angle.trim() || null,
+            notes: notes.trim() || null,
+          }),
+        });
+        const syncPayload = (await syncResponse.json()) as { error?: string };
+        if (!syncResponse.ok) {
+          throw new Error(
+            syncPayload.error ?? "Impossible de synchroniser le sujet."
+          );
+        }
+        payloadBody.topicId = topicId;
+      }
+
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -531,6 +564,13 @@ export function ArticleForm({
           className="border-[#E2E8F0] bg-white text-[#0F172A] placeholder:text-slate-400 focus-visible:border-naxialis focus-visible:ring-naxialis/20"
         />
       </div>
+
+      <EditorialRapprochementPanel
+        subject={subject}
+        angle={angle}
+        layout={isFull ? "full" : "compact"}
+        disabled={busy}
+      />
 
       {isFull ? (
         <section className="space-y-3 rounded-lg border border-[#E2E8F0] bg-slate-50/50 p-4">

@@ -1,24 +1,9 @@
 import { db } from "../../db";
 import { logInfo } from "../../logger";
-import { stripHtml } from "../../seo/normalize";
+import { decodeHtmlEntities, stripHtml } from "../../seo/normalize";
 import type { CatalogEntry } from "./types";
 
 const STALE_MS = 24 * 60 * 60 * 1000;
-
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&rsquo;|&#8217;/gi, "'")
-    .replace(/&lsquo;|&#8216;/gi, "'")
-    .replace(/&rdquo;|&#8221;/gi, '"')
-    .replace(/&ldquo;|&#8220;/gi, '"')
-    .replace(/&amp;/gi, "&")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&#(\d+);/g, (_, code: string) =>
-      String.fromCharCode(Number(code))
-    )
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 function asCategoryIds(value: unknown): number[] {
   if (!Array.isArray(value)) {
@@ -125,8 +110,8 @@ export async function loadPublishedCatalog(): Promise<{
     }
     seenUrls.add(normalizedUrl);
 
-    const title = decodeEntities(stripHtml(row.title || row.slug));
-    const excerpt = decodeEntities(stripHtml(row.excerpt ?? ""));
+    const title = decodeHtmlEntities(stripHtml(row.title || row.slug));
+    const excerpt = decodeHtmlEntities(stripHtml(row.excerpt ?? ""));
     entries.push({
       wpPostId: row.wpPostId,
       title,

@@ -19,7 +19,7 @@ export const navigation: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/articles/new", label: "Nouvel article", icon: SquarePen },
   { href: "/articles", label: "Historique", icon: History },
-  { href: "/topics", label: "Sujets", icon: ListTodo },
+  { href: "/topics", label: "File éditoriale", icon: ListTodo },
   { href: "/opportunities", label: "Opportunités SEO", icon: SearchCheck },
   { href: "/veille", label: "Veille éditoriale", icon: Radar },
   { href: "/settings", label: "Paramètres", icon: Settings },

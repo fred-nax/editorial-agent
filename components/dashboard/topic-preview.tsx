@@ -64,7 +64,7 @@ export function DashboardTopicPreview({ topics }: { topics: DashboardTopicRow[] 
               </CardTitle>
             </div>
             <CardDescription className="text-sm text-slate-600">
-              3 sujets récents. File complète sur Sujets.
+              3 sujets récents. File complète sur File éditoriale.
             </CardDescription>
           </div>
           <Button

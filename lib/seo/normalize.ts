@@ -42,15 +42,53 @@ const STOP_WORDS = new Set([
   "our",
 ]);
 
+/**
+ * Décode les entités HTML courantes (WordPress title.rendered / excerpt).
+ * Idempotent sur une chaîne déjà décodée ; ne pas boucler sans nécessité.
+ */
+export function decodeHtmlEntities(value: string): string {
+  if (!value || !value.includes("&")) {
+    return value;
+  }
+  return value
+    .replace(/&rsquo;|&#8217;|&#x2019;/gi, "'")
+    .replace(/&lsquo;|&#8216;|&#x2018;/gi, "'")
+    .replace(/&rdquo;|&#8221;|&#x201d;/gi, '"')
+    .replace(/&ldquo;|&#8220;|&#x201c;/gi, '"')
+    .replace(/&hellip;|&#8230;/gi, "…")
+    .replace(/&ndash;|&#8211;/gi, "–")
+    .replace(/&mdash;|&#8212;/gi, "—")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&#x27;|&apos;/gi, "'")
+    .replace(/&lt;|&#60;/gi, "<")
+    .replace(/&gt;|&#62;/gi, ">")
+    .replace(/&eacute;|&#233;/gi, "é")
+    .replace(/&Eacute;|&#201;/gi, "É")
+    .replace(/&agrave;|&#224;/gi, "à")
+    .replace(/&egrave;|&#232;/gi, "è")
+    .replace(/&ecirc;|&#234;/gi, "ê")
+    .replace(/&ccedil;|&#231;/gi, "ç")
+    .replace(/&uuml;|&#252;/gi, "ü")
+    .replace(/&ouml;|&#246;/gi, "ö")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => {
+      const code = Number.parseInt(hex, 16);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : _;
+    })
+    .replace(/&#(\d+);/g, (_, code: string) => {
+      const n = Number(code);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : _;
+    })
+    .replace(/&amp;/gi, "&");
+}
+
 export function stripHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
+  return decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  )
     .replace(/\s+/g, " ")
     .trim();
 }

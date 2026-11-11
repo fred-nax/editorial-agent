@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
+import { decideTopicDeletion } from "@/lib/topics/delete";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -173,13 +174,23 @@ export async function DELETE(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Sujet introuvable." }, { status: 404 });
   }
 
-  if (existing.status !== "pending") {
+  const linkedGenerationCount = await db.articleGeneration.count({
+    where: { topicId: id },
+  });
+
+  const decision = decideTopicDeletion({
+    status: existing.status,
+    linkedGenerationCount,
+  });
+
+  if (!decision.ok) {
     return NextResponse.json(
-      { error: "Seul un sujet non traité peut être supprimé." },
-      { status: 409 }
+      { error: decision.error },
+      { status: decision.status }
     );
   }
 
+  // Suppression du sujet uniquement — aucune cascade vers ArticleGeneration / WordPress.
   await db.topic.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }

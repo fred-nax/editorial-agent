@@ -161,7 +161,7 @@ export default async function DashboardPage() {
       <DashboardKpiCards
         items={[
           { label: "Brouillons créés ce mois", value: draftsThisMonth },
-          { label: "Sujets en attente", value: pendingTopics },
+          { label: "File — en attente", value: pendingTopics },
           { label: "Générations en cours", value: runningGenerations },
           {
             label: "Coût LLM estimé du mois",
