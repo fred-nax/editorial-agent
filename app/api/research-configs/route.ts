@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
 import { validateResearchConfiguration } from "@/lib/seo/research-config";
+import { listActiveEditorialDomains } from "@/lib/seo/theme-catalog";
 import type { ResearchGoal, ResearchMode } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -44,7 +45,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const validated = validateResearchConfiguration(body);
+  const catalog = await listActiveEditorialDomains();
+  const validated = validateResearchConfiguration(body, {
+    catalog: catalog.length > 0 ? catalog : undefined,
+  });
   if (!validated.ok) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }

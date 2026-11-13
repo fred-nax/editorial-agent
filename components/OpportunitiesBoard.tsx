@@ -1,112 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ResearchConfigModal } from "@/components/ResearchConfigModal";
-import { EDITORIAL_DOMAINS } from "@/lib/seo/domains";
+import { Search, SlidersHorizontal } from "lucide-react";
+import { OpportunityDetailPanel } from "@/components/opportunities/opportunity-detail-panel";
+import type { SeoOpportunityItem } from "@/components/opportunities/opportunity-display";
+import { OpportunityHelpDialog } from "@/components/opportunities/opportunity-help-dialog";
+import { OpportunityResultList } from "@/components/opportunities/opportunity-result-list";
+import {
+  OpportunitySummaryCards,
+  type OpportunitySummaryCounts,
+} from "@/components/opportunities/opportunity-summary-cards";
+import { SeoResetMenu } from "@/components/opportunities/seo-reset-menu";
+import {
+  ThemeManagerDialog,
+  type ManagedTheme,
+} from "@/components/opportunities/theme-manager-dialog";
+import { WordPressSyncMenu } from "@/components/opportunities/wordpress-sync-menu";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { parseResponseJson } from "@/lib/http/parse-response-json";
 import type { ResearchConfiguration } from "@/lib/seo/research-config";
-
-type OpportunitySource = {
-  title: string;
-  url: string;
-  date?: string | null;
-};
-
-type SimilarPost = {
-  wpPostId: number;
-  title: string;
-  url: string;
-  slug: string;
-  score: number;
-  reason: string;
-};
-
-type SimilarTopic = {
-  topicId: string;
-  subject: string;
-  score: number;
-  reason: string;
-};
-
-type ScoreRationale = {
-  relevance?: string;
-  commercial?: string;
-  intent?: string;
-  timeliness?: string;
-  originality?: string;
-};
-
-type ContentType = "news" | "evergreen" | "commercial";
-type TrendType = "emerging" | "news" | "evergreen" | "unverified";
-type TrendConfidence = "low" | "medium" | "high";
-type EditorialUrgency = "low" | "medium" | "high";
-
-type SourceQualification = {
-  title: string;
-  url: string;
-  date?: string | null;
-  domain?: string;
-  relevance?: "direct" | "contextual" | "irrelevant" | "indeterminate";
-  role?: "trend_evidence" | "documentary" | "excluded";
-  exclusionReason?: string | null;
-  sharedInBatch?: boolean;
-};
-
-type TrendSignals = {
-  independentDomains?: number;
-  datedSources?: number;
-  recent30?: number;
-  recent90?: number;
-  analysisVersion?: string;
-  admissibleSourceCount?: number;
-  documentarySourceCount?: number;
-  excludedSourceCount?: number;
-  sourceQualifications?: SourceQualification[];
-  evidenceSources?: Array<{
-    title: string;
-    url: string;
-    date?: string | null;
-    domain?: string;
-  }>;
-  historyComparison?: {
-    sourceCountDelta?: number;
-    scoreDelta?: number;
-    interpretation?: string;
-  };
-};
-
-type SeoOpportunityItem = {
-  id: string;
-  title: string;
-  subject: string;
-  angle: string | null;
-  searchIntent: string | null;
-  theme: string;
-  contentType: ContentType;
-  rationale: string | null;
-  sources: OpportunitySource[] | null;
-  naxialisService: string | null;
-  status: "new" | "reviewed" | "added_to_queue" | "dismissed";
-  scoreTotal: number;
-  scoreRelevance: number;
-  scoreCommercial: number;
-  scoreIntent: number;
-  scoreTimeliness: number;
-  scoreOriginality: number;
-  scoreRationale: ScoreRationale | null;
-  similarPosts: SimilarPost[] | null;
-  similarTopics: SimilarTopic[] | null;
-  duplicateRisk: string | null;
-  topicId: string | null;
-  createdAt: string;
-  trendType?: TrendType | null;
-  trendScore?: number | null;
-  trendConfidence?: TrendConfidence | null;
-  trendJustification?: string | null;
-  trendCheckedAt?: string | null;
-  editorialUrgency?: EditorialUrgency | null;
-  trendSignals?: TrendSignals | null;
-};
 
 type SyncRun = {
   id: string;
@@ -156,12 +76,7 @@ type SavedConfig = {
   customThemeId: string | null;
 };
 
-type CustomTheme = {
-  id: string;
-  name: string;
-  description: string | null;
-  active: boolean;
-};
+type CustomTheme = ManagedTheme;
 
 type InventoryDiagnostic = {
   expectedTotal: number | null;
@@ -177,6 +92,9 @@ type InventoryDiagnostic = {
   lastFinishedAt: string | null;
 };
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
+
 type ListPayload = {
   opportunities: SeoOpportunityItem[];
   lastSearch: SearchRun | null;
@@ -185,6 +103,11 @@ type ListPayload = {
   recentRuns?: SearchRun[];
   customThemes?: CustomTheme[];
   savedConfigs?: SavedConfig[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  pageCount?: number;
+  summaryCounts?: OpportunitySummaryCounts;
   error?: string;
 };
 
@@ -196,69 +119,6 @@ type InventoryPayload = {
   diagnostic?: InventoryDiagnostic;
   error?: string;
 };
-
-const STATUS_LABELS: Record<SeoOpportunityItem["status"], string> = {
-  new: "Nouvelle",
-  reviewed: "Revue",
-  added_to_queue: "Ajoutée à la file",
-  dismissed: "Écartée",
-};
-
-const CONTENT_LABELS: Record<ContentType, string> = {
-  news: "Actualité",
-  evergreen: "Evergreen",
-  commercial: "Commercial",
-};
-
-const TREND_LABELS: Record<TrendType, string> = {
-  emerging: "Émergente",
-  news: "Actualité ponctuelle",
-  evergreen: "Evergreen",
-  unverified: "Non démontrée",
-};
-
-const URGENCY_LABELS: Record<EditorialUrgency, string> = {
-  low: "Faible",
-  medium: "Moyenne",
-  high: "Élevée",
-};
-
-const CONFIDENCE_LABELS: Record<TrendConfidence, string> = {
-  low: "Faible",
-  medium: "Moyenne",
-  high: "Élevée",
-};
-
-function asSources(value: unknown): OpportunitySource[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter(
-    (item): item is OpportunitySource =>
-      !!item &&
-      typeof item === "object" &&
-      typeof (item as OpportunitySource).title === "string" &&
-      typeof (item as OpportunitySource).url === "string"
-  );
-}
-
-function asSimilarPosts(value: unknown): SimilarPost[] {
-  return Array.isArray(value) ? (value as SimilarPost[]) : [];
-}
-
-function asSimilarTopics(value: unknown): SimilarTopic[] {
-  return Array.isArray(value) ? (value as SimilarTopic[]) : [];
-}
-
-function scoreTone(score: number): string {
-  if (score >= 80) {
-    return "bg-emerald-50 text-emerald-800 border-emerald-200";
-  }
-  if (score >= 60) {
-    return "bg-amber-50 text-amber-800 border-amber-200";
-  }
-  return "bg-slate-50 text-slate-700 border-slate-200";
-}
 
 function searchStatusLabel(run: SearchRun | null, running: SearchRun | null): string {
   if (running) {
@@ -301,16 +161,29 @@ export function OpportunitiesBoard() {
   const [syncing, setSyncing] = useState(false);
   const [searching, setSearching] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [themeManagerOpen, setThemeManagerOpen] = useState(false);
+  const [resumeConfigAfterThemes, setResumeConfigAfterThemes] =
+    useState(false);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(20);
+  const [total, setTotal] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
+  const [summaryCounts, setSummaryCounts] = useState<OpportunitySummaryCounts>({
+    detected: 0,
+    highPriority: 0,
+    toHandle: 0,
+  });
 
   const loadInventory = useCallback(async () => {
     const response = await fetch("/api/wordpress-inventory/sync");
-    const payload = (await response.json()) as InventoryPayload;
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Impossible de charger l’inventaire.");
-    }
+    const payload = await parseResponseJson<InventoryPayload>(
+      response,
+      "Impossible de charger l’inventaire"
+    );
     setInventoryCount(payload.count);
     setLastSync(payload.lastSync);
     setRunningSync(payload.running);
@@ -319,6 +192,8 @@ export function OpportunitiesBoard() {
 
   const loadOpportunities = useCallback(async () => {
     const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
     if (theme) {
       params.set("theme", theme);
     }
@@ -338,23 +213,65 @@ export function OpportunitiesBoard() {
       params.set("runId", runIdFilter);
     }
     const response = await fetch(`/api/opportunities?${params.toString()}`);
-    const payload = (await response.json()) as ListPayload;
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Impossible de charger les opportunités.");
+    const payload = await parseResponseJson<ListPayload>(
+      response,
+      "Impossible de charger les opportunités"
+    );
+    const items = payload.opportunities ?? [];
+    const nextTotal = payload.total ?? items.length;
+    const nextPageCount = Math.max(
+      1,
+      payload.pageCount ?? (Math.ceil(nextTotal / pageSize) || 1)
+    );
+    const nextPage = Math.min(
+      Math.max(1, payload.page ?? page),
+      nextPageCount
+    );
+
+    setOpportunities(items);
+    setTotal(nextTotal);
+    setPageCount(nextPageCount);
+    if (nextPage !== page) {
+      setPage(nextPage);
     }
-    setOpportunities(payload.opportunities);
     setLastSearch(payload.lastSearch);
     setRunningSearch(payload.runningSearch);
-    setInventoryCount(payload.inventoryCount);
+    setInventoryCount(payload.inventoryCount ?? 0);
     setRecentRuns(payload.recentRuns ?? []);
     setSavedConfigs(payload.savedConfigs ?? []);
     setCustomThemes(payload.customThemes ?? []);
-  }, [theme, status, contentType, trendType, urgency, runIdFilter]);
+    if (payload.summaryCounts) {
+      setSummaryCounts(payload.summaryCounts);
+    }
+    setSelectedId((prev) =>
+      prev && items.some((item) => item.id === prev) ? prev : null
+    );
+  }, [
+    page,
+    pageSize,
+    theme,
+    status,
+    contentType,
+    trendType,
+    urgency,
+    runIdFilter,
+  ]);
 
   const refresh = useCallback(async () => {
     setError(null);
     await Promise.all([loadInventory(), loadOpportunities()]);
   }, [loadInventory, loadOpportunities]);
+
+  // Filtres / taille de page → revenir à la page 1 (évite une page vide).
+  useEffect(() => {
+    setPage(1);
+  }, [theme, status, contentType, trendType, urgency, runIdFilter, pageSize]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setMobileDetailOpen(false);
+    }
+  }, [selectedId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -539,7 +456,7 @@ export function OpportunitiesBoard() {
         throw new Error(payload.error ?? "Impossible d’écarter.");
       }
       if (selectedId === id) {
-        setSelectedId(null);
+        clearSelection();
       }
       await refresh();
     } catch (err) {
@@ -550,63 +467,99 @@ export function OpportunitiesBoard() {
   }
 
   const busy = syncing || searching || !!runningSync || !!runningSearch;
+  const wpSynced =
+    !syncing &&
+    !runningSync &&
+    lastSync?.status === "completed" &&
+    !lastSync.error;
 
-  const sorted = useMemo(
-    () =>
-      [...opportunities].sort(
-        (a, b) => b.scoreTotal - a.scoreTotal || a.title.localeCompare(b.title)
-      ),
-    [opportunities]
-  );
+  // Ordre serveur stable (scoreTotal ↓, title ↑, id ↑) — pas de re-tri client.
+  const selected = opportunities.find((item) => item.id === selectedId) ?? null;
 
-  const selected = sorted.find((item) => item.id === selectedId) ?? null;
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = total === 0 ? 0 : Math.min(page * pageSize, total);
+
+  function selectOpportunity(id: string) {
+    setSelectedId(id);
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 1023px)").matches
+    ) {
+      setMobileDetailOpen(true);
+    }
+  }
+
+  function clearSelection() {
+    setSelectedId(null);
+    setMobileDetailOpen(false);
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Opportunités SEO
-          </h1>
+        <div className="min-w-0">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <h1 className="text-2xl font-semibold text-slate-900">
+              Opportunités SEO
+            </h1>
+            <OpportunityHelpDialog />
+          </div>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
             Recherche multithématique, inventaire WP en lecture seule, scoring
             éditorial et qualification de tendance sur preuves sourcées. Aucune
             publication WordPress depuis ce module.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          {wpSynced ? (
+            <span className="order-last inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 sm:order-none">
+              WP synchronisé
+            </span>
+          ) : null}
+          <WordPressSyncMenu
             disabled={busy}
-            onClick={() => void handleSync("incremental")}
-            className="rounded-md bg-naxialis-dark px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {runningSync ? "Sync en cours…" : "Synchroniser WordPress"}
-          </button>
-          <button
+            syncing={syncing || Boolean(runningSync)}
+            onIncremental={() => void handleSync("incremental")}
+            onFull={() => void handleSync("full")}
+          />
+          <Button
             type="button"
-            disabled={busy}
-            onClick={() => void handleSync("full")}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
-          >
-            Sync complète
-          </button>
-          <button
-            type="button"
+            variant="outline"
+            size="sm"
             disabled={busy}
             onClick={() => setConfigOpen(true)}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
+            className="h-9 gap-1.5 border-slate-300 bg-white text-slate-700"
           >
-            Configurer la recherche
-          </button>
-          <button
+            <SlidersHorizontal className="size-3.5" aria-hidden />
+            Configurer
+          </Button>
+          <Button
             type="button"
+            size="sm"
             disabled={busy || inventoryCount === 0}
             onClick={() => void handleSearch()}
-            className="rounded-md bg-naxialis px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="h-9 gap-1.5 bg-naxialis text-white hover:bg-naxialis/90"
           >
-            {runningSearch ? "Recherche…" : "Rechercher des opportunités"}
-          </button>
+            <Search className="size-3.5" aria-hidden />
+            {runningSearch || searching ? "Recherche…" : "Lancer la recherche"}
+          </Button>
+          <SeoResetMenu
+            disabled={busy}
+            onError={(msg) => {
+              setMessage(null);
+              setError(msg);
+            }}
+            onMessage={(msg) => {
+              setError(null);
+              setMessage(msg);
+            }}
+            onResetComplete={async () => {
+              clearSelection();
+              setRunIdFilter("");
+              setPage(1);
+              await refresh();
+            }}
+          />
         </div>
       </div>
 
@@ -622,70 +575,76 @@ export function OpportunitiesBoard() {
         onLaunch={async (config) => {
           await handleSearch(config);
         }}
+        onManageThemes={() => {
+          setResumeConfigAfterThemes(true);
+          setConfigOpen(false);
+          setThemeManagerOpen(true);
+        }}
       />
 
-      <div className="grid gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-            Inventaire WP
+      <OpportunitySummaryCards
+        counts={summaryCounts}
+        isGlobalView={
+          !theme &&
+          !status &&
+          !contentType &&
+          !trendType &&
+          !urgency &&
+          !runIdFilter
+        }
+        urgencyFilter={urgency}
+        statusFilter={status}
+        onShowAll={() => {
+          // Vue globale = mêmes filtres table que le total « détectées » (API sans filtre).
+          // Ne touche pas aux configs de recherche sauvegardées ni au modal.
+          setTheme("");
+          setStatus("");
+          setContentType("");
+          setTrendType("");
+          setUrgency("");
+          setRunIdFilter("");
+        }}
+        onShowHighPriority={() => {
+          // Enum Prisma EditorialUrgency.high — filtre board déjà existant.
+          setUrgency("high");
+          setStatus("");
+        }}
+        onShowToHandle={() => {
+          // « À traiter » = OpportunityStatus.new (ouvertes, pas encore revue / file / écartée).
+          setStatus("new");
+          setUrgency("");
+        }}
+      />
+
+      <div className="rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-xs text-slate-500">
+        <p>
+          <span className="font-medium text-slate-700">Inventaire WP :</span>{" "}
+          {inventoryCount}
+          {" · "}
+          Annoncés {diagnostic?.expectedTotal ?? "—"} / récupérés{" "}
+          {diagnostic?.fetchedCount ?? "—"} / en base{" "}
+          {diagnostic?.storedCount ?? inventoryCount}
+          {" · "}
+          <span className="font-medium text-slate-700">Recherche :</span>{" "}
+          {searchStatusLabel(lastSearch, runningSearch)}
+          {" · "}
+          <span className="font-medium text-slate-700">Sync :</span>{" "}
+          {lastSync
+            ? `${lastSync.status}${
+                lastSync.finishedAt
+                  ? ` · ${new Date(lastSync.finishedAt).toLocaleString("fr-FR")}`
+                  : ""
+              }`
+            : "Jamais"}
+        </p>
+        {diagnostic?.note ? (
+          <p className="mt-1 text-slate-600">{diagnostic.note}</p>
+        ) : null}
+        {lastSync?.error || diagnostic?.lastError ? (
+          <p className="mt-1 text-red-700">
+            {lastSync?.error ?? diagnostic?.lastError}
           </p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">
-            {inventoryCount}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Annoncés API : {diagnostic?.expectedTotal ?? "—"} · Récupérés :{" "}
-            {diagnostic?.fetchedCount ?? "—"} · Upsertés :{" "}
-            {diagnostic?.upsertedCount ?? "—"} · En base :{" "}
-            {diagnostic?.storedCount ?? inventoryCount} · Pages :{" "}
-            {diagnostic?.pagesFetched ?? "—"}
-            {diagnostic?.totalPages != null
-              ? `/${diagnostic.totalPages}`
-              : ""}
-          </p>
-          {diagnostic?.note ? (
-            <p className="mt-2 text-xs text-slate-600">{diagnostic.note}</p>
-          ) : null}
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-            Recherche
-          </p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {searchStatusLabel(lastSearch, runningSearch)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {lastSearch?.mode === "free"
-              ? `Sujet libre : ${lastSearch.customTopic ?? "—"}`
-              : `Quotas défaut : ${EDITORIAL_DOMAINS.map((d) => d.defaultQuota).join(" / ")}`}
-          </p>
-          {lastSearch ? (
-            <p className="mt-1 text-xs text-slate-500">
-              Demandé : {lastSearch.requestedCount ?? "—"} · Créé :{" "}
-              {lastSearch.foundCount} · Doublons/existants :{" "}
-              {lastSearch.skippedExisting ?? 0} · Rejetés :{" "}
-              {lastSearch.rejectedCount ?? 0}
-            </p>
-          ) : null}
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-            Dernière sync
-          </p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {lastSync
-              ? `${lastSync.status}${
-                  lastSync.finishedAt
-                    ? ` · ${new Date(lastSync.finishedAt).toLocaleString("fr-FR")}`
-                    : ""
-                }`
-              : "Jamais"}
-          </p>
-          {lastSync?.error || diagnostic?.lastError ? (
-            <p className="mt-1 text-xs text-red-700">
-              {lastSync?.error ?? diagnostic?.lastError}
-            </p>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -708,26 +667,52 @@ export function OpportunitiesBoard() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm">
+        <div className="flex flex-col gap-1 text-sm sm:col-span-2 lg:col-span-1 xl:col-span-1">
           <span className="font-medium text-slate-700">Thématique</span>
-          <select
-            value={theme}
-            onChange={(event) => setTheme(event.target.value)}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
-          >
-            <option value="">Toutes</option>
-            {EDITORIAL_DOMAINS.map((item) => (
-              <option key={item.id} value={item.label}>
-                {item.label}
-              </option>
-            ))}
-            {customThemes.map((item) => (
-              <option key={item.id} value={item.name}>
-                {item.name} (perso)
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select
+              value={theme}
+              onChange={(event) => setTheme(event.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900"
+            >
+              <option value="">Toutes</option>
+              {customThemes
+                .filter((item) => item.active)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              {customThemes.some((item) => !item.active) ? (
+                <optgroup label="Inactives (historique)">
+                  {customThemes
+                    .filter((item) => !item.active)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} (inactive)
+                      </option>
+                    ))}
+                </optgroup>
+              ) : null}
+            </select>
+            <ThemeManagerDialog
+              themes={customThemes}
+              open={themeManagerOpen}
+              onOpenChange={(next) => {
+                setThemeManagerOpen(next);
+                if (!next && resumeConfigAfterThemes) {
+                  setResumeConfigAfterThemes(false);
+                  void loadOpportunities().finally(() => {
+                    setConfigOpen(true);
+                  });
+                }
+              }}
+              onChanged={async () => {
+                await loadOpportunities();
+              }}
+            />
+          </div>
+        </div>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Type éditorial</span>
           <select
@@ -785,8 +770,28 @@ export function OpportunitiesBoard() {
       </div>
 
       {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error}
+        <div className="flex flex-col gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void (async () => {
+                setLoading(true);
+                try {
+                  await refresh();
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : "Erreur de chargement."
+                  );
+                } finally {
+                  setLoading(false);
+                }
+              })();
+            }}
+            className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-100"
+          >
+            Réessayer
+          </button>
         </div>
       ) : null}
       {message ? (
@@ -798,410 +803,117 @@ export function OpportunitiesBoard() {
       {loading ? (
         <p className="text-sm text-slate-500">Chargement…</p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-            {sorted.length === 0 ? (
-              <div className="px-6 py-10 text-center text-sm text-slate-500">
-                Aucune opportunité pour ces filtres. Synchronisez puis lancez une
-                recherche.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="border-b border-slate-200 bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Titre</th>
-                      <th className="px-3 py-2 font-medium">Tendance</th>
-                      <th className="px-3 py-2 font-medium">Urgence</th>
-                      <th className="px-3 py-2 font-medium">Score</th>
-                      <th className="px-3 py-2 font-medium">WP</th>
-                      <th className="px-3 py-2 font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sorted.map((item) => (
-                      <tr
-                        key={item.id}
-                        className={`border-b border-slate-100 ${
-                          selectedId === item.id ? "bg-slate-50" : "bg-white"
-                        }`}
-                      >
-                        <td className="max-w-[16rem] px-3 py-2 font-medium text-slate-900">
-                          <button
-                            type="button"
-                            className="text-left hover:underline"
-                            onClick={() => setSelectedId(item.id)}
-                          >
-                            {item.title}
-                          </button>
-                          <p className="mt-0.5 text-xs font-normal text-slate-500">
-                            {item.theme.replace(
-                              "Intelligence artificielle et agents IA",
-                              "IA / agents"
-                            )}
-                          </p>
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {item.trendType
-                            ? TREND_LABELS[item.trendType]
-                            : "—"}
-                          {item.trendScore != null ? (
-                            <span className="block text-xs text-slate-500">
-                              {item.trendScore}/100 · conf.{" "}
-                              {item.trendConfidence
-                                ? CONFIDENCE_LABELS[item.trendConfidence]
-                                : "—"}
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {item.editorialUrgency
-                            ? URGENCY_LABELS[item.editorialUrgency]
-                            : "—"}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-semibold ${scoreTone(item.scoreTotal)}`}
-                          >
-                            {item.scoreTotal}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-xs text-slate-600">
-                          {item.duplicateRisk && item.duplicateRisk !== "none"
-                            ? item.duplicateRisk
-                            : "ok"}
-                        </td>
-                        <td className="px-3 py-2">
-                          <button
-                            type="button"
-                            className="text-xs font-medium text-naxialis underline"
-                            onClick={() => setSelectedId(item.id)}
-                          >
-                            Détails
-                          </button>
-                        </td>
-                      </tr>
+        <>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:grid-cols-[minmax(0,45%)_minmax(0,55%)]">
+            <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3.5 py-2.5">
+                <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+                  Résultats
+                  <span className="ml-1.5 normal-case text-slate-500">
+                    · {total}
+                  </span>
+                </p>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <span className="whitespace-nowrap">Par page</span>
+                  <select
+                    value={pageSize}
+                    onChange={(event) => {
+                      const next = Number(event.target.value) as PageSize;
+                      if (PAGE_SIZE_OPTIONS.includes(next)) {
+                        setPageSize(next);
+                      }
+                    }}
+                    className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-900 outline-none focus-visible:border-[#0F5270] focus-visible:ring-2 focus-visible:ring-[#0F5270]/20"
+                    aria-label="Nombre de résultats par page"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
                     ))}
-                  </tbody>
-                </table>
+                  </select>
+                </label>
               </div>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            {!selected ? (
-              <p className="text-sm text-slate-500">
-                Sélectionnez une opportunité pour afficher l’angle, les sources,
-                les sous-scores et les articles similaires.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <div className="flex flex-wrap gap-2">
-                    <span
-                      className={`inline-flex rounded border px-2 py-0.5 text-xs font-semibold ${scoreTone(selected.scoreTotal)}`}
-                    >
-                      Éditorial {selected.scoreTotal}/100
-                    </span>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-                      {CONTENT_LABELS[selected.contentType ?? "evergreen"]}
-                    </span>
-                    {selected.trendType ? (
-                      <span className="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-900">
-                        Tendance : {TREND_LABELS[selected.trendType]}
-                        {selected.trendScore != null
-                          ? ` · ${selected.trendScore}/100`
-                          : ""}
-                      </span>
-                    ) : (
-                      <span className="rounded bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
-                        Tendance non évaluée (historique)
-                      </span>
-                    )}
-                    {selected.editorialUrgency ? (
-                      <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-900">
-                        Urgence {URGENCY_LABELS[selected.editorialUrgency]}
-                      </span>
-                    ) : null}
-                    {selected.duplicateRisk &&
-                    selected.duplicateRisk !== "none" ? (
-                      <span className="rounded bg-orange-50 px-2 py-0.5 text-xs text-orange-800">
-                        Doublon WP : {selected.duplicateRisk}
-                      </span>
-                    ) : (
-                      <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800">
-                        Pas de doublon WP fort
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                    {selected.title}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-600">{selected.subject}</p>
-                </div>
-
-                {selected.trendJustification ? (
-                  <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                      Justification de tendance
-                      {selected.trendConfidence
-                        ? ` · confiance ${CONFIDENCE_LABELS[selected.trendConfidence]}`
-                        : ""}
-                      {selected.trendSignals?.analysisVersion
-                        ? ` · ${selected.trendSignals.analysisVersion}`
-                        : ""}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-700">
-                      {selected.trendJustification}
-                    </p>
-                    {selected.trendCheckedAt ? (
-                      <p className="mt-1 text-xs text-slate-500">
-                        Vérifié le{" "}
-                        {new Date(selected.trendCheckedAt).toLocaleString(
-                          "fr-FR"
-                        )}
-                      </p>
-                    ) : null}
-                    {selected.trendSignals?.historyComparison?.interpretation ? (
-                      <p className="mt-2 text-xs text-slate-600">
-                        Historique :{" "}
-                        {selected.trendSignals.historyComparison.interpretation}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {selected.angle ? (
-                  <p className="text-sm text-slate-700">
-                    <span className="font-medium">Angle :</span> {selected.angle}
-                  </p>
-                ) : null}
-                {selected.searchIntent ? (
-                  <p className="text-sm text-slate-700">
-                    <span className="font-medium">Intention :</span>{" "}
-                    {selected.searchIntent}
-                  </p>
-                ) : null}
-                {selected.rationale ? (
-                  <p className="text-sm text-slate-600">{selected.rationale}</p>
-                ) : null}
-
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {[
-                    ["Pertinence", selected.scoreRelevance, selected.scoreRationale?.relevance],
-                    ["Commercial", selected.scoreCommercial, selected.scoreRationale?.commercial],
-                    ["Intention", selected.scoreIntent, selected.scoreRationale?.intent],
-                    ["Actualité", selected.scoreTimeliness, selected.scoreRationale?.timeliness],
-                    ["Originalité", selected.scoreOriginality, selected.scoreRationale?.originality],
-                  ].map(([label, value, tip]) => (
-                    <div key={String(label)} className="text-xs text-slate-600">
-                      <p className="font-medium text-slate-800">
-                        {label} · {value}
-                      </p>
-                      {tip ? <p className="mt-0.5 leading-snug">{tip}</p> : null}
-                    </div>
-                  ))}
-                </div>
-
-                {(() => {
-                  const qualifications =
-                    selected.trendSignals?.sourceQualifications ?? [];
-                  const legacySources = asSources(selected.sources);
-                  if (qualifications.length === 0 && legacySources.length === 0) {
-                    return null;
-                  }
-
-                  if (qualifications.length === 0) {
-                    return (
-                      <div>
-                        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                          Sources (historique)
-                        </p>
-                        <ul className="mt-1 space-y-1">
-                          {legacySources.map((source) => (
-                            <li key={`${source.url}-${source.title}`}>
-                              <a
-                                href={source.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-sm text-naxialis underline"
-                              >
-                                {source.title}
-                                {source.date ? ` (${source.date})` : ""}
-                              </a>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  }
-
-                  const evidence = qualifications.filter(
-                    (item) => item.role === "trend_evidence"
-                  );
-                  const documentary = qualifications.filter(
-                    (item) => item.role === "documentary"
-                  );
-                  const excluded = qualifications.filter(
-                    (item) => item.role === "excluded"
-                  );
-
-                  function renderQualifiedList(
-                    items: SourceQualification[],
-                    emptyLabel: string
-                  ) {
-                    if (items.length === 0) {
-                      return (
-                        <p className="mt-1 text-xs text-slate-500">{emptyLabel}</p>
-                      );
-                    }
-                    return (
-                      <ul className="mt-1 space-y-1.5">
-                        {items.map((source) => (
-                          <li key={`${source.role}-${source.url}-${source.title}`}>
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-sm text-naxialis underline"
-                            >
-                              {source.title}
-                              {source.date ? ` (${source.date})` : ""}
-                            </a>
-                            {source.exclusionReason ? (
-                              <p className="text-xs text-slate-500">
-                                {source.exclusionReason}
-                              </p>
-                            ) : null}
-                            {source.sharedInBatch ? (
-                              <p className="text-xs text-amber-700">
-                                Également citée sur d’autres opportunités du lot.
-                              </p>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    );
-                  }
-
-                  return (
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-xs font-semibold tracking-wide text-emerald-800 uppercase">
-                          Preuves de tendance
-                        </p>
-                        {renderQualifiedList(
-                          evidence,
-                          "Aucune preuve directe retenue."
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                          Sources documentaires
-                        </p>
-                        {renderQualifiedList(
-                          documentary,
-                          "Aucune source documentaire."
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                          Sources exclues du calcul
-                        </p>
-                        {renderQualifiedList(
-                          excluded,
-                          "Aucune source exclue."
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {asSimilarPosts(selected.similarPosts).length > 0 ? (
-                  <div>
-                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                      Articles WP similaires
-                    </p>
-                    <ul className="mt-1 space-y-1 text-sm text-slate-700">
-                      {asSimilarPosts(selected.similarPosts).map((post) => (
-                        <li key={post.wpPostId}>
-                          <a
-                            href={post.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="underline"
-                          >
-                            {post.title}
-                          </a>
-                          <span className="text-slate-500">
-                            {" "}
-                            · {Math.round(post.score * 100)} % — {post.reason}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {asSimilarTopics(selected.similarTopics).length > 0 ? (
-                  <div>
-                    <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                      Sujets déjà en file
-                    </p>
-                    <ul className="mt-1 space-y-1 text-sm text-slate-700">
-                      {asSimilarTopics(selected.similarTopics).map((topic) => (
-                        <li key={topic.topicId}>
-                          {topic.subject}
-                          <span className="text-slate-500">
-                            {" "}
-                            · {Math.round(topic.score * 100)} %
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+              <div className="min-h-0 max-h-[min(60vh,34rem)] flex-1 overflow-y-auto lg:max-h-[min(65vh,38rem)]">
+                <OpportunityResultList
+                  items={opportunities}
+                  selectedId={selectedId}
+                  onSelect={selectOpportunity}
+                />
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2.5 text-xs text-slate-600">
+                <p>
+                  {rangeStart}–{rangeEnd} sur {total}
+                </p>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={
-                      pendingId === selected.id ||
-                      selected.status === "added_to_queue"
-                    }
-                    onClick={() => void handleQueue(selected.id)}
-                    className="rounded-md bg-naxialis-dark px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#0F5270]/30 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {selected.status === "added_to_queue"
-                      ? "Déjà en file"
-                      : pendingId === selected.id
-                        ? "Ajout…"
-                        : "Ajouter à la file de sujets"}
+                    Précédent
                   </button>
-                  {selected.status !== "dismissed" &&
-                  selected.status !== "added_to_queue" ? (
-                    <button
-                      type="button"
-                      disabled={pendingId === selected.id}
-                      onClick={() => void handleDismiss(selected.id)}
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 disabled:opacity-50"
-                    >
-                      Écarter
-                    </button>
-                  ) : null}
-                  {selected.topicId ? (
-                    <Link
-                      href="/topics"
-                      className="self-center text-xs text-naxialis underline"
-                    >
-                      Voir la file
-                    </Link>
-                  ) : null}
+                  <span className="tabular-nums text-slate-700">
+                    Page {page} sur {pageCount}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= pageCount || loading || total === 0}
+                    onClick={() =>
+                      setPage((prev) => Math.min(pageCount, prev + 1))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#0F5270]/30 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Suivant
+                  </button>
                 </div>
               </div>
-            )}
+            </div>
+
+            <div className="hidden min-h-[24rem] overflow-hidden rounded-lg border border-slate-200 bg-white lg:flex lg:max-h-[min(75vh,44rem)] lg:flex-col">
+              <OpportunityDetailPanel
+                opportunity={selected}
+                pendingId={pendingId}
+                onQueue={(id) => void handleQueue(id)}
+                onDismiss={(id) => void handleDismiss(id)}
+              />
+            </div>
           </div>
-        </div>
+
+          <Sheet
+            open={mobileDetailOpen && Boolean(selected)}
+            onOpenChange={(open) => {
+              setMobileDetailOpen(open);
+              if (!open) {
+                // Conserve la sélection liste, ferme seulement le panneau mobile.
+              }
+            }}
+          >
+            <SheetContent
+              side="bottom"
+              showCloseButton
+              className="flex h-[min(92vh,40rem)] max-h-[92vh] w-full flex-col gap-0 overflow-hidden rounded-t-xl p-0 sm:max-w-none lg:hidden"
+            >
+              <SheetHeader className="sr-only">
+                <SheetTitle>
+                  {selected?.title ?? "Détail de l’opportunité"}
+                </SheetTitle>
+                <SheetDescription>
+                  Angle, justification, scores et sources de l’opportunité
+                  sélectionnée.
+                </SheetDescription>
+              </SheetHeader>
+              <OpportunityDetailPanel
+                opportunity={selected}
+                pendingId={pendingId}
+                onQueue={(id) => void handleQueue(id)}
+                onDismiss={(id) => void handleDismiss(id)}
+                onClose={() => setMobileDetailOpen(false)}
+              />
+            </SheetContent>
+          </Sheet>
+        </>
       )}
     </div>
   );

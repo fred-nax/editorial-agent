@@ -1,4 +1,8 @@
-import { domainByLabel, normalizeThemeLabel } from "./domains";
+import {
+  SEO_THEME_LABELS,
+  domainByLabel,
+  normalizeThemeLabel,
+} from "./domains";
 import {
   NAXIALIS_SERVICES,
   type OpportunityContentType,
@@ -33,6 +37,26 @@ function specificityBonus(title: string, subject: string): number {
   return specific;
 }
 
+function resolveThemeForScoring(
+  theme: string,
+  context: ScoreContext
+): { label: string; explorationAngles: string[] } | undefined {
+  const catalog = context.themeCatalog ?? [];
+  const needle = theme.trim().toLowerCase();
+  const fromCatalog = catalog.find((item) => item.label.toLowerCase() === needle);
+  if (fromCatalog) {
+    return fromCatalog;
+  }
+  const historical = domainByLabel(theme);
+  if (historical) {
+    return {
+      label: historical.label,
+      explorationAngles: historical.explorationAngles,
+    };
+  }
+  return undefined;
+}
+
 function themeRelevance(
   candidate: RawOpportunityCandidate,
   context: ScoreContext
@@ -40,8 +64,12 @@ function themeRelevance(
   score: number;
   detail: string;
 } {
-  const theme = normalizeThemeLabel(candidate.theme);
-  const domain = domainByLabel(theme);
+  const catalogLabels = (context.themeCatalog ?? []).map((item) => item.label);
+  const theme = normalizeThemeLabel(candidate.theme, [
+    ...catalogLabels,
+    ...SEO_THEME_LABELS,
+  ]);
+  const domain = resolveThemeForScoring(theme, context);
   const text = `${candidate.title} ${candidate.subject} ${candidate.angle ?? ""}`.toLowerCase();
   let score = domain ? 14 : context.freeTopic ? 16 : 8;
   const matchedAngles: string[] = [];
@@ -60,8 +88,10 @@ function themeRelevance(
     }
     score += Math.min(8, matchedAngles.length * 2);
   } else if (context.freeTopic) {
-    // Pertinence au sujet libre : spécificité + présence du thème dans le texte
-    const themeTokens = theme.toLowerCase().split(/\s+/).filter((t) => t.length > 3);
+    const themeTokens = theme
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 3);
     const hits = themeTokens.filter((token) => text.includes(token)).length;
     score += Math.min(6, hits * 2);
   }
@@ -74,7 +104,7 @@ function themeRelevance(
     detail: domain
       ? `Thème « ${theme} »${matchedAngles.length ? ` · angles ${matchedAngles.slice(0, 3).join(", ")}` : " · alignement général"} (${score}/25).`
       : context.freeTopic
-        ? `Pertinence au sujet libre « ${theme} » (${score}/25) — hors catalogue Naxialis, non pénalisé.`
+        ? `Pertinence au sujet libre « ${theme} » (${score}/25) — hors catalogue, non pénalisé.`
         : `Thématique hors catalogue principal (${score}/25).`,
   };
 }

@@ -244,18 +244,26 @@ describe("SEO 1.3.1 — Source Evidence Quality", () => {
 
     // Nouvelle méthode versionnée — pas de recalcul silencieux à l’affichage
     const board = readSource("components/OpportunitiesBoard.tsx");
-    assert.match(board, /Tendance non évaluée \(historique\)/);
-    assert.match(board, /sourceQualifications/);
-    assert.match(board, /Preuves de tendance/);
-    assert.match(board, /Sources documentaires/);
-    assert.match(board, /Sources exclues/);
+    const detail = readSource(
+      "components/opportunities/opportunity-detail-panel.tsx"
+    );
+    assert.match(detail, /Tendance non évaluée \(historique\)/);
+    assert.match(detail, /sourceQualifications/);
+    assert.match(detail, /Preuves de tendance/);
+    assert.match(detail, /Sources documentaires/);
+    assert.match(detail, /Sources exclues/);
+    assert.match(board, /OpportunityDetailPanel/);
     assert.equal(TREND_ANALYSIS_VERSION, "seo-1.3.1");
   });
 
   it("11. aucun appel OpenAI à l’affichage", () => {
     const apiGet = readSource("app/api/opportunities/route.ts");
     const board = readSource("components/OpportunitiesBoard.tsx");
+    const detail = readSource(
+      "components/opportunities/opportunity-detail-panel.tsx"
+    );
     assert.doesNotMatch(board, /openai/i);
+    assert.doesNotMatch(detail, /openai/i);
     const getBlock = apiGet.slice(
       apiGet.indexOf("export async function GET"),
       apiGet.indexOf("export async function POST")

@@ -323,6 +323,7 @@ describe("API route auth surface", () => {
       "app/api/opportunities/route.ts",
       "app/api/opportunities/[id]/route.ts",
       "app/api/opportunities/search/[id]/route.ts",
+      "app/api/opportunities/reset/route.ts",
       "app/api/wordpress-inventory/sync/route.ts",
       "app/api/wordpress-inventory/sync/[id]/route.ts",
     ];

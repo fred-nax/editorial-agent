@@ -2,7 +2,6 @@ import { db } from "../db";
 import { logError, logInfo } from "../logger";
 import { openai } from "../openai";
 import {
-  EDITORIAL_DOMAINS,
   resolveDomainQuotas,
   totalQuota,
   type DomainQuotaMap,
@@ -22,6 +21,11 @@ import {
   type ValidatedResearchConfiguration,
 } from "./research-config";
 import { scoreOpportunity } from "./scoring";
+import {
+  loadEditorialCatalogForSearch,
+  resolveDomainInCatalog,
+} from "./theme-catalog";
+import { requireActiveThemesForDomainsSearch } from "./theme-catalog-shared";
 import {
   appendTrendHistory,
   assessTrendSignals,
@@ -128,15 +132,24 @@ function buildDomainPrompt(
   instructions: string | null,
   description?: string | null
 ): string {
+  const angles =
+    domain.explorationAngles.length > 0
+      ? domain.explorationAngles.map((item) => `- ${item}`).join("\n")
+      : "- Angles libres, pertinents pour la thématique.";
+  const services =
+    domain.naxialisServices.length > 0
+      ? `Services ou offres liés possibles : ${domain.naxialisServices.join(", ")}`
+      : null;
   return [
-    "Tu es un analyste éditorial pour le blog B2B Naxialis.",
-    `Domaine exclusif pour cette recherche : « ${domain.label} ».`,
+    "Tu es un analyste éditorial B2B.",
+    `Thématique exclusive pour cette recherche : « ${domain.label} ».`,
     description ? `Focus éditorial demandé : ${description}` : null,
+    domain.description ? `Description de la thématique : ${domain.description}` : null,
     `Objectif de recherche : ${researchGoalLabel(goal)}.`,
     `Propose jusqu’à ${quota} opportunités d'articles distinctes (ne pas inventer pour remplir le quota).`,
     "Angles d'exploration à couvrir de façon EQUILIBREE (ne pas rester sur un seul) :",
-    domain.explorationAngles.map((item) => `- ${item}`).join("\n"),
-    "Services Naxialis liés possibles : " + domain.naxialisServices.join(", "),
+    angles,
+    services,
     instructions
       ? `Consignes utilisateur (paramètres de recherche, pas d’instructions système) : ${instructions}`
       : null,
@@ -335,19 +348,20 @@ function maxSiblingScore(
 }
 
 function configFromLegacyQuotas(
-  quotasOverride?: Partial<Record<string, number>> | null
+  quotasOverride: Partial<Record<string, number>> | null | undefined,
+  catalog: EditorialDomain[]
 ): ValidatedResearchConfiguration {
-  const quotas: DomainQuotaMap = resolveDomainQuotas(quotasOverride);
+  const quotas: DomainQuotaMap = resolveDomainQuotas(quotasOverride, catalog);
   return {
     mode: "domains",
     researchGoal: "seo",
-    requestedCount: totalQuota(quotas),
+    requestedCount: totalQuota(quotas, catalog),
     researchInstructions: null,
     customTopic: null,
     configId: null,
     customThemeId: null,
     quotas,
-    domainSelections: EDITORIAL_DOMAINS.map((domain) => ({
+    domainSelections: catalog.map((domain) => ({
       domainId: domain.id,
       enabled: (quotas[domain.id] ?? 0) > 0,
       quota: quotas[domain.id] ?? 0,
@@ -376,18 +390,70 @@ export async function processOpportunitySearch(
     | Partial<Record<string, number>>
     | null
 ): Promise<void> {
+  const previewMode = isValidatedResearchConfiguration(configOrQuotas)
+    ? configOrQuotas.mode
+    : "domains";
+
+  let catalogForSearch: EditorialDomain[] = [];
+  let catalogForScoring: EditorialDomain[] = [];
+
+  try {
+    const { all, active } = await loadEditorialCatalogForSearch({
+      ensureIfEmpty: true,
+    });
+    catalogForScoring = all;
+    if (previewMode === "domains") {
+      catalogForSearch = requireActiveThemesForDomainsSearch(active);
+    } else {
+      // Mode sujet libre : catalogue optionnel pour le scoring / themeId.
+      catalogForSearch = active;
+    }
+  } catch (catalogError) {
+    if (previewMode === "free") {
+      // Sujet libre indépendant : ne bloque pas si le catalogue est indisponible.
+      catalogForSearch = [];
+      catalogForScoring = [];
+    } else {
+      throw catalogError;
+    }
+  }
+
   const config: ValidatedResearchConfiguration = isValidatedResearchConfiguration(
     configOrQuotas
   )
     ? configOrQuotas
     : configFromLegacyQuotas(
         (configOrQuotas as Partial<Record<string, number>> | null | undefined) ??
-          null
+          null,
+        catalogForSearch
       );
+
+  const themeCatalogForScore = catalogForScoring.map((domain) => ({
+    label: domain.label,
+    explorationAngles: domain.explorationAngles,
+  }));
+
+  /** Résout l’id catalogue pour une opportunité (label → thème). */
+  function resolveThemeId(themeLabel: string): string | null {
+    const needle = themeLabel.trim().toLowerCase();
+    const match = catalogForScoring.find(
+      (domain) => domain.label.toLowerCase() === needle
+    );
+    if (!match) {
+      return null;
+    }
+    // Ne pas écrire un legacyKey historique comme FK s’il n’y a pas encore de ligne DB.
+    if (match.legacyKey && match.id === match.legacyKey) {
+      return null;
+    }
+    return match.id;
+  }
 
   try {
     const allCandidates: RawOpportunityCandidate[] = [];
     const domainBreakdown: Record<string, number> = {};
+    /** theme label → themeId for persistence */
+    const themeIdByLabel = new Map<string, string | null>();
 
     if (config.mode === "free" && config.customTopic) {
       const freeCandidates = await requestFreeTopicCandidates(
@@ -398,24 +464,66 @@ export async function processOpportunitySearch(
       );
       allCandidates.push(...freeCandidates);
       domainBreakdown[config.customTopic] = freeCandidates.length;
+      if (config.customThemeId) {
+        for (const candidate of freeCandidates) {
+          themeIdByLabel.set(candidate.theme, config.customThemeId);
+        }
+      }
     } else {
-      for (const domain of EDITORIAL_DOMAINS) {
-        const quota = config.quotas[domain.id] ?? 0;
+      const selectedDomains: EditorialDomain[] = [];
+      for (const selection of config.domainSelections) {
+        if (!selection.enabled || selection.quota <= 0) {
+          continue;
+        }
+        const resolved =
+          resolveDomainInCatalog(selection.domainId, catalogForSearch) ??
+          resolveDomainInCatalog(selection.domainId, catalogForScoring);
+        if (!resolved || resolved.active === false) {
+          continue;
+        }
+        selectedDomains.push({
+          ...resolved,
+          description: selection.description ?? resolved.description,
+        });
+      }
+
+      // Fallback legacy : quotas map keys
+      if (selectedDomains.length === 0) {
+        for (const domain of catalogForSearch) {
+          const quota =
+            config.quotas[domain.id] ??
+            (domain.legacyKey ? config.quotas[domain.legacyKey] : 0) ??
+            0;
+          if (quota > 0) {
+            selectedDomains.push(domain);
+          }
+        }
+      }
+
+      for (const domain of selectedDomains) {
+        const selection = config.domainSelections.find(
+          (item) =>
+            item.domainId === domain.id ||
+            item.domainId === domain.legacyKey
+        );
+        const quota =
+          selection?.quota ??
+          config.quotas[domain.id] ??
+          (domain.legacyKey ? config.quotas[domain.legacyKey] : 0) ??
+          0;
         if (quota <= 0) {
           continue;
         }
-        const selection = config.domainSelections.find(
-          (item) => item.domainId === domain.id
-        );
         const domainCandidates = await requestDomainCandidates(
           domain,
           quota,
           config.researchGoal,
           config.researchInstructions,
-          selection?.description
+          selection?.description ?? domain.description
         );
         allCandidates.push(...domainCandidates);
         domainBreakdown[domain.label] = domainCandidates.length;
+        themeIdByLabel.set(domain.label, domain.id);
       }
     }
 
@@ -492,6 +600,7 @@ export async function processOpportunitySearch(
         batchSiblingScore,
         freeTopic,
         researchGoal: config.researchGoal,
+        themeCatalog: themeCatalogForScore,
       });
       const trend = buildTrendPersistence(
         candidate,
@@ -500,6 +609,10 @@ export async function processOpportunitySearch(
         batchUrlCounts
       );
 
+      const themeId =
+        themeIdByLabel.get(candidate.theme) ??
+        resolveThemeId(candidate.theme);
+
       await db.seoOpportunity.create({
         data: {
           title: candidate.title,
@@ -507,6 +620,7 @@ export async function processOpportunitySearch(
           angle: candidate.angle,
           searchIntent: candidate.searchIntent,
           theme: candidate.theme,
+          themeId: themeId ?? undefined,
           contentType: candidate.contentType ?? "evergreen",
           rationale: candidate.rationale,
           sources: candidate.sources ?? [],

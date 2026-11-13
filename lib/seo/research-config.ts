@@ -5,8 +5,10 @@ import {
   resolveDomainQuotas,
   totalQuota,
   type DomainQuotaMap,
+  type EditorialDomain,
   type EditorialDomainId,
 } from "./domains";
+import { resolveDomainInCatalog } from "./theme-catalog-shared";
 
 export type ResearchMode = "domains" | "free";
 
@@ -68,10 +70,15 @@ export type ValidatedResearchConfiguration = {
   customTopic: string | null;
   configId: string | null;
   customThemeId: string | null;
-  /** Quotas effectifs (domaines activés uniquement). */
+  /** Quotas effectifs (clés = id catalogue / legacyKey). */
   quotas: DomainQuotaMap;
   /** Sélections domaine pour snapshot. */
   domainSelections: DomainSelection[];
+};
+
+export type ValidateResearchOptions = {
+  /** Catalogue actif (PostgreSQL). Si omis → domaines historiques (tests / compat). */
+  catalog?: EditorialDomain[];
 };
 
 const MAX_TOPIC = 200;
@@ -93,8 +100,10 @@ export function researchGoalLabel(goal: ResearchGoal): string {
   return RESEARCH_GOALS.find((item) => item.id === goal)?.label ?? goal;
 }
 
-export function defaultDomainSelections(): DomainSelection[] {
-  return EDITORIAL_DOMAINS.map((domain) => ({
+export function defaultDomainSelections(
+  catalog: EditorialDomain[] = EDITORIAL_DOMAINS
+): DomainSelection[] {
+  return catalog.map((domain) => ({
     domainId: domain.id,
     enabled: true,
     quota: domain.defaultQuota,
@@ -102,18 +111,34 @@ export function defaultDomainSelections(): DomainSelection[] {
   }));
 }
 
-export function defaultResearchConfiguration(): ResearchConfiguration {
+export function defaultResearchConfiguration(
+  catalog: EditorialDomain[] = EDITORIAL_DOMAINS
+): ResearchConfiguration {
   return {
     mode: "domains",
-    domains: defaultDomainSelections(),
+    domains: defaultDomainSelections(catalog),
     researchGoal: "seo",
-    requestedCount: totalQuota(defaultDomainQuotas()),
+    requestedCount: totalQuota(defaultDomainQuotas(catalog), catalog),
     researchInstructions: null,
     customTopic: null,
   };
 }
 
-export function validateResearchConfiguration(input: unknown): {
+function resolveKnownDomain(
+  domainId: string,
+  catalog: EditorialDomain[]
+): EditorialDomain | undefined {
+  return (
+    resolveDomainInCatalog(domainId, catalog) ??
+    domainById(domainId, catalog) ??
+    domainById(domainId, EDITORIAL_DOMAINS)
+  );
+}
+
+export function validateResearchConfiguration(
+  input: unknown,
+  options?: ValidateResearchOptions
+): {
   ok: true;
   value: ValidatedResearchConfiguration;
 } | {
@@ -124,8 +149,18 @@ export function validateResearchConfiguration(input: unknown): {
     return { ok: false, error: "Configuration de recherche invalide." };
   }
 
+  const catalog =
+    options?.catalog && options.catalog.length > 0
+      ? options.catalog
+      : EDITORIAL_DOMAINS;
+
   const record = input as Record<string, unknown>;
-  const mode = record.mode === "free" ? "free" : record.mode === "domains" ? "domains" : null;
+  const mode =
+    record.mode === "free"
+      ? "free"
+      : record.mode === "domains"
+        ? "domains"
+        : null;
   if (!mode) {
     return { ok: false, error: "Mode de recherche invalide (domains | free)." };
   }
@@ -159,7 +194,11 @@ export function validateResearchConfiguration(input: unknown): {
     }
 
     const countRaw = Number(record.requestedCount);
-    if (!ALLOWED_REQUEST_COUNTS.includes(countRaw as (typeof ALLOWED_REQUEST_COUNTS)[number])) {
+    if (
+      !ALLOWED_REQUEST_COUNTS.includes(
+        countRaw as (typeof ALLOWED_REQUEST_COUNTS)[number]
+      )
+    ) {
       return {
         ok: false,
         error: "Nombre d’opportunités invalide (5, 10, 20 ou 30).",
@@ -176,23 +215,18 @@ export function validateResearchConfiguration(input: unknown): {
         customTopic,
         configId,
         customThemeId,
-        quotas: defaultDomainQuotas(),
+        quotas: {},
         domainSelections: [],
       },
     };
   }
 
-  // Mode domains
   const selections: DomainSelection[] = [];
-  const quotas = resolveDomainQuotas({});
-  for (const domain of EDITORIAL_DOMAINS) {
-    quotas[domain.id] = 0;
-  }
+  const quotas: DomainQuotaMap = {};
 
   const domainsInput = Array.isArray(record.domains) ? record.domains : null;
   if (!domainsInput) {
-    // fallback default quotas
-    const defaults = defaultDomainSelections();
+    const defaults = defaultDomainSelections(catalog);
     for (const item of defaults) {
       selections.push(item);
       quotas[item.domainId] = item.quota;
@@ -203,14 +237,18 @@ export function validateResearchConfiguration(input: unknown): {
         continue;
       }
       const row = raw as Record<string, unknown>;
-      const domainId =
-        typeof row.domainId === "string" ? row.domainId : null;
-      if (!domainId || !domainById(domainId)) {
+      const domainId = typeof row.domainId === "string" ? row.domainId : null;
+      if (!domainId) {
+        continue;
+      }
+      const known = resolveKnownDomain(domainId, catalog);
+      if (!known) {
         return {
           ok: false,
-          error: `Domaine inconnu : ${String(domainId)}.`,
+          error: `Domaine inconnu : ${domainId}.`,
         };
       }
+      const resolvedId = known.id;
       const enabled = row.enabled !== false;
       const quotaNum = Number(row.quota);
       const quota =
@@ -218,20 +256,26 @@ export function validateResearchConfiguration(input: unknown): {
           ? Math.max(0, Math.min(30, Math.round(quotaNum)))
           : 0;
       selections.push({
-        domainId: domainId as EditorialDomainId,
+        domainId: resolvedId,
         enabled: enabled && quota > 0,
         quota: enabled ? quota : 0,
         description: asTrimmedString(row.description, 300),
       });
-      quotas[domainId as EditorialDomainId] = enabled ? quota : 0;
+      quotas[resolvedId] = enabled ? quota : 0;
+      if (known.legacyKey && known.legacyKey !== resolvedId) {
+        quotas[known.legacyKey] = enabled ? quota : 0;
+      }
     }
   }
 
-  const requestedCount = totalQuota(quotas);
+  const requestedCount = selections.reduce(
+    (sum, item) => sum + (item.enabled ? item.quota : 0),
+    0
+  );
   if (requestedCount <= 0) {
     return {
       ok: false,
-      error: "Activez au moins un domaine avec un quota supérieur à 0.",
+      error: "Activez au moins une thématique avec un quota supérieur à 0.",
     };
   }
   if (requestedCount > MAX_TOTAL_QUOTA) {
@@ -272,3 +316,9 @@ export function snapshotFromValidated(
     domains: value.domainSelections,
   };
 }
+
+export {
+  resolveDomainQuotas,
+  defaultDomainQuotas,
+  totalQuota,
+};

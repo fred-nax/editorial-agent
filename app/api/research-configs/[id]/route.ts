@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
 import { validateResearchConfiguration } from "@/lib/seo/research-config";
+import { listActiveEditorialDomains } from "@/lib/seo/theme-catalog";
 import type { ResearchGoal, ResearchMode } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -57,16 +58,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Nom invalide." }, { status: 400 });
   }
 
-  const validated = validateResearchConfiguration({
-    ...body,
-    mode: body.mode ?? existing.mode,
-    researchGoal: body.researchGoal ?? existing.researchGoal,
-    requestedCount: body.requestedCount ?? existing.requestedCount,
-    customTopic: body.customTopic ?? existing.customTopic,
-    researchInstructions:
-      body.researchInstructions ?? existing.researchInstructions,
-    domains: body.domains ?? existing.domains,
-  });
+  const catalog = await listActiveEditorialDomains();
+  const validated = validateResearchConfiguration(
+    {
+      ...body,
+      mode: body.mode ?? existing.mode,
+      researchGoal: body.researchGoal ?? existing.researchGoal,
+      requestedCount: body.requestedCount ?? existing.requestedCount,
+      customTopic: body.customTopic ?? existing.customTopic,
+      researchInstructions:
+        body.researchInstructions ?? existing.researchInstructions,
+      domains: body.domains ?? existing.domains,
+    },
+    { catalog: catalog.length > 0 ? catalog : undefined }
+  );
   if (!validated.ok) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }

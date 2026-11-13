@@ -53,14 +53,21 @@ export type SimilarTopicMatch = {
   reason: string;
 };
 
+export type ScoreThemeCatalogEntry = {
+  label: string;
+  explorationAngles: string[];
+};
+
 export type ScoreContext = {
   duplicateRisk: "none" | "low" | "medium" | "high";
   similarMaxScore?: number;
   similarPostCount?: number;
   batchSiblingScore?: number;
-  /** Sujet libre / thématique hors catalogue Naxialis. */
+  /** Sujet libre / thématique hors catalogue. */
   freeTopic?: boolean;
   researchGoal?: "seo" | "trends" | "problems" | "commercial";
+  /** Catalogue dynamique V7.5 pour le scoring de pertinence. */
+  themeCatalog?: ScoreThemeCatalogEntry[];
 };
 
 export type ScoreBreakdown = {

@@ -11,7 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /** Change quand le schéma Prisma change, pour ne pas réutiliser un client généré avant. */
-const PRISMA_CLIENT_TOKEN = "featured-image-v7-1-20261111";
+const PRISMA_CLIENT_TOKEN = "seo-themes-catalog-v7-5-20261113";
 
 type PrismaModule = {
   PrismaClient: typeof PrismaClient;
@@ -40,12 +40,34 @@ function articleFeaturedImageExists(prisma: typeof Prisma): boolean {
   );
 }
 
+/** V7.5 — catalogue thématiques (CustomTheme étendu + SeoOpportunity.themeId). */
+function seoThemeCatalogV75Ready(prisma: typeof Prisma): boolean {
+  const customTheme = prisma.dmmf.datamodel.models.find(
+    (model) => model.name === "CustomTheme"
+  );
+  const opportunity = prisma.dmmf.datamodel.models.find(
+    (model) => model.name === "SeoOpportunity"
+  );
+  const themeFields = new Set(customTheme?.fields.map((field) => field.name) ?? []);
+  const opportunityFields = new Set(
+    opportunity?.fields.map((field) => field.name) ?? []
+  );
+  return (
+    themeFields.has("legacyKey") &&
+    themeFields.has("explorationAngles") &&
+    themeFields.has("defaultQuota") &&
+    themeFields.has("sortOrder") &&
+    opportunityFields.has("themeId")
+  );
+}
+
 function clientMatchesSchema(prisma: typeof Prisma): boolean {
   return (
     topicHasOrigin(prisma) &&
     articleGenerationHasTrace(prisma) &&
     editorialWatchSearchExists(prisma) &&
-    articleFeaturedImageExists(prisma)
+    articleFeaturedImageExists(prisma) &&
+    seoThemeCatalogV75Ready(prisma)
   );
 }
 

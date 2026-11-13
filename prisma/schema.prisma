@@ -211,20 +211,32 @@ model WordPressSyncRun {
   finishedAt      DateTime?
 }
 
-/// Thématique personnalisée (sujet libre enregistré).
+/// Catalogue unifié des thématiques SEO (V7.5) — administrable manuellement.
 model CustomTheme {
   id          String   @id @default(cuid())
   name        String
   description String?
   active      Boolean  @default(true)
+  /// Clé logique historique (ex. ai_agents) — seed V7.5, unique si présente.
+  legacyKey   String?  @unique
+  /// Angles éditoriaux (JSON string[]).
+  explorationAngles Json?
+  /// Quota par défaut pour une recherche multi-thématiques.
+  defaultQuota Int     @default(5)
+  /// Ordre d’affichage (croissant).
+  sortOrder   Int      @default(0)
+  /// Services liés éventuels (JSON string[]) — prompts SEO uniquement.
+  naxialisServices Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  configs ResearchConfig[]
-  runs    OpportunitySearchRun[]
+  configs       ResearchConfig[]
+  runs          OpportunitySearchRun[]
+  opportunities SeoOpportunity[]
 
   @@index([active])
   @@index([name])
+  @@index([sortOrder])
 }
 
 /// Configuration de recherche enregistrée (ne mute pas l’historique).
@@ -284,7 +296,10 @@ model SeoOpportunity {
   subject          String
   angle            String?
   searchIntent     String?
+  /// Label dénormalisé (historique + affichage). Conservé en V7.5.
   theme            String
+  /// Lien catalogue V7.5 (nullable pour opportunités antérieures).
+  themeId          String?
   contentType      OpportunityContentType @default(evergreen)
   rationale        String?
   sources          Json?
@@ -315,8 +330,11 @@ model SeoOpportunity {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
+  themeRef CustomTheme? @relation(fields: [themeId], references: [id], onDelete: SetNull)
+
   @@index([status])
   @@index([theme])
+  @@index([themeId])
   @@index([contentType])
   @@index([scoreTotal])
   @@index([searchRunId])

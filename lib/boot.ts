@@ -4,10 +4,21 @@ import { enqueueArticleGeneration } from "./generation";
 import { recoverStaleGenerations } from "./generation-recovery";
 import { recoverFeaturedImageJobs } from "./images/pipeline";
 import { logError, logInfo } from "./logger";
+import { ensureHistoricalEditorialThemes } from "./seo/theme-catalog";
 
 export async function bootServer(): Promise<void> {
   assertRequiredEnv();
   logInfo("boot", "starting");
+
+  // V7.5 — assure la présence des 5 domaines historiques (insert/link only, jamais d’écrasement).
+  try {
+    const themes = await ensureHistoricalEditorialThemes();
+    logInfo("boot", "editorial themes ensure", themes);
+  } catch (error) {
+    logError("boot", "editorial themes ensure failed", {
+      message: error instanceof Error ? error.message : "Erreur seed thèmes.",
+    });
+  }
 
   const recovered = await recoverStaleGenerations({ fromBoot: true });
   logInfo("boot", "recovery complete", { count: recovered });

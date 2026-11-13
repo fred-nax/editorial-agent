@@ -13,6 +13,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
+    "seo:seed-themes": "tsx scripts/seed-editorial-themes.ts",
     "auth:hash-password": "tsx scripts/hash-password.ts"
   },
   "keywords": [],

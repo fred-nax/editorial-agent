@@ -15,6 +15,12 @@ import {
   validateResearchConfiguration,
 } from "@/lib/seo/research-config";
 import {
+  customThemeToDomain,
+  listThemeCatalog,
+  loadEditorialCatalogForSearch,
+} from "@/lib/seo/theme-catalog";
+import { requireActiveThemesForDomainsSearch } from "@/lib/seo/theme-catalog-shared";
+import {
   isEditorialUrgency,
   isTrendType,
 } from "@/lib/seo/trend-signals";
@@ -27,102 +33,191 @@ function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+/** Tailles de page autorisées pour GET /api/opportunities. */
+const ALLOWED_PAGE_SIZES = [10, 20, 50] as const;
+const DEFAULT_PAGE_SIZE = 20;
+
+function parsePageSize(raw: string | null): number {
+  const value = Number(raw);
+  if (
+    ALLOWED_PAGE_SIZES.includes(value as (typeof ALLOWED_PAGE_SIZES)[number])
+  ) {
+    return value;
+  }
+  return DEFAULT_PAGE_SIZE;
+}
+
+function parsePage(raw: string | null): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 1) {
+    return 1;
+  }
+  return Math.floor(value);
+}
+
 export async function GET(request: Request) {
   if (!(await requireAuth())) {
     return unauthorized();
   }
 
-  const { searchParams } = new URL(request.url);
-  const theme = searchParams.get("theme")?.trim() || undefined;
-  const status = searchParams.get("status")?.trim() || undefined;
-  const contentType = searchParams.get("contentType")?.trim() || undefined;
-  const runId = searchParams.get("runId")?.trim() || undefined;
-  const trendTypeParam = searchParams.get("trendType")?.trim() || undefined;
-  const urgencyParam = searchParams.get("urgency")?.trim() || undefined;
+  try {
+    const { searchParams } = new URL(request.url);
+    const theme = searchParams.get("theme")?.trim() || undefined;
+    const status = searchParams.get("status")?.trim() || undefined;
+    const contentType = searchParams.get("contentType")?.trim() || undefined;
+    const runId = searchParams.get("runId")?.trim() || undefined;
+    const trendTypeParam = searchParams.get("trendType")?.trim() || undefined;
+    const urgencyParam = searchParams.get("urgency")?.trim() || undefined;
+    const pageSize = parsePageSize(searchParams.get("pageSize"));
+    let page = parsePage(searchParams.get("page"));
 
-  const where: {
-    theme?: string;
-    status?: OpportunityStatus;
-    contentType?: OpportunityContentType;
-    searchRunId?: string;
-    trendType?: TrendType;
-    editorialUrgency?: EditorialUrgency;
-  } = {};
+    const where: Prisma.SeoOpportunityWhereInput = {};
 
-  if (theme) {
-    where.theme = theme;
-  }
-  if (
-    status === "new" ||
-    status === "reviewed" ||
-    status === "added_to_queue" ||
-    status === "dismissed"
-  ) {
-    where.status = status;
-  }
-  if (
-    contentType === "news" ||
-    contentType === "evergreen" ||
-    contentType === "commercial"
-  ) {
-    where.contentType = contentType;
-  }
-  if (runId) {
-    where.searchRunId = runId;
-  }
-  if (isTrendType(trendTypeParam)) {
-    where.trendType = trendTypeParam;
-  }
-  if (isEditorialUrgency(urgencyParam)) {
-    where.editorialUrgency = urgencyParam;
-  }
+    if (theme) {
+      const catalogTheme = await db.customTheme.findFirst({
+        where: {
+          OR: [{ id: theme }, { name: theme }, { legacyKey: theme }],
+        },
+      });
+      if (catalogTheme) {
+        where.OR = [
+          { themeId: catalogTheme.id },
+          { theme: catalogTheme.name },
+        ];
+      } else {
+        where.theme = theme;
+      }
+    }
+    if (
+      status === "new" ||
+      status === "reviewed" ||
+      status === "added_to_queue" ||
+      status === "dismissed"
+    ) {
+      where.status = status;
+    }
+    if (
+      contentType === "news" ||
+      contentType === "evergreen" ||
+      contentType === "commercial"
+    ) {
+      where.contentType = contentType;
+    }
+    if (runId) {
+      where.searchRunId = runId;
+    }
+    if (isTrendType(trendTypeParam)) {
+      where.trendType = trendTypeParam;
+    }
+    if (isEditorialUrgency(urgencyParam)) {
+      where.editorialUrgency = urgencyParam;
+    }
 
-  const [
-    opportunities,
-    lastSearch,
-    runningSearch,
-    inventoryCount,
-    recentRuns,
-    customThemes,
-    savedConfigs,
-  ] = await Promise.all([
-    db.seoOpportunity.findMany({
+    // Tri stable entre pages (score → titre → id).
+    const orderBy: Prisma.SeoOpportunityOrderByWithRelationInput[] = [
+      { scoreTotal: "desc" },
+      { title: "asc" },
+      { id: "asc" },
+    ];
+
+    const [
+      total,
+      lastSearch,
+      runningSearch,
+      inventoryCount,
+      recentRuns,
+      customThemes,
+      savedConfigs,
+      detectedCount,
+      highPriorityCount,
+      toHandleCount,
+    ] = await Promise.all([
+      db.seoOpportunity.count({ where }),
+      db.opportunitySearchRun.findFirst({
+        orderBy: { startedAt: "desc" },
+      }),
+      db.opportunitySearchRun.findFirst({
+        where: { status: "running" },
+        orderBy: { startedAt: "desc" },
+      }),
+      db.wordPressPost.count(),
+      db.opportunitySearchRun.findMany({
+        orderBy: { startedAt: "desc" },
+        take: 20,
+      }),
+      listThemeCatalog(),
+      db.researchConfig.findMany({
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+      }),
+      // Cards globales : hors filtres table.
+      db.seoOpportunity.count(),
+      db.seoOpportunity.count({ where: { editorialUrgency: "high" } }),
+      db.seoOpportunity.count({ where: { status: "new" } }),
+    ]);
+
+    const pageCount = Math.max(1, Math.ceil(total / pageSize) || 1);
+    if (page > pageCount) {
+      page = pageCount;
+    }
+    const skip = (page - 1) * pageSize;
+
+    const opportunities = await db.seoOpportunity.findMany({
       where,
-      orderBy: [{ scoreTotal: "desc" }, { createdAt: "desc" }],
-      take: 150,
-    }),
-    db.opportunitySearchRun.findFirst({
-      orderBy: { startedAt: "desc" },
-    }),
-    db.opportunitySearchRun.findFirst({
-      where: { status: "running" },
-      orderBy: { startedAt: "desc" },
-    }),
-    db.wordPressPost.count(),
-    db.opportunitySearchRun.findMany({
-      orderBy: { startedAt: "desc" },
-      take: 20,
-    }),
-    db.customTheme.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-    }),
-    db.researchConfig.findMany({
-      orderBy: { updatedAt: "desc" },
-      take: 50,
-    }),
-  ]);
+      orderBy,
+      skip,
+      take: pageSize,
+    });
 
-  return NextResponse.json({
-    opportunities,
-    lastSearch,
-    runningSearch,
-    inventoryCount,
-    recentRuns,
-    customThemes,
-    savedConfigs,
-    defaultQuotas: defaultDomainQuotas(),
-  });
+    const activeDomains = customThemes
+      .filter((themeRow) => themeRow.active)
+      .map(customThemeToDomain);
+
+    // Sérialisation explicite : garantit un corps JSON même si un champ Date/JSON est atypique.
+    const payload = {
+      opportunities,
+      lastSearch,
+      runningSearch,
+      inventoryCount,
+      recentRuns,
+      customThemes,
+      savedConfigs,
+      defaultQuotas: defaultDomainQuotas(activeDomains),
+      // Pagination (rétrocompat : champs additionnels, liste toujours présente).
+      total,
+      page,
+      pageSize,
+      pageCount,
+      summaryCounts: {
+        detected: detectedCount,
+        highPriority: highPriorityCount,
+        toHandle: toHandleCount,
+      },
+    };
+
+    return new NextResponse(JSON.stringify(payload), {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message.slice(0, 300)
+        : "Impossible de charger les opportunités.";
+    return NextResponse.json(
+      {
+        error: `Chargement des opportunités impossible : ${message}`,
+        opportunities: [],
+        customThemes: [],
+        total: 0,
+        page: 1,
+        pageSize: DEFAULT_PAGE_SIZE,
+        pageCount: 1,
+        summaryCounts: { detected: 0, highPriority: 0, toHandle: 0 },
+      },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -173,19 +268,56 @@ export async function POST(request: Request) {
     };
   }
 
-  if (!body.mode) {
-    body = {
-      mode: "domains",
-      researchGoal: "seo",
-      domains: Object.entries(defaultDomainQuotas()).map(([domainId, quota]) => ({
-        domainId,
-        enabled: true,
-        quota,
-      })),
-    };
+  const mode =
+    body.mode === "free"
+      ? "free"
+      : body.mode === "domains" || !body.mode
+        ? "domains"
+        : null;
+  if (!mode) {
+    return NextResponse.json(
+      { error: "Mode de recherche invalide (domains | free)." },
+      { status: 400 }
+    );
   }
 
-  const validated = validateResearchConfiguration(body);
+  let catalogForValidation:
+    | Awaited<ReturnType<typeof loadEditorialCatalogForSearch>>["active"]
+    | undefined;
+
+  if (mode === "domains") {
+    try {
+      const loaded = await loadEditorialCatalogForSearch({
+        ensureIfEmpty: true,
+      });
+      catalogForValidation = requireActiveThemesForDomainsSearch(
+        loaded.active
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Catalogue de thématiques SEO indisponible.";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    if (!body.mode) {
+      const defaults = defaultDomainQuotas(catalogForValidation);
+      body = {
+        mode: "domains",
+        researchGoal: "seo",
+        domains: Object.entries(defaults).map(([domainId, quota]) => ({
+          domainId,
+          enabled: true,
+          quota,
+        })),
+      };
+    }
+  }
+
+  const validated = validateResearchConfiguration(body, {
+    catalog: catalogForValidation,
+  });
   if (!validated.ok) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }
