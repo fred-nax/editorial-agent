@@ -54,7 +54,7 @@ export function validateVeilleQuery(
 
   const country = record.country;
   if (typeof country !== "string" || !countryByCode(country)) {
-    return { ok: false, error: "Pays non pris en charge." };
+    return { ok: false, error: "Zone géographique non prise en charge." };
   }
 
   return {

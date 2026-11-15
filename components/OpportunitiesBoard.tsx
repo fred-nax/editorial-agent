@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ResearchConfigModal } from "@/components/ResearchConfigModal";
+import { SearchLoadingOverlay } from "@/components/SearchLoadingOverlay";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { OpportunityDetailPanel } from "@/components/opportunities/opportunity-detail-panel";
 import type { SeoOpportunityItem } from "@/components/opportunities/opportunity-display";
@@ -26,7 +27,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { parseResponseJson } from "@/lib/http/parse-response-json";
-import type { ResearchConfiguration } from "@/lib/seo/research-config";
+import {
+  researchGoalLabel,
+  type ResearchConfiguration,
+  type ResearchGoal,
+} from "@/lib/seo/research-config";
 
 type SyncRun = {
   id: string;
@@ -139,6 +144,62 @@ function searchStatusLabel(run: SearchRun | null, running: SearchRun | null): st
   return `Statut : ${run.status}`;
 }
 
+type SeoOverlayCopy = {
+  primaryLabel: string;
+  detailLabel: string | null;
+};
+
+function isResearchGoal(value: unknown): value is ResearchGoal {
+  return (
+    value === "seo" ||
+    value === "trends" ||
+    value === "problems" ||
+    value === "commercial"
+  );
+}
+
+function seoOverlayDetail(
+  goal: unknown,
+  requestedCount: number | null | undefined
+): string | null {
+  const parts: string[] = [];
+  if (isResearchGoal(goal)) {
+    parts.push(researchGoalLabel(goal));
+  }
+  if (typeof requestedCount === "number" && requestedCount > 0) {
+    parts.push(`${requestedCount} piste${requestedCount > 1 ? "s" : ""}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Libellés overlay à partir d’une config client (POST) ou d’un run serveur. */
+function seoSearchOverlayCopy(
+  run: SearchRun | null,
+  pending: ResearchConfiguration | null
+): SeoOverlayCopy {
+  const mode = run?.mode ?? pending?.mode ?? "domains";
+  if (mode === "free") {
+    const topic =
+      (run?.customTopic && run.customTopic.trim()) ||
+      (pending?.customTopic && pending.customTopic.trim()) ||
+      "Sujet libre";
+    return {
+      primaryLabel: topic,
+      detailLabel: seoOverlayDetail(
+        run?.researchGoal ?? pending?.researchGoal,
+        run?.requestedCount ?? pending?.requestedCount
+      ),
+    };
+  }
+  return {
+    primaryLabel: "Recherche multithématique",
+    detailLabel: seoOverlayDetail(
+      run?.researchGoal ?? pending?.researchGoal,
+      run?.requestedCount ?? pending?.requestedCount
+    ),
+  };
+}
+
 export function OpportunitiesBoard() {
   const [opportunities, setOpportunities] = useState<SeoOpportunityItem[]>([]);
   const [inventoryCount, setInventoryCount] = useState(0);
@@ -160,6 +221,9 @@ export function OpportunitiesBoard() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [searching, setSearching] = useState(false);
+  /** Config locale le temps du POST, avant que `runningSearch` soit renseigné. */
+  const [pendingSearchConfig, setPendingSearchConfig] =
+    useState<ResearchConfiguration | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [themeManagerOpen, setThemeManagerOpen] = useState(false);
   const [resumeConfigAfterThemes, setResumeConfigAfterThemes] =
@@ -311,10 +375,13 @@ export function OpportunitiesBoard() {
     if (runningSearch) {
       wasRunningSearch.current = true;
       setMessage("Recherche en cours…");
+      // Le run serveur porte les libellés (y compris après reload).
+      setPendingSearchConfig(null);
       return;
     }
     if (wasRunningSearch.current && lastSearch) {
       wasRunningSearch.current = false;
+      setPendingSearchConfig(null);
       if (lastSearch.status === "completed") {
         setMessage(
           `Recherche terminée : ${lastSearch.foundCount} opportunité(s) créée(s).`
@@ -385,6 +452,7 @@ export function OpportunitiesBoard() {
       return;
     }
     setSearching(true);
+    setPendingSearchConfig(config ?? null);
     setError(null);
     setMessage("Recherche démarrée…");
     try {
@@ -406,6 +474,7 @@ export function OpportunitiesBoard() {
       }
       await refresh();
     } catch (err) {
+      setPendingSearchConfig(null);
       setMessage(null);
       setError(err instanceof Error ? err.message : "Erreur recherche.");
     } finally {
@@ -467,6 +536,11 @@ export function OpportunitiesBoard() {
   }
 
   const busy = syncing || searching || !!runningSync || !!runningSearch;
+  const searchOverlayOpen = searching || Boolean(runningSearch);
+  const seoOverlay = seoSearchOverlayCopy(
+    runningSearch,
+    pendingSearchConfig
+  );
   const wpSynced =
     !syncing &&
     !runningSync &&
@@ -496,6 +570,14 @@ export function OpportunitiesBoard() {
 
   return (
     <div className="space-y-6">
+      <SearchLoadingOverlay
+        open={searchOverlayOpen}
+        title="Recherche d'opportunités SEO en cours…"
+        primaryLabel={seoOverlay.primaryLabel}
+        detailLabel={seoOverlay.detailLabel}
+        startedAtIso={runningSearch?.startedAt ?? null}
+      />
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">

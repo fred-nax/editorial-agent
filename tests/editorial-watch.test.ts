@@ -100,10 +100,50 @@ describe("veille éditoriale", () => {
     }
   });
 
-  it("refuse une période, un pays ou une thématique invalides", () => {
+  it("refuse une période, une zone ou une thématique invalides", () => {
     assert.equal(validateVeilleQuery({ theme: "ia", periodDays: 14, country: "FR" }).ok, false);
-    assert.equal(validateVeilleQuery({ theme: "agents IA", periodDays: 30, country: "US" }).ok, false);
+    assert.equal(validateVeilleQuery({ theme: "agents IA", periodDays: 30, country: "XX" }).ok, false);
     assert.equal(validateVeilleQuery({ theme: "  ", periodDays: 30, country: "FR" }).ok, false);
+  });
+
+  it("accepte les zones International (anglais) et États-Unis (anglais)", () => {
+    for (const country of ["INT_EN", "US"] as const) {
+      const parsed = validateVeilleQuery({
+        theme: "AI agents for SMEs",
+        periodDays: 30,
+        country,
+      });
+      assert.equal(parsed.ok, true);
+      if (!parsed.ok) {
+        continue;
+      }
+      assert.equal(parsed.query.country, country);
+      const prompt = buildVeillePrompt(parsed.query, NOW);
+      if (country === "INT_EN") {
+        assert.match(prompt, /International \(anglais\)/);
+        assert.match(prompt, /échelle internationale/);
+        assert.match(prompt, /N’exige pas que les URL appartiennent exclusivement/);
+        assert.doesNotMatch(prompt, /Pays visé/);
+      } else {
+        assert.match(prompt, /États-Unis \(anglais\)/);
+        assert.match(prompt, /marché américain/);
+        assert.doesNotMatch(prompt, /échelle internationale/);
+      }
+    }
+  });
+
+  it("conserve le prompt pays pour les cinq zones historiques", () => {
+    const parsed = validateVeilleQuery({
+      theme: "agents IA pour les PME",
+      periodDays: 30,
+      country: "FR",
+    });
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      const prompt = buildVeillePrompt(parsed.query, NOW);
+      assert.match(prompt, /Pays visé : France/);
+      assert.doesNotMatch(prompt, /marché américain/);
+    }
   });
 
   it("retrouve une publication dont l’URL est citée par la recherche", async () => {

@@ -4,15 +4,65 @@ export type VeillePeriod = (typeof VEILLE_PERIODS)[number];
 export const MAX_VEILLE_RESULTS = 12;
 export const MAX_THEME_LENGTH = 160;
 
+/**
+ * Zones géographiques de la veille.
+ * - `country` : localisation web_search sur un code ISO (FR, BE, …, US).
+ * - `international` : pas de user_location artificiel ; recherche mondiale en anglais.
+ */
 export const VEILLE_COUNTRIES = [
-  { code: "FR", label: "France", timezone: "Europe/Paris" },
-  { code: "BE", label: "Belgique", timezone: "Europe/Brussels" },
-  { code: "CH", label: "Suisse", timezone: "Europe/Zurich" },
-  { code: "CA", label: "Canada", timezone: "America/Toronto" },
-  { code: "LU", label: "Luxembourg", timezone: "Europe/Luxembourg" },
+  {
+    code: "FR",
+    label: "France",
+    timezone: "Europe/Paris",
+    searchScope: "country",
+    contentLanguage: "local",
+  },
+  {
+    code: "BE",
+    label: "Belgique",
+    timezone: "Europe/Brussels",
+    searchScope: "country",
+    contentLanguage: "local",
+  },
+  {
+    code: "CH",
+    label: "Suisse",
+    timezone: "Europe/Zurich",
+    searchScope: "country",
+    contentLanguage: "local",
+  },
+  {
+    code: "CA",
+    label: "Canada",
+    timezone: "America/Toronto",
+    searchScope: "country",
+    contentLanguage: "local",
+  },
+  {
+    code: "LU",
+    label: "Luxembourg",
+    timezone: "Europe/Luxembourg",
+    searchScope: "country",
+    contentLanguage: "local",
+  },
+  {
+    code: "US",
+    label: "États-Unis (anglais)",
+    timezone: "America/New_York",
+    searchScope: "country",
+    contentLanguage: "en",
+  },
+  {
+    code: "INT_EN",
+    label: "International (anglais)",
+    timezone: "UTC",
+    searchScope: "international",
+    contentLanguage: "en",
+  },
 ] as const;
 
 export type VeilleCountryCode = (typeof VEILLE_COUNTRIES)[number]["code"];
+export type VeilleCountry = (typeof VEILLE_COUNTRIES)[number];
 
 export type VeilleQuery = {
   theme: string;

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { SeoSuggestion } from "@/lib/veille/suggestions";
 import type {
   DuplicateCheckBody,
@@ -10,6 +11,16 @@ import type {
   ProposalDuplicateResult,
 } from "@/lib/veille/editorial-duplicates";
 import type { VeilleArticle } from "@/lib/veille/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const FORMAT_LABELS: Record<SeoSuggestion["format"], string> = {
   guide: "Guide",
@@ -24,6 +35,8 @@ export const SUGGESTION_SOURCE_LABELS: Record<DuplicateSource, string> = {
   topic: "File éditoriale",
   generation: "Historique",
 };
+
+const SHORT_DESCRIPTION_CHARS = 140;
 
 type Phase =
   | { status: "loading" }
@@ -85,6 +98,14 @@ export function suggestionDuplicateLabel(
     return { kind: "partial", text: "Vérification partielle." };
   }
   return { kind: "none", text: "Aucun rapprochement détecté." };
+}
+
+function shortDescription(value: string): string {
+  const cleaned = value.trim();
+  if (cleaned.length <= SHORT_DESCRIPTION_CHARS) {
+    return cleaned;
+  }
+  return `${cleaned.slice(0, SHORT_DESCRIPTION_CHARS).trimEnd()}…`;
 }
 
 function DuplicateLevelBadge({ level }: { level: DuplicateLevel }) {
@@ -149,6 +170,152 @@ function MatchPanel({
   );
 }
 
+function SuggestionCard({
+  suggestion,
+  index,
+  selected,
+  onSelect,
+  result,
+  duplicates,
+  duplicatesFailed,
+  duplicatesPending,
+}: {
+  suggestion: SeoSuggestion;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
+  result: ProposalDuplicateResult | undefined;
+  duplicates: DuplicateCheckBody | null;
+  duplicatesFailed: boolean;
+  duplicatesPending: boolean;
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const id = `veille-suggestion-${index}`;
+  const detailsId = `${id}-details`;
+  const status = suggestionDuplicateLabel(
+    result,
+    duplicates,
+    duplicatesFailed,
+    duplicatesPending
+  );
+  const coverageUnavailable =
+    duplicatesFailed ||
+    !duplicates ||
+    duplicates.coverage === "unavailable" ||
+    duplicates.verified === false;
+
+  return (
+    <div
+      className={`rounded-lg border transition-colors ${
+        selected
+          ? "border-naxialis bg-slate-50 ring-1 ring-naxialis/20"
+          : "border-[#E2E8F0] bg-white hover:border-slate-300"
+      }`}
+    >
+      <label htmlFor={id} className="flex cursor-pointer gap-3 p-3 sm:p-3.5">
+        <input
+          id={id}
+          type="radio"
+          name="veille-suggestion"
+          className="mt-1 size-4 shrink-0 accent-[#0F5270]"
+          checked={selected}
+          onChange={onSelect}
+        />
+        <span className="min-w-0 flex-1 space-y-2">
+          <span className="block text-sm font-semibold leading-snug break-words text-[#0F172A]">
+            {suggestion.title}
+          </span>
+          <span className="block text-sm leading-relaxed break-words text-slate-600">
+            {shortDescription(suggestion.rationale)}
+          </span>
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Badge
+              variant="outline"
+              className="border-[#E2E8F0] bg-white text-slate-700"
+            >
+              {FORMAT_LABELS[suggestion.format] ?? suggestion.format}
+            </Badge>
+            {status.kind === "badge" ? (
+              <DuplicateLevelBadge level={status.text as DuplicateLevel} />
+            ) : status.kind === "pending" ||
+              status.kind === "partial" ||
+              status.kind === "unavailable" ? (
+              <span className="text-xs font-medium text-slate-500">{status.text}</span>
+            ) : null}
+          </span>
+        </span>
+      </label>
+
+      <div className="border-t border-[#E2E8F0] px-3 pb-3 sm:px-3.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-2 h-7 gap-1 px-2 text-xs text-slate-600"
+          aria-expanded={detailsOpen}
+          aria-controls={detailsId}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setDetailsOpen((value) => !value);
+          }}
+        >
+          {detailsOpen ? (
+            <>
+              <ChevronUp className="size-3.5" aria-hidden />
+              Masquer les détails
+            </>
+          ) : (
+            <>
+              <ChevronDown className="size-3.5" aria-hidden />
+              Voir les détails
+            </>
+          )}
+        </Button>
+
+        {detailsOpen ? (
+          <div id={detailsId} className="mt-2 space-y-2.5 text-sm text-slate-700">
+            <p className="break-words">
+              <span className="font-medium text-slate-900">Intention de recherche : </span>
+              {suggestion.intent}
+            </p>
+            <p className="break-words">
+              <span className="font-medium text-slate-900">Angle éditorial : </span>
+              {suggestion.angle}
+            </p>
+            <p className="break-words">
+              <span className="font-medium text-slate-900">Bénéfice pour le lecteur : </span>
+              {suggestion.rationale}
+            </p>
+            <div className="space-y-1.5">
+              <p className="font-medium text-slate-900">Niveau de vérification</p>
+              {status.kind === "badge" ? (
+                <DuplicateLevelBadge level={status.text as DuplicateLevel} />
+              ) : (
+                <p
+                  className={`text-xs font-medium ${
+                    status.kind === "partial" || status.kind === "unavailable"
+                      ? "text-slate-500"
+                      : "text-slate-700"
+                  }`}
+                >
+                  {status.text}
+                </p>
+              )}
+              <MatchPanel
+                matches={result?.matches ?? []}
+                coverageUnavailable={
+                  coverageUnavailable && (result?.matches.length ?? 0) > 0
+                }
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function VeilleSuggestionDialog({
   article,
   theme,
@@ -164,7 +331,6 @@ export function VeilleSuggestionDialog({
   onClose: () => void;
   onSelect: (suggestion: SeoSuggestion) => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>({ status: "loading" });
   const [selected, setSelected] = useState(0);
   const [duplicates, setDuplicates] = useState<DuplicateCheckBody | null>(null);
@@ -228,7 +394,6 @@ export function VeilleSuggestionDialog({
           });
         }
       });
-    dialogRef.current?.focus();
     return () => {
       cancelled = true;
     };
@@ -237,162 +402,109 @@ export function VeilleSuggestionDialog({
   const loading = phase.status === "loading";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="veille-suggestions-title"
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent
+        className="flex max-h-[90vh] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:w-full"
         aria-busy={loading}
-        tabIndex={-1}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onClose();
-          }
-        }}
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 outline-none"
       >
-        <h2 id="veille-suggestions-title" className="text-lg font-semibold text-slate-900">
-          Suggérer 3 sujets SEO
-        </h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Suggestions éditoriales à partir de la publication. Aucune génération n’est lancée
-          et aucun sujet n’est enregistré tant que vous ne le confirmez pas.
-        </p>
-        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-          <p className="font-medium break-words text-slate-900">{article.title}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {article.sourceName}
-            {" · "}
-            {theme}
-          </p>
+        <DialogHeader className="shrink-0 space-y-3 border-b border-[#E2E8F0] px-4 py-4 sm:px-5">
+          <div className="space-y-1 pr-8">
+            <DialogTitle id="veille-suggestions-title">
+              Suggérer 3 sujets SEO
+            </DialogTitle>
+            <DialogDescription>
+              Suggestions éditoriales à partir de la publication. Aucune génération n’est
+              lancée et aucun sujet n’est enregistré tant que vous ne le confirmez pas.
+            </DialogDescription>
+          </div>
+          <div className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm text-slate-700">
+            <p className="font-medium break-words text-slate-900">{article.title}</p>
+            <p className="mt-1 text-xs break-words text-slate-500">
+              {article.sourceName}
+              {" · "}
+              {theme}
+            </p>
+          </div>
+        </DialogHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          {loading ? (
+            <p className="text-sm text-slate-600">Préparation de trois suggestions…</p>
+          ) : null}
+
+          {phase.status === "error" ? (
+            <div className="space-y-3">
+              <p
+                role="alert"
+                className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+              >
+                {phase.message}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                className="h-8 border-[#E2E8F0] text-slate-700"
+              >
+                Réessayer
+              </Button>
+            </div>
+          ) : null}
+
+          {phase.status === "ready" ? (
+            <fieldset className="space-y-3" disabled={loading}>
+              <legend className="text-sm font-medium text-slate-800">
+                Choisissez une proposition
+              </legend>
+              {phase.suggestions.map((suggestion, index) => (
+                <SuggestionCard
+                  key={`${suggestion.title}-${index}`}
+                  suggestion={suggestion}
+                  index={index}
+                  selected={selected === index}
+                  onSelect={() => setSelected(index)}
+                  result={duplicates?.results[index]}
+                  duplicates={duplicates}
+                  duplicatesFailed={duplicatesFailed}
+                  duplicatesPending={duplicatesPending}
+                />
+              ))}
+              <p className="text-xs text-slate-500">
+                Ces cartes sont des suggestions éditoriales. Elles ne mesurent ni un volume
+                de recherche ni une opportunité SEO validée.
+              </p>
+            </fieldset>
+          ) : null}
         </div>
 
-        {loading ? (
-          <p className="mt-4 text-sm text-slate-600">Préparation de trois suggestions…</p>
-        ) : null}
-
-        {phase.status === "error" ? (
-          <div className="mt-4 space-y-3">
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-              {phase.message}
-            </p>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-naxialis"
-            >
-              Réessayer
-            </button>
-          </div>
-        ) : null}
-
-        {phase.status === "ready" ? (
-          <fieldset className="mt-4 space-y-3" disabled={loading}>
-            <legend className="text-sm font-medium text-slate-800">
-              Choisissez une proposition
-            </legend>
-            {phase.suggestions.map((suggestion, index) => {
-              const id = `veille-suggestion-${index}`;
-              const active = selected === index;
-              const result = duplicates?.results[index];
-              const status = suggestionDuplicateLabel(
-                result,
-                duplicates,
-                duplicatesFailed,
-                duplicatesPending
-              );
-              const coverageUnavailable =
-                duplicatesFailed ||
-                !duplicates ||
-                duplicates.coverage === "unavailable" ||
-                duplicates.verified === false;
-              return (
-                <label
-                  key={suggestion.title}
-                  htmlFor={id}
-                  className={`block cursor-pointer rounded-lg border px-3 py-3 ${
-                    active ? "border-naxialis bg-slate-50" : "border-slate-200 bg-white"
-                  }`}
-                >
-                  <span className="flex items-start gap-3">
-                    <input
-                      id={id}
-                      type="radio"
-                      name="veille-suggestion"
-                      className="mt-1"
-                      checked={active}
-                      onChange={() => setSelected(index)}
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold break-words text-slate-900">
-                        {suggestion.title}
-                      </span>
-                      <span className="mt-1 block text-sm break-words text-slate-700">
-                        {suggestion.angle}
-                      </span>
-                      <span className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">
-                          {FORMAT_LABELS[suggestion.format] ?? suggestion.format}
-                        </span>
-                        <span className="break-words">{suggestion.intent}</span>
-                      </span>
-                      <span className="mt-2 block text-xs break-words text-slate-500">
-                        {suggestion.rationale}
-                      </span>
-                      <span className="mt-2 flex flex-wrap items-center gap-2">
-                        {status.kind === "badge" ? (
-                          <DuplicateLevelBadge level={status.text as DuplicateLevel} />
-                        ) : (
-                          <span
-                            className={`text-xs font-medium ${
-                              status.kind === "partial" || status.kind === "unavailable"
-                                ? "text-slate-500"
-                                : "text-slate-700"
-                            }`}
-                          >
-                            {status.text}
-                          </span>
-                        )}
-                      </span>
-                      <MatchPanel
-                        matches={result?.matches ?? []}
-                        coverageUnavailable={
-                          coverageUnavailable && (result?.matches.length ?? 0) > 0
-                        }
-                      />
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
-            <p className="text-xs text-slate-500">
-              Ces cartes sont des suggestions éditoriales. Elles ne mesurent ni un volume de
-              recherche ni une opportunité SEO validée.
-            </p>
-          </fieldset>
-        ) : null}
-
-        <div className="mt-4 flex flex-wrap gap-3">
+        <DialogFooter className="shrink-0 flex-row flex-wrap gap-2 border-t border-[#E2E8F0] bg-white px-4 py-3 sm:px-5">
           {phase.status === "ready" ? (
-            <button
+            <Button
               type="button"
               onClick={() => onSelect(phase.suggestions[selected])}
-              className="rounded-md bg-naxialis px-4 py-2 text-sm font-medium text-white hover:bg-naxialis-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-naxialis"
+              className="h-9 bg-naxialis text-white hover:bg-naxialis-dark"
             >
               Utiliser ce sujet
-            </button>
+            </Button>
           ) : null}
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={onClose}
-            className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-naxialis"
+            className="h-9 border-[#E2E8F0] text-slate-700"
           >
             Fermer
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

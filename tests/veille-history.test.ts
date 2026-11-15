@@ -58,7 +58,7 @@ function memoryStore() {
     id: string;
     theme: string;
     periodDays: 7 | 30 | 90;
-    country: "FR" | "BE" | "CH" | "CA" | "LU";
+    country: "FR" | "BE" | "CH" | "CA" | "LU" | "US" | "INT_EN";
     searchedAt: Date;
     articleCount: number;
     snapshot: WatchSearchSnapshot;
@@ -88,12 +88,13 @@ function memoryStore() {
       if (!snapshot) {
         throw new Error("illisible");
       }
+      const summary = summaryOf(row);
       return {
-        ...summaryOf(row),
+        ...summary,
         result: {
           theme: row.theme,
           periodDays: row.periodDays,
-          country: "France",
+          country: summary.countryLabel,
           articles: snapshot.articles,
           discarded: snapshot.discarded,
           incomplete: snapshot.incomplete,
@@ -121,16 +122,25 @@ function summaryOf(row: {
   id: string;
   theme: string;
   periodDays: 7 | 30 | 90;
-  country: "FR" | "BE" | "CH" | "CA" | "LU";
+  country: "FR" | "BE" | "CH" | "CA" | "LU" | "US" | "INT_EN";
   searchedAt: Date;
   articleCount: number;
 }): WatchSearchSummary {
+  const labels: Record<typeof row.country, string> = {
+    FR: "France",
+    BE: "Belgique",
+    CH: "Suisse",
+    CA: "Canada",
+    LU: "Luxembourg",
+    US: "États-Unis (anglais)",
+    INT_EN: "International (anglais)",
+  };
   return {
     id: row.id,
     theme: row.theme,
     periodDays: row.periodDays,
     country: row.country,
-    countryLabel: "France",
+    countryLabel: labels[row.country],
     searchedAt: row.searchedAt.toISOString(),
     articleCount: row.articleCount,
     status: "completed",
@@ -327,6 +337,61 @@ describe("historique des recherches de veille", () => {
     const reader = readFileSync(resolve("lib/veille/history.ts"), "utf8");
     const readHandler = reader.slice(reader.indexOf("export async function handleReadWatchSearch"));
     assert.doesNotMatch(readHandler, /search\(|openai|web_search|runAgentSession/);
+  });
+
+  it("enregistre et rouvre les zones US et International sans nouvel appel OpenAI", async () => {
+    for (const country of ["US", "INT_EN"] as const) {
+      const calls: unknown[] = [];
+      const history = memoryStore();
+      const saved = await completeVeilleSearch(
+        request({ theme: "AI agents for SMEs", periodDays: 30, country }),
+        {
+          authenticated: true,
+          now: NOW,
+          client: clientReturning(
+            responseOf(
+              [
+                {
+                  ...publication,
+                  title: "US SME deploys an AI agent",
+                  summary: "A company describes an internal agent rollout.",
+                },
+              ],
+              [{ url: publication.url, date: "2026-10-20" }]
+            ),
+            calls
+          ),
+          store: history.store,
+        }
+      );
+      assert.equal(saved.status, 200);
+      assert.equal(calls.length, 1);
+      assert.equal(history.rows[0]?.country, country);
+      assert.equal(
+        history.rows[0]?.country === "US"
+          ? "États-Unis (anglais)"
+          : "International (anglais)",
+        (
+          await handleListWatchSearches(new URL("http://local/api/veille/searches?page=1"), {
+            authenticated: true,
+            store: history.store,
+          })
+        ).body.searches?.[0]?.countryLabel
+      );
+
+      const opened = await handleReadWatchSearch(saved.body.searchId ?? "", {
+        authenticated: true,
+        store: history.store,
+      });
+      assert.equal(opened.status, 200);
+      assert.equal(opened.body.search?.country, country);
+      assert.equal(
+        opened.body.search?.result.country,
+        country === "US" ? "États-Unis (anglais)" : "International (anglais)"
+      );
+      assert.equal(opened.body.search?.result.articles.length, 1);
+      assert.equal(calls.length, 1);
+    }
   });
 
   it("supprime une recherche et refuse un identifiant invalide", async () => {
