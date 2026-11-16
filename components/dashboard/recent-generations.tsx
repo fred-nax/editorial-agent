@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, History } from "lucide-react";
+import {
+  dashboardCardClassName,
+  dashboardCardHeaderClassName,
+  dashboardIconBadgeClassName,
+} from "@/components/dashboard/card-shell";
 import { GenerationStatusBadge } from "@/components/dashboard/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,14 +94,19 @@ export function DashboardRecentGenerations({
   articles: DashboardGenerationRow[];
 }) {
   return (
-    <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0">
-      <CardHeader className="border-b border-[#E2E8F0] p-5">
+    <Card className={dashboardCardClassName}>
+      <CardHeader className={dashboardCardHeaderClassName}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle className="text-base font-semibold text-[#0F172A]">
-              Générations récentes
-            </CardTitle>
-            <CardDescription className="text-sm text-slate-600">
+            <div className="flex items-center gap-2">
+              <span className={dashboardIconBadgeClassName}>
+                <History className="size-4" aria-hidden />
+              </span>
+              <CardTitle className="text-base font-semibold text-[#0F172A]">
+                Générations récentes
+              </CardTitle>
+            </div>
+            <CardDescription className="text-sm text-slate-500">
               Titres, statuts, coûts LLM et accès WordPress.
             </CardDescription>
           </div>

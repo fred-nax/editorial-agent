@@ -1,17 +1,14 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Plus } from "lucide-react";
 import {
   DashboardEditorialWatchPreview,
   type EditorialWatchPreviewItem,
 } from "@/components/dashboard/editorial-watch-preview";
 import { DashboardFrame } from "@/components/dashboard/frame";
-import { DashboardGenerateCard } from "@/components/dashboard/generate-card";
 import { DashboardKpiCards } from "@/components/dashboard/kpi-cards";
 import { DashboardRecentGenerations } from "@/components/dashboard/recent-generations";
 import { DashboardSeoTrafficStrip } from "@/components/dashboard/seo-traffic-strip";
 import { DashboardTopicPreview } from "@/components/dashboard/topic-preview";
-import { Button } from "@/components/ui/button";
+import { DashboardWelcome } from "@/components/dashboard/DashboardWelcome";
 import { db } from "@/lib/db";
 import { formatEstimatedCost } from "@/lib/format";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
@@ -139,25 +136,7 @@ export default async function DashboardPage() {
 
   return (
     <DashboardFrame>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A]">
-            Dashboard
-          </h1>
-          <p className="text-sm text-slate-600">
-            Pilotez votre agent éditorial et vos brouillons WordPress.
-          </p>
-        </div>
-        <Button
-          size="lg"
-          className="h-10 bg-naxialis text-sm text-white hover:bg-naxialis-dark"
-          nativeButton={false}
-          render={<Link href="#nouveau-sujet" />}
-        >
-          <Plus data-icon="inline-start" />
-          Nouvel article
-        </Button>
-      </div>
+      <DashboardWelcome />
 
       <DashboardKpiCards
         items={[
@@ -174,16 +153,10 @@ export default async function DashboardPage() {
 
       <DashboardSeoTrafficStrip />
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-5 lg:gap-6">
-        <div className="lg:col-span-3">
-          <DashboardGenerateCard />
-        </div>
-        <div className="lg:col-span-2">
-          <DashboardTopicPreview topics={recentTopics} />
-        </div>
+      <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 lg:gap-5">
+        <DashboardTopicPreview topics={recentTopics} />
+        <DashboardEditorialWatchPreview items={watchPreviewItems} />
       </div>
-
-      <DashboardEditorialWatchPreview items={watchPreviewItems} />
 
       <DashboardRecentGenerations articles={recentArticles} />
     </DashboardFrame>

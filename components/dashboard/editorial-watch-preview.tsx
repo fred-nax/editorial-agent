@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { Radar } from "lucide-react";
+import {
+  dashboardCardClassName,
+  dashboardCardHeaderClassName,
+  dashboardIconBadgeClassName,
+} from "@/components/dashboard/card-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,19 +33,19 @@ export function DashboardEditorialWatchPreview({
   items: EditorialWatchPreviewItem[];
 }) {
   return (
-    <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0">
-      <CardHeader className="gap-1.5 border-b border-[#E2E8F0] p-5">
+    <Card className={`h-full ${dashboardCardClassName}`}>
+      <CardHeader className={dashboardCardHeaderClassName}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="inline-flex size-8 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F5270]">
+              <span className={dashboardIconBadgeClassName}>
                 <Radar className="size-4" aria-hidden />
               </span>
               <CardTitle className="text-base font-semibold text-[#0F172A]">
                 Veille éditoriale
               </CardTitle>
             </div>
-            <CardDescription className="text-sm text-slate-600">
+            <CardDescription className="text-sm text-slate-500">
               Dernières publications enregistrées lors des recherches de veille.
             </CardDescription>
           </div>
@@ -55,19 +60,17 @@ export function DashboardEditorialWatchPreview({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="p-5">
+      <CardContent className="px-0 pt-0">
         {items.length === 0 ? (
-          <p className="py-3 text-center text-sm text-slate-600">
+          <p className="px-5 py-8 text-center text-sm text-slate-600">
             Aucune suggestion de veille disponible
           </p>
         ) : (
-          <ul className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <ul>
             {items.map((item, index) => (
-              <li key={`${item.title}-${item.detectedAt}-${index}`} className="min-w-0">
-                {index > 0 ? (
-                  <Separator className="mb-4 bg-[#E2E8F0] lg:hidden" />
-                ) : null}
-                <div className="space-y-2">
+              <li key={`${item.title}-${item.detectedAt}-${index}`}>
+                {index > 0 ? <Separator className="bg-[#E2E8F0]" /> : null}
+                <div className="space-y-2 px-5 py-3.5">
                   <p className="text-sm font-medium leading-snug text-[#0F172A]">
                     {item.title}
                   </p>

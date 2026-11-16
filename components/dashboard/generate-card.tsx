@@ -12,7 +12,7 @@ export function DashboardGenerateCard() {
   return (
     <Card
       id="nouveau-sujet"
-      className="scroll-mt-24 gap-0 border border-[#E2E8F0] bg-white py-0 shadow-none ring-0"
+      className="scroll-mt-24 gap-0 rounded-xl border border-[#E2E8F0] bg-white py-0 shadow-none ring-0"
     >
       <CardHeader className="border-b border-[#E2E8F0] p-5">
         <div className="flex items-center gap-2">

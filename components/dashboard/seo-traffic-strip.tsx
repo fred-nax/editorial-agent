@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ChartNoAxesCombined } from "lucide-react";
+import { dashboardCardClassName, dashboardIconBadgeClassName } from "@/components/dashboard/card-shell";
 import { SeoPropertyTrendChart } from "@/components/dashboard/SeoPropertyTrendChart";
 import { getDashboardSeoSummary } from "@/lib/google/metrics";
 
@@ -36,17 +38,22 @@ export async function DashboardSeoTrafficStrip() {
   return (
     <section
       aria-labelledby="dashboard-seo-traffic-title"
-      className="rounded-lg border border-[#E2E8F0] bg-white p-4 sm:p-5"
+      className={`${dashboardCardClassName} p-5`}
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2
-            id="dashboard-seo-traffic-title"
-            className="text-sm font-semibold text-slate-900"
-          >
-            SEO & Trafic IA
-          </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className={dashboardIconBadgeClassName}>
+              <ChartNoAxesCombined className="size-4" aria-hidden />
+            </span>
+            <h2
+              id="dashboard-seo-traffic-title"
+              className="text-base font-semibold text-[#0F172A]"
+            >
+              SEO & Trafic IA
+            </h2>
+          </div>
+          <p className="text-sm text-slate-500">
             Totaux propriété Search Console · {periodLabel}
             {summary.lastSyncAt
               ? ` · maj ${new Date(summary.lastSyncAt).toLocaleString("fr-FR")}`
@@ -56,13 +63,13 @@ export async function DashboardSeoTrafficStrip() {
         <div className="flex flex-wrap items-center gap-3">
           <Link
             href="/analytics"
-            className="text-xs font-medium text-naxialis outline-none hover:text-naxialis-dark focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-naxialis/35 focus-visible:ring-offset-2"
+            className="text-sm font-medium text-naxialis outline-none hover:text-naxialis-dark focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-naxialis/35 focus-visible:ring-offset-2"
           >
             Voir les statistiques détaillées
           </Link>
           <Link
             href="/settings"
-            className="text-xs font-medium text-slate-500 outline-none hover:text-naxialis focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-naxialis/35 focus-visible:ring-offset-2"
+            className="text-sm font-medium text-slate-500 outline-none hover:text-naxialis focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-naxialis/35 focus-visible:ring-offset-2"
           >
             Paramètres Google
           </Link>

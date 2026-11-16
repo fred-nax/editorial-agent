@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Inbox } from "lucide-react";
+import {
+  dashboardCardClassName,
+  dashboardCardHeaderClassName,
+  dashboardIconBadgeClassName,
+} from "@/components/dashboard/card-shell";
 import { TopicStatusBadge } from "@/components/dashboard/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,19 +56,19 @@ export function DashboardTopicPreview({ topics }: { topics: DashboardTopicRow[] 
   }
 
   return (
-    <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0">
-      <CardHeader className="gap-1.5 border-b border-[#E2E8F0] p-5">
+    <Card className={`h-full ${dashboardCardClassName}`}>
+      <CardHeader className={dashboardCardHeaderClassName}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="inline-flex size-8 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F5270]">
+              <span className={dashboardIconBadgeClassName}>
                 <Inbox className="size-4" aria-hidden />
               </span>
               <CardTitle className="text-base font-semibold text-[#0F172A]">
                 File éditoriale
               </CardTitle>
             </div>
-            <CardDescription className="text-sm text-slate-600">
+            <CardDescription className="text-sm text-slate-500">
               3 sujets récents. File complète sur File éditoriale.
             </CardDescription>
           </div>
