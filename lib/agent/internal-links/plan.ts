@@ -1,3 +1,8 @@
+import type { EditorialIdentity } from "@/lib/editorial/identity";
+import {
+  editorialPromptPhrases,
+  NAXIALIS_DEFAULT_IDENTITY,
+} from "@/lib/editorial/identity";
 import { db } from "../../db";
 import { logInfo } from "../../logger";
 import { loadPublishedCatalog } from "./catalog";
@@ -59,12 +64,17 @@ async function loadRecentInternalUrlsHint(): Promise<string[]> {
     .filter((url): url is string => typeof url === "string" && url.length > 0);
 }
 
-export function formatInternalLinksForPrompt(plan: InternalLinkPlan): string {
+export function formatInternalLinksForPrompt(
+  plan: InternalLinkPlan,
+  identity: EditorialIdentity = NAXIALIS_DEFAULT_IDENTITY
+): string {
+  const phrases = editorialPromptPhrases(identity);
+
   if (plan.selected.length === 0) {
     return `
 Maillage interne :
 - Aucune destination interne suffisamment pertinente n'a été trouvée pour ce sujet.
-- N'ajoute AUCUN lien interne vers naxialis.com.
+${phrases.linkingEmpty}
 - Ne invente aucune URL.
 `;
   }
@@ -85,7 +95,7 @@ Maillage interne :
   return `
 Maillage interne (obligatoire — destinations AUTORISÉES uniquement) :
 
-Tu ne dois utiliser QUE les URL ci-dessous pour tout lien interne Naxialis.
+${phrases.linkingHeader}
 N'invente aucune URL. Tu peux choisir d'utiliser 0 à ${Math.min(4, plan.selected.length)} de ces liens.
 Place chaque lien dans un paragraphe où il apporte une information complémentaire réelle.
 Ancres descriptives et variées — interdits : « cliquez ici », « consultez notre article » répété, piles de liens en conclusion.

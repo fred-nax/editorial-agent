@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { EditorialAgentSettings } from "@/components/EditorialAgentSettings";
 import { GoogleIntegrationsSettings } from "@/components/GoogleIntegrationsSettings";
+import { EditorialSettingsSection } from "@/components/settings/EditorialSettingsSection";
 import { GeneralSettingsSection } from "@/components/settings/GeneralSettingsSection";
 import { OpenAiSettingsSection } from "@/components/settings/OpenAiSettingsSection";
 import {
@@ -59,6 +60,8 @@ export function SettingsPageClient({
         reloadToken={reloadToken}
         onDirtyChange={handleDirtyChange}
       />
+
+      <EditorialSettingsSection settings={settings} onUpdated={setSettings} />
 
       <WordPressSettingsSection settings={settings} onUpdated={setSettings} />
 

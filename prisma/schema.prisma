@@ -360,6 +360,15 @@ model AppSettings {
   inventoryWpOrigin      String?
   /// false après changement de site jusqu'à une sync full réussie du nouveau WP.
   inventoryValid         Boolean  @default(true)
+  /// Snapshot JSON des catégories WP synchronisées ({id,name,slug,count,description}[]).
+  wpCategoriesJson       String?
+  /// IDs de catégories autorisées pour la génération (JSON number[]).
+  wpAllowedCategoryIds   String?
+  /// Catégorie par défaut si aucune correspondance (doit appartenir au snapshot courant).
+  wpDefaultCategoryId    Int?
+  wpCategoriesSyncedAt   DateTime?
+  /// Origin WP du snapshot de catégories (anti-contamination inter-sites).
+  wpCategoriesOrigin     String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }

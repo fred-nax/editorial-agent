@@ -5,15 +5,21 @@ import { recoverStaleGenerations } from "./generation-recovery";
 import { recoverFeaturedImageJobs } from "./images/pipeline";
 import { logError, logInfo } from "./logger";
 import { ensureHistoricalEditorialThemes } from "./seo/theme-catalog";
+import { shouldSeedHistoricalEditorialThemes } from "./seo/theme-seed-policy";
 
 export async function bootServer(): Promise<void> {
   assertRequiredEnv();
   logInfo("boot", "starting");
 
-  // V7.5 — assure la présence des 5 domaines historiques (insert/link only, jamais d’écrasement).
+  // V7.5 / V7.8 — seed des 5 domaines historiques uniquement si installation Naxialis
+  // ou thématiques legacy déjà présentes (jamais imposé aux nouveaux clients).
   try {
-    const themes = await ensureHistoricalEditorialThemes();
-    logInfo("boot", "editorial themes ensure", themes);
+    if (await shouldSeedHistoricalEditorialThemes()) {
+      const themes = await ensureHistoricalEditorialThemes();
+      logInfo("boot", "editorial themes ensure", themes);
+    } else {
+      logInfo("boot", "editorial themes ensure skipped (neutral client install)");
+    }
   } catch (error) {
     logError("boot", "editorial themes ensure failed", {
       message: error instanceof Error ? error.message : "Erreur seed thèmes.",

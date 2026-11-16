@@ -13,7 +13,7 @@ export const agentSessionTools: AgentToolParam[] = [
     type: "function",
     name: CREATE_WORDPRESS_DRAFT_TOOL_NAME,
     description:
-      "Crée un nouvel article WordPress en brouillon sur Naxialis avec son contenu, ses catégories et ses métadonnées Slim SEO.",
+      "Crée un nouvel article WordPress en brouillon sur le site connecté, avec son contenu, ses catégories et ses métadonnées Slim SEO.",
     parameters: {
       type: "object",
       properties: {

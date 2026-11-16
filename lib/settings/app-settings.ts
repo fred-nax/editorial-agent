@@ -13,6 +13,15 @@ import {
   assertSafeWordPressUrlResolved,
   normalizeWpOrigin,
 } from "@/lib/settings/wp-url";
+import {
+  assertCategoryIdsBelongToSite,
+  categoryConfigOriginFromWpUrl,
+  fetchAllWordPressCategories,
+  parseAllowedCategoryIds,
+  parseSyncedCategoriesJson,
+  type SyncedWpCategory,
+  type WordPressCategoryConfig,
+} from "@/lib/wordpress-categories";
 
 export { APP_SETTINGS_ID } from "@/lib/settings/app-settings-id";
 export { AppSettingsDecryptError } from "@/lib/settings/decrypt";
@@ -69,6 +78,15 @@ export type PublicAppSettings = {
     inventoryValid: boolean;
     reason: string | null;
   };
+  categories: {
+    items: SyncedWpCategory[];
+    allowedIds: number[];
+    defaultCategoryId: number | null;
+    syncedAt: string | null;
+    origin: string | null;
+    usable: boolean;
+    siteMismatch: boolean;
+  };
   encryptionConfigured: boolean;
   secretsDecryptError: string | null;
 };
@@ -83,7 +101,22 @@ type AppSettingsRow = {
   wpAppPasswordEncrypted: string | null;
   inventoryWpOrigin: string | null;
   inventoryValid: boolean;
+  wpCategoriesJson: string | null;
+  wpAllowedCategoryIds: string | null;
+  wpDefaultCategoryId: number | null;
+  wpCategoriesSyncedAt: Date | null;
+  wpCategoriesOrigin: string | null;
 };
+
+function emptyCategoryFields() {
+  return {
+    wpCategoriesJson: null as string | null,
+    wpAllowedCategoryIds: null as string | null,
+    wpDefaultCategoryId: null as number | null,
+    wpCategoriesSyncedAt: null as Date | null,
+    wpCategoriesOrigin: null as string | null,
+  };
+}
 
 function readEnv(name: string): string | null {
   const value = process.env[name]?.trim();
@@ -99,13 +132,78 @@ async function loadRow(): Promise<AppSettingsRow | null> {
       return null;
     }
     return {
-      ...row,
+      clientName: row.clientName,
+      siteName: row.siteName,
+      openaiAgentId: row.openaiAgentId,
+      openaiApiKeyEncrypted: row.openaiApiKeyEncrypted,
+      wpUrl: row.wpUrl,
+      wpUsername: row.wpUsername,
+      wpAppPasswordEncrypted: row.wpAppPasswordEncrypted,
+      inventoryWpOrigin: row.inventoryWpOrigin,
       inventoryValid: row.inventoryValid !== false,
+      wpCategoriesJson: row.wpCategoriesJson ?? null,
+      wpAllowedCategoryIds: row.wpAllowedCategoryIds ?? null,
+      wpDefaultCategoryId: row.wpDefaultCategoryId ?? null,
+      wpCategoriesSyncedAt: row.wpCategoriesSyncedAt ?? null,
+      wpCategoriesOrigin: row.wpCategoriesOrigin ?? null,
     };
   } catch {
     // Table absente avant migrate — fallback env uniquement.
     return null;
   }
+}
+
+function buildCategoriesPublic(
+  row: AppSettingsRow | null,
+  effectiveWpOrigin: string | null
+): PublicAppSettings["categories"] {
+  const items = parseSyncedCategoriesJson(row?.wpCategoriesJson);
+  const origin = row?.wpCategoriesOrigin?.trim() || null;
+  const siteMismatch = Boolean(
+    origin && effectiveWpOrigin && origin !== effectiveWpOrigin
+  );
+  const usable = Boolean(origin && effectiveWpOrigin && !siteMismatch && items.length > 0);
+  const allowedIds = usable
+    ? parseAllowedCategoryIds(row?.wpAllowedCategoryIds).filter((id) =>
+        items.some((item) => item.id === id)
+      )
+    : [];
+  let defaultCategoryId = row?.wpDefaultCategoryId ?? null;
+  if (
+    defaultCategoryId &&
+    (!usable || !items.some((item) => item.id === defaultCategoryId))
+  ) {
+    defaultCategoryId = null;
+  }
+  return {
+    items: usable ? items : [],
+    allowedIds,
+    defaultCategoryId,
+    syncedAt: row?.wpCategoriesSyncedAt?.toISOString() ?? null,
+    origin,
+    usable,
+    siteMismatch,
+  };
+}
+
+export function getWordPressCategoryConfigFromRow(
+  row: AppSettingsRow | null
+): WordPressCategoryConfig | null {
+  if (!row) {
+    return null;
+  }
+  return {
+    categories: parseSyncedCategoriesJson(row.wpCategoriesJson),
+    allowedIds: parseAllowedCategoryIds(row.wpAllowedCategoryIds),
+    defaultCategoryId: row.wpDefaultCategoryId,
+    syncedAt: row.wpCategoriesSyncedAt?.toISOString() ?? null,
+    origin: row.wpCategoriesOrigin?.trim() || null,
+  };
+}
+
+export async function resolveWordPressCategoryConfig(): Promise<WordPressCategoryConfig | null> {
+  const row = await loadRow();
+  return getWordPressCategoryConfigFromRow(row);
 }
 
 function preferDbThenEnv(
@@ -217,6 +315,10 @@ export async function getPublicAppSettings(): Promise<PublicAppSettings> {
   const wpPassDb = Boolean(row?.wpAppPasswordEncrypted?.trim());
   const wpPassEnv = Boolean(readEnv("WP_APP_PASSWORD"));
 
+  const effectiveWpOrigin =
+    inventory.effectiveOrigin ||
+    (wordpress?.url ? normalizeWpOrigin(wordpress.url) : null);
+
   return {
     clientName: row?.clientName?.trim() || null,
     siteName: row?.siteName?.trim() || null,
@@ -251,6 +353,7 @@ export async function getPublicAppSettings(): Promise<PublicAppSettings> {
       inventoryValid: inventory.inventoryValid,
       reason: inventory.reason,
     },
+    categories: buildCategoriesPublic(row, effectiveWpOrigin),
     encryptionConfigured: isAppSettingsEncryptionConfigured(),
     secretsDecryptError,
   };
@@ -352,6 +455,11 @@ export async function updateWordPressSettings(input: {
     wpUsername?: string | null;
     wpAppPasswordEncrypted?: string | null;
     inventoryValid?: boolean;
+    wpCategoriesJson?: string | null;
+    wpAllowedCategoryIds?: string | null;
+    wpDefaultCategoryId?: number | null;
+    wpCategoriesSyncedAt?: Date | null;
+    wpCategoriesOrigin?: string | null;
   } = {};
 
   if (input.url !== undefined) {
@@ -367,6 +475,8 @@ export async function updateWordPressSettings(input: {
     if (previousOrigin && previousOrigin !== newOrigin) {
       // Invalidation explicite — l'ancien inventaire reste en base mais inutilisable.
       data.inventoryValid = false;
+      // Snapshot catégories de l'ancien site : invalidé (pas de réutilisation d'IDs).
+      Object.assign(data, emptyCategoryFields());
     }
   }
 
@@ -460,4 +570,105 @@ export async function assertInventorySiteAllowed(
   wpUrl: string
 ): Promise<void> {
   await assertInventorySyncAllowed(wpUrl, "full");
+}
+
+/** Synchronise les catégories depuis le WordPress configuré (lecture seule). */
+export async function syncWordPressCategories(): Promise<PublicAppSettings> {
+  const wordpress = await resolveWordPressConfig();
+  if (!wordpress) {
+    throw new Error("WordPress non configuré.");
+  }
+
+  const categories = await fetchAllWordPressCategories(wordpress);
+  const origin = categoryConfigOriginFromWpUrl(wordpress.url);
+  const row = await loadRow();
+  const previousAllowed = parseAllowedCategoryIds(row?.wpAllowedCategoryIds);
+  const known = new Set(categories.map((item) => item.id));
+  const retainedAllowed = previousAllowed.filter((id) => known.has(id));
+  let defaultId = row?.wpDefaultCategoryId ?? null;
+  if (defaultId && !known.has(defaultId)) {
+    defaultId = null;
+  }
+  if (defaultId && retainedAllowed.length > 0 && !retainedAllowed.includes(defaultId)) {
+    // Conservé uniquement s'il reste dans les autorisées ou si aucune autorisée.
+    defaultId = null;
+  }
+
+  await upsertRow({
+    wpCategoriesJson: JSON.stringify(categories),
+    wpAllowedCategoryIds:
+      retainedAllowed.length > 0 ? JSON.stringify(retainedAllowed) : null,
+    wpDefaultCategoryId: defaultId,
+    wpCategoriesSyncedAt: new Date(),
+    wpCategoriesOrigin: origin,
+  });
+
+  return getPublicAppSettings();
+}
+
+/** Met à jour la sélection des catégories autorisées / défaut. */
+export async function updateWordPressCategorySelection(input: {
+  allowedIds?: number[];
+  defaultCategoryId?: number | null;
+}): Promise<PublicAppSettings> {
+  const wordpress = await resolveWordPressConfig();
+  if (!wordpress) {
+    throw new Error("WordPress non configuré.");
+  }
+  const row = await loadRow();
+  const categories = parseSyncedCategoriesJson(row?.wpCategoriesJson);
+  const origin = row?.wpCategoriesOrigin?.trim() || null;
+  const effectiveOrigin = normalizeWpOrigin(wordpress.url);
+
+  if (!origin || origin !== effectiveOrigin || categories.length === 0) {
+    throw new Error(
+      "Synchronisez d’abord les catégories WordPress du site actuellement configuré."
+    );
+  }
+
+  const data: {
+    wpAllowedCategoryIds?: string | null;
+    wpDefaultCategoryId?: number | null;
+  } = {};
+
+  let allowedIds = parseAllowedCategoryIds(row?.wpAllowedCategoryIds);
+
+  if (input.allowedIds !== undefined) {
+    assertCategoryIdsBelongToSite({
+      ids: input.allowedIds,
+      categories,
+      categoriesOrigin: origin,
+      effectiveWpOrigin: effectiveOrigin,
+    });
+    allowedIds = [...new Set(input.allowedIds.filter((id) => id > 0))];
+    data.wpAllowedCategoryIds =
+      allowedIds.length > 0 ? JSON.stringify(allowedIds) : null;
+  }
+
+  if (input.defaultCategoryId !== undefined) {
+    const defaultId = input.defaultCategoryId;
+    if (defaultId === null) {
+      data.wpDefaultCategoryId = null;
+    } else {
+      assertCategoryIdsBelongToSite({
+        ids: [defaultId],
+        categories,
+        categoriesOrigin: origin,
+        effectiveWpOrigin: effectiveOrigin,
+      });
+      if (allowedIds.length > 0 && !allowedIds.includes(defaultId)) {
+        throw new Error(
+          "La catégorie par défaut doit faire partie des catégories autorisées."
+        );
+      }
+      data.wpDefaultCategoryId = defaultId;
+    }
+  }
+
+  if (Object.keys(data).length === 0) {
+    return getPublicAppSettings();
+  }
+
+  await upsertRow(data);
+  return getPublicAppSettings();
 }

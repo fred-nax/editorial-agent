@@ -1,3 +1,8 @@
+import type { EditorialIdentity } from "@/lib/editorial/identity";
+import {
+  editorialPromptPhrases,
+  NAXIALIS_DEFAULT_IDENTITY,
+} from "@/lib/editorial/identity";
 import {
   FEATURED_IMAGE_STYLES,
   type FeaturedImageStyleId,
@@ -11,6 +16,7 @@ export type FeaturedImagePromptInput = {
   languageLabel: string | null;
   style: FeaturedImageStyleId;
   visualInstructions: string | null;
+  identity?: EditorialIdentity;
 };
 
 function clean(value: string | null | undefined, max: number): string | null {
@@ -42,8 +48,9 @@ export function buildFeaturedImagePrompt(
   const language = clean(input.languageLabel, 80);
   const instructions = clean(input.visualInstructions, 500);
 
+  const identity = input.identity ?? NAXIALIS_DEFAULT_IDENTITY;
   const lines = [
-    "Crée une image à la une pour un article de blog professionnel Naxialis.",
+    editorialPromptPhrases(identity).featuredImageIntro,
     "Style visuel :",
     style.promptHint,
     "",

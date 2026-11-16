@@ -275,7 +275,7 @@ describe("sujet issu de la veille", () => {
     assert.doesNotMatch(queue, /origin:\s*"veille"|sourceUrl/);
     assert.match(screen, /Veille éditoriale/);
     assert.match(screen, /Contexte de veille transmis à l'agent/);
-    assert.match(session, /detectCategories\(trimmedSubject\)/);
+    assert.match(session, /resolveCategoriesForSubject/);
     assert.match(session, /buildInternalLinkPlan\(trimmedSubject\)/);
     assert.match(session, /generationMessage/);
   });

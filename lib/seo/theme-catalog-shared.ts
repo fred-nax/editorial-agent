@@ -10,7 +10,7 @@ export const MIN_THEME_QUOTA = 0;
 
 /** Catalogue DB vide après tentative d’ensure — migration / seed manquant. */
 export const SEO_CATALOG_UNINITIALIZED_ERROR =
-  "Catalogue de thématiques SEO non initialisé. Exécutez le seed des thématiques (seo:seed-themes) ou redémarrez l’application après migration.";
+  "Catalogue de thématiques SEO non initialisé. Créez vos thématiques dans « Gérer les thématiques », ou exécutez le seed historique (seo:seed-themes) uniquement pour une installation Naxialis.";
 
 /** Catalogue présent mais aucune thématique active. */
 export const SEO_NO_ACTIVE_THEMES_ERROR =

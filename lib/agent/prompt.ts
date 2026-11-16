@@ -1,20 +1,27 @@
+import type { EditorialIdentity } from "@/lib/editorial/identity";
+import {
+  editorialPromptPhrases,
+  NAXIALIS_DEFAULT_IDENTITY,
+} from "@/lib/editorial/identity";
 import type { InternalLinkPlan } from "./internal-links/types";
 import { formatInternalLinksForPrompt } from "./internal-links/plan";
 
 export function buildArticlePrompt(
   subject: string,
-  linkPlan?: InternalLinkPlan | null
+  linkPlan?: InternalLinkPlan | null,
+  identity: EditorialIdentity = NAXIALIS_DEFAULT_IDENTITY
 ): string {
+  const phrases = editorialPromptPhrases(identity);
   const linkingBlock = linkPlan
-    ? formatInternalLinksForPrompt(linkPlan)
+    ? formatInternalLinksForPrompt(linkPlan, identity)
     : `
 Maillage interne :
-- intégrer des liens internes pertinents vers Naxialis uniquement s'ils sont explicitement fournis ailleurs dans ce message ;
+${phrases.linkingFallback}
 - ne jamais inventer d'URL.
 `;
 
   return `
-Crée un article complet pour le blog Naxialis sur :
+${phrases.articleIntro}
 
 "${subject}"
 
@@ -39,7 +46,7 @@ Règles Slim SEO :
 
 - meta_title : idéalement entre 50 et 60 caractères ;
 - meta_description : idéalement entre 140 et 160 caractères ;
-- ne pas ajouter automatiquement "NAXIALIS" au meta title sauf si cela reste pertinent et sous 60 caractères ;
+${phrases.metaBrandHint}
 - ne pas dupliquer exactement le titre WordPress si une variante SEO plus efficace est possible ;
 - intégrer naturellement le sujet principal ;
 - éviter le keyword stuffing ;

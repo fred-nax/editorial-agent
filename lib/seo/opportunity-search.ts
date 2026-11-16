@@ -179,7 +179,7 @@ function buildFreeTopicPrompt(
 ): string {
   return [
     "Tu es un analyste éditorial. Recherche des opportunités d’articles documentées.",
-    `Sujet libre à explorer (ne le force PAS dans un catalogue Naxialis) : « ${topic} ».`,
+    `Sujet libre à explorer (ne le force PAS dans un catalogue thématique fixe) : « ${topic} ».`,
     `Objectif de recherche : ${researchGoalLabel(goal)}.`,
     `Propose jusqu’à ${quota} opportunités distinctes (moins si les sources sont insuffisantes — ne pas inventer pour remplir).`,
     "1) Identifie des sous-thématiques pertinentes.",

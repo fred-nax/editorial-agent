@@ -1,3 +1,11 @@
+export type SyncedWpCategoryView = {
+  id: number;
+  name: string;
+  slug: string;
+  count: number;
+  description: string;
+};
+
 export type PublicSettingsView = {
   clientName: string | null;
   siteName: string | null;
@@ -24,6 +32,15 @@ export type PublicSettingsView = {
     requiresFullSync: boolean;
     inventoryValid: boolean;
     reason: string | null;
+  };
+  categories: {
+    items: SyncedWpCategoryView[];
+    allowedIds: number[];
+    defaultCategoryId: number | null;
+    syncedAt: string | null;
+    origin: string | null;
+    usable: boolean;
+    siteMismatch: boolean;
   };
   encryptionConfigured: boolean;
   secretsDecryptError: string | null;

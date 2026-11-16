@@ -53,8 +53,8 @@ export function GeneralSettingsSection({ settings, onUpdated }: Props) {
       <div>
         <h2 className="text-base font-semibold text-slate-900">Général</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Identité de l’installation. Ces champs ne modifient pas les prompts
-          éditoriaux.
+          Identité de l’installation. Sur une installation cliente, le nom du
+          site / client alimente les prompts dynamiques (section Éditorial).
         </p>
       </div>
 

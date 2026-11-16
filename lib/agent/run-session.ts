@@ -1,5 +1,5 @@
 import { inspect } from "node:util";
-import { detectCategories } from "../categories";
+import { resolveEditorialIdentity } from "../editorial/identity";
 import { logInfo } from "../logger";
 import { estimateLlmCostUsd } from "../openai-pricing";
 import {
@@ -13,7 +13,16 @@ import {
 } from "../progress";
 import type OpenAI from "openai";
 import { createOpenAIClient } from "../openai";
-import { resolveRuntimeConnections } from "../settings/app-settings";
+import {
+  resolveRuntimeConnections,
+  resolveWordPressCategoryConfig,
+} from "../settings/app-settings";
+import { normalizeWpOrigin } from "../settings/wp-url";
+import {
+  isDynamicCategoryMode,
+  resolveCategoriesForSubject,
+  sanitizeCategoryIdsForWordPress,
+} from "../wordpress-categories";
 import {
   createWordPressDraft,
   type WordPressDraftInput,
@@ -37,11 +46,11 @@ import {
   CREATE_WORDPRESS_DRAFT_TOOL_NAME,
 } from "./tools";
 
-function siteHostFromWpUrl(wpUrl: string): string {
+function siteHostFromWpUrl(wpUrl: string, fallbackHost: string): string {
   try {
     return new URL(wpUrl).hostname.replace(/^www\./, "");
   } catch {
-    return "naxialis.com";
+    return fallbackHost;
   }
 }
 
@@ -346,11 +355,6 @@ export async function runAgentSession(
     throw new Error("Sujet manquant.");
   }
 
-  const detectedCategories = detectCategories(trimmedSubject);
-  const categoryIds = detectedCategories.map(
-    (category) => category.categoryId
-  );
-
   const { onLog, onProgress } = options;
   const observedEventTypes = new Set<string>();
   const observedItemTypes = new Set<string>();
@@ -363,6 +367,31 @@ export async function runAgentSession(
   const connections = await resolveRuntimeConnections();
   const openai = createOpenAIClient(connections.openai.apiKey);
   const wordpressCredentials = connections.wordpress;
+  const identity = resolveEditorialIdentity({
+    wpUrl: wordpressCredentials.url,
+    siteName: connections.siteName,
+    clientName: connections.clientName,
+  });
+  const categoryConfig = await resolveWordPressCategoryConfig();
+  const effectiveWpOrigin = normalizeWpOrigin(wordpressCredentials.url);
+  const dynamicCategoryMode = isDynamicCategoryMode(
+    categoryConfig,
+    effectiveWpOrigin
+  );
+  const detectedCategories = resolveCategoriesForSubject({
+    subject: trimmedSubject,
+    isNaxialisLegacy: identity.isNaxialisLegacy,
+    config: categoryConfig,
+    effectiveWpOrigin,
+  });
+  const categoryIds = sanitizeCategoryIdsForWordPress({
+    ids: detectedCategories.map((category) => category.categoryId),
+    allowedIds: categoryConfig?.allowedIds ?? [],
+    categories: categoryConfig?.categories ?? [],
+    categoriesOrigin: categoryConfig?.origin ?? null,
+    effectiveWpOrigin,
+    dynamicMode: dynamicCategoryMode,
+  });
 
   await emitProgress(
     onProgress,
@@ -424,7 +453,10 @@ export async function runAgentSession(
   }
 
   const allowedInternalUrls = linkPlan.selected.map((item) => item.url);
-  const wpHost = siteHostFromWpUrl(wordpressCredentials.url);
+  const wpHost = siteHostFromWpUrl(
+    wordpressCredentials.url,
+    identity.siteHost
+  );
 
   log(onLog, "");
   log(onLog, "Création de la session...");
@@ -439,7 +471,8 @@ export async function runAgentSession(
     },
     input: buildArticlePrompt(
       options.generationMessage?.trim() || trimmedSubject,
-      linkPlan
+      linkPlan,
+      identity
     ),
     stream: true,
   });

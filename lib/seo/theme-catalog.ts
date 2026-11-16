@@ -7,6 +7,7 @@ import {
   type EnsureHistoricalThemesResult,
   type ThemeDependencies,
 } from "./theme-catalog-shared";
+import { shouldSeedHistoricalEditorialThemes } from "./theme-seed-policy";
 
 export * from "./theme-catalog-shared";
 
@@ -33,7 +34,8 @@ export async function listAllEditorialDomains() {
 
 /**
  * Charge le catalogue PostgreSQL pour une recherche.
- * Si aucune ligne : tente `ensureHistoricalEditorialThemes` une fois (sauf si `ensureIfEmpty: false`).
+ * Si aucune ligne : tente `ensureHistoricalEditorialThemes` une fois (sauf si `ensureIfEmpty: false`)
+ * et uniquement si la politique V7.8 autorise le seed Naxialis (jamais pour un client neutre).
  * Ne retombe jamais silencieusement sur `EDITORIAL_DOMAINS`.
  */
 export async function loadEditorialCatalogForSearch(options?: {
@@ -41,7 +43,11 @@ export async function loadEditorialCatalogForSearch(options?: {
 }): Promise<{ all: EditorialDomain[]; active: EditorialDomain[] }> {
   const ensureIfEmpty = options?.ensureIfEmpty !== false;
   let all = await listAllEditorialDomains();
-  if (all.length === 0 && ensureIfEmpty) {
+  if (
+    all.length === 0 &&
+    ensureIfEmpty &&
+    (await shouldSeedHistoricalEditorialThemes())
+  ) {
     await ensureHistoricalEditorialThemes();
     all = await listAllEditorialDomains();
   }

@@ -1,8 +1,10 @@
 import { db } from "@/lib/db";
+import { resolveEditorialIdentity } from "@/lib/editorial/identity";
 import {
   languageLabel,
   parseStoredEditorialContext,
 } from "@/lib/editorial-context";
+import { resolveRuntimeConnections } from "@/lib/settings/app-settings";
 import {
   fetchWordPressPost,
   setWordPressFeaturedMedia,
@@ -186,6 +188,17 @@ async function runImageGenerationCore(input: {
     const generation = await loadEligibleGeneration(input.generationId);
     const editorial = parseStoredEditorialContext(generation.editorialContext);
     const size = sizeForAspect(input.aspectRatio);
+    let identity;
+    try {
+      const connections = await resolveRuntimeConnections();
+      identity = resolveEditorialIdentity({
+        wpUrl: connections.wordpress.url,
+        siteName: connections.siteName,
+        clientName: connections.clientName,
+      });
+    } catch {
+      identity = undefined;
+    }
     const prompt = buildFeaturedImagePrompt({
       title: generation.title ?? editorial?.preferredTitle ?? null,
       subject: generation.subject,
@@ -194,6 +207,7 @@ async function runImageGenerationCore(input: {
       languageLabel: languageLabel(editorial?.language ?? null),
       style: input.style,
       visualInstructions: input.visualInstructions,
+      identity,
     });
 
     await ensureFeaturedImageStorage();

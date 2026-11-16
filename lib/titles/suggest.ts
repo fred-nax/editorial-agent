@@ -1,10 +1,15 @@
-import { getOpenAIClient } from "@/lib/openai";
+import {
+  editorialPromptPhrases,
+  resolveEditorialIdentity,
+} from "@/lib/editorial/identity";
 import {
   languageLabel,
   type EditorialContext,
   type LanguageCode,
 } from "@/lib/editorial-context";
 import { parseSubject } from "@/lib/generation";
+import { getOpenAIClient } from "@/lib/openai";
+import { resolveRuntimeConnections } from "@/lib/settings/app-settings";
 import {
   isTitleApproach,
   TITLE_APPROACHES,
@@ -91,12 +96,13 @@ function buildPrompt(input: {
   objective: string | null;
   seoKeywords: string | null;
   language: LanguageCode | null;
+  brandLine: string;
 }): string {
   const language =
     languageLabel(input.language) ??
     (input.language ? input.language : "français");
   const lines = [
-    "Propose exactement 5 titres d’articles de blog professionnels pour Naxialis.",
+    input.brandLine,
     `Langue de rédaction : ${language}.`,
     "",
     "Sujet :",
@@ -184,6 +190,19 @@ export async function suggestEditorialTitles(input: {
 
   try {
     assertLiveAllowed();
+    let brandLine =
+      "Propose exactement 5 titres d’articles de blog professionnels pour Naxialis.";
+    try {
+      const connections = await resolveRuntimeConnections();
+      const identity = resolveEditorialIdentity({
+        wpUrl: connections.wordpress.url,
+        siteName: connections.siteName,
+        clientName: connections.clientName,
+      });
+      brandLine = editorialPromptPhrases(identity).titlesIntro;
+    } catch {
+      // Fallback Naxialis si connexions indisponibles (tests / boot partiel).
+    }
     const prompt = buildPrompt({
       subject,
       angle: input.editorial?.angle ?? null,
@@ -191,6 +210,7 @@ export async function suggestEditorialTitles(input: {
       objective: input.editorial?.objective ?? null,
       seoKeywords: input.editorial?.seoKeywords ?? null,
       language: input.editorial?.language ?? null,
+      brandLine,
     });
 
     const openai = await getOpenAIClient();
