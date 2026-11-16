@@ -15,6 +15,12 @@ type AgentResponse = {
   error?: string;
 };
 
+type Props = {
+  /** Incrémente pour recharger les instructions du nouvel agent. */
+  reloadToken?: number;
+  onDirtyChange?: (dirty: boolean) => void;
+};
+
 function formatUpdatedAt(value: string | null): string | null {
   if (!value) {
     return null;
@@ -45,7 +51,10 @@ async function readAgentResponse(response: Response): Promise<AgentResponse> {
   }
 }
 
-export function EditorialAgentSettings() {
+export function EditorialAgentSettings({
+  reloadToken = 0,
+  onDirtyChange,
+}: Props) {
   const [agent, setAgent] = useState<EditorialAgentView | null>(null);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -59,6 +68,7 @@ export function EditorialAgentSettings() {
     async function load() {
       setLoading(true);
       setError(null);
+      setNotice(null);
       try {
         const response = await fetch("/api/agent/instructions", {
           method: "GET",
@@ -69,11 +79,16 @@ export function EditorialAgentSettings() {
           return;
         }
         if (!payload.agent) {
+          setAgent(null);
+          setDraft("");
           setError(payload.error ?? "Impossible de lire les instructions.");
           return;
         }
         setAgent(payload.agent);
         setDraft(payload.agent.instructions);
+        if (reloadToken > 0) {
+          setNotice("Instructions du nouvel agent chargées.");
+        }
       } catch {
         if (!cancelled) {
           setError("Impossible de lire les instructions.");
@@ -89,10 +104,14 @@ export function EditorialAgentSettings() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
 
   const dirty = agent !== null && draft !== agent.instructions;
   const updatedLabel = formatUpdatedAt(agent?.updatedAt ?? null);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   async function save() {
     if (!agent || saving || !dirty) {
@@ -133,10 +152,10 @@ export function EditorialAgentSettings() {
   }
 
   return (
-    <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+    <section className="space-y-4 rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
       <div>
         <h2 className="text-base font-semibold text-slate-900">
-          Agent éditorial
+          Instructions éditoriales
         </h2>
         <p className="mt-1 text-sm text-slate-600">
           Les instructions sont lues et enregistrées directement sur l’agent

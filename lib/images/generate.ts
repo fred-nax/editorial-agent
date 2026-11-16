@@ -1,4 +1,4 @@
-import { openai } from "@/lib/openai";
+import { getOpenAIClient } from "@/lib/openai";
 import {
   FEATURED_IMAGE_MIME,
   FEATURED_IMAGE_MODEL,
@@ -36,6 +36,7 @@ export async function generateFeaturedImageBytes(input: {
 
   let response;
   try {
+    const openai = await getOpenAIClient();
     response = await openai.images.generate({
       model: FEATURED_IMAGE_MODEL,
       prompt,

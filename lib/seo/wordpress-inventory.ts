@@ -1,7 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
-import { env } from "../env";
 import { logError, logInfo } from "../logger";
+import {
+  assertInventorySyncAllowed,
+  markInventorySyncedForSite,
+  resolveWordPressConfig,
+  type WordPressConfig,
+} from "../settings/app-settings";
 import { stripHtml } from "./normalize";
 import {
   buildWordPressInventoryUrl,
@@ -71,10 +76,24 @@ type SyncRunPersistInput = {
 const PUBLIC_STATUSES = ["publish"] as const;
 const PRIVATE_STATUSES = ["draft", "future", "private", "pending"] as const;
 
-function getWpAuthHeader(): string {
-  const token = Buffer.from(
-    `${env.WP_USERNAME}:${env.WP_APP_PASSWORD}`
-  ).toString("base64");
+/** Credentials figés pour la durée d’une sync (évite un changement mid-flight). */
+let syncWpCredentials: WordPressConfig | null = null;
+
+async function getInventoryWp(): Promise<WordPressConfig> {
+  if (syncWpCredentials) {
+    return syncWpCredentials;
+  }
+  const config = await resolveWordPressConfig();
+  if (!config) {
+    throw new Error("WordPress non configuré.");
+  }
+  return config;
+}
+
+function getWpAuthHeader(wp: WordPressConfig): string {
+  const token = Buffer.from(`${wp.username}:${wp.appPassword}`).toString(
+    "base64"
+  );
   return `Basic ${token}`;
 }
 
@@ -86,14 +105,19 @@ function parseWpDate(value: string | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-async function fetchWithRetry(url: string, attempts = 3): Promise<Response> {
+async function fetchWithRetry(
+  url: string,
+  wp: WordPressConfig,
+  attempts = 3
+): Promise<Response> {
+  const { fetchWordPressNoRedirect } = await import("../settings/wp-url");
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await fetch(url, {
+      return await fetchWordPressNoRedirect(url, {
         method: "GET",
         headers: {
-          Authorization: getWpAuthHeader(),
+          Authorization: getWpAuthHeader(wp),
           Accept: "application/json",
         },
       });
@@ -122,8 +146,9 @@ export async function fetchWordPressPage(params: {
   headerInconsistent: boolean;
   statusForbidden?: boolean;
 }> {
+  const wp = await getInventoryWp();
   const url = buildWordPressInventoryUrl({
-    baseUrl: env.WP_URL,
+    baseUrl: wp.url,
     page: params.page,
     perPage: params.perPage,
     status: params.status,
@@ -132,7 +157,7 @@ export async function fetchWordPressPage(params: {
     resource: params.resource ?? "posts",
   });
 
-  const response = await fetchWithRetry(url);
+  const response = await fetchWithRetry(url, wp);
 
   if (response.status === 400 && params.page > 1) {
     return {
@@ -257,6 +282,7 @@ async function upsertPosts(
 }> {
   let upsertedCount = 0;
   const statusBreakdown: Record<string, number> = {};
+  const wp = await getInventoryWp();
 
   for (const post of posts) {
     if (!post.id) {
@@ -279,7 +305,7 @@ async function upsertPosts(
         wpPostId: post.id,
         title,
         slug: post.slug ?? String(post.id),
-        url: post.link ?? `${env.WP_URL}/?p=${post.id}`,
+        url: post.link ?? `${wp.url}/?p=${post.id}`,
         status,
         contentType,
         excerpt,
@@ -292,7 +318,7 @@ async function upsertPosts(
       update: {
         title,
         slug: post.slug ?? String(post.id),
-        url: post.link ?? `${env.WP_URL}/?p=${post.id}`,
+        url: post.link ?? `${wp.url}/?p=${post.id}`,
         status,
         contentType,
         excerpt,
@@ -395,6 +421,13 @@ export async function processWordPressInventorySync(options: {
   const seenKeys = new Set<string>();
 
   try {
+    const wp = await resolveWordPressConfig();
+    if (!wp) {
+      throw new Error("WordPress non configuré.");
+    }
+    await assertInventorySyncAllowed(wp.url, mode);
+    syncWpCredentials = wp;
+
     const latestModifiedByContentType: Partial<
       Record<WordPressContentType, Date | null>
     > = {};
@@ -537,6 +570,29 @@ export async function processWordPressInventorySync(options: {
       );
     }
 
+    if (mode === "full") {
+      try {
+        await markInventorySyncedForSite(wp.url);
+      } catch {
+        notes.push(
+          "Marqueur d’origine inventaire non mis à jour (AppSettings indisponible)."
+        );
+      }
+    } else {
+      try {
+        // Sync incrémentale : rafraîchir l'origine seulement si déjà valide.
+        const { getInventoryCompatibility } = await import(
+          "../settings/inventory-guard"
+        );
+        const state = await getInventoryCompatibility();
+        if (state.usable) {
+          await markInventorySyncedForSite(wp.url);
+        }
+      } catch {
+        /* non bloquant */
+      }
+    }
+
     logInfo("seo", "wordpress inventory synced", {
       runId: options.runId,
       mode,
@@ -572,6 +628,8 @@ export async function processWordPressInventorySync(options: {
       fetchedCount,
       upsertedCount,
     });
+  } finally {
+    syncWpCredentials = null;
   }
 }
 

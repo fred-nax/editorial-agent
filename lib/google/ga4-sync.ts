@@ -9,7 +9,7 @@ import {
   normalizePublicUrl,
 } from "@/lib/google/url-normalize";
 import { buildPublishedUrlMap } from "@/lib/google/wp-url-map";
-import { env } from "@/lib/env";
+import { resolveWordPressConfig } from "@/lib/settings/app-settings";
 import { logInfo } from "@/lib/logger";
 
 type Ga4Row = {
@@ -80,7 +80,8 @@ export async function syncGa4Range(input: {
   end: Date;
 }): Promise<number> {
   const urlMap = await buildPublishedUrlMap();
-  const siteBase = env.WP_URL;
+  const wp = await resolveWordPressConfig();
+  const siteBase = wp?.url ?? process.env.WP_URL?.trim() ?? "";
   let upserted = 0;
 
   // Totaux par page × date

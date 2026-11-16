@@ -15,7 +15,11 @@ export async function GET() {
 
   const { last, running, connection } = await getGoogleSyncStatus();
   const selection = connection?.selection ?? null;
-  const wpUrl = process.env.WP_URL ?? null;
+  const { resolveWordPressConfig } = await import(
+    "@/lib/settings/app-settings"
+  );
+  const wp = await resolveWordPressConfig();
+  const wpUrl = wp?.url ?? process.env.WP_URL ?? null;
 
   return NextResponse.json({
     oauthConfigured: isGoogleOAuthConfigured(),

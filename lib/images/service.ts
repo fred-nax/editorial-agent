@@ -60,6 +60,41 @@ export class FeaturedImageServiceError extends Error {
   }
 }
 
+async function assertFeaturedImageTargetsCurrentWordPress(generation: {
+  wpUrl: string | null;
+  wpPostId: number | null;
+}): Promise<void> {
+  const { resolveWordPressConfig } = await import("@/lib/settings/app-settings");
+  const { normalizeWpOrigin } = await import("@/lib/settings/wp-url");
+  const wp = await resolveWordPressConfig();
+  if (!wp) {
+    throw new FeaturedImageServiceError("WordPress non configuré.", 503);
+  }
+  if (!generation.wpUrl?.trim()) {
+    throw new FeaturedImageServiceError(
+      "URL WordPress du brouillon manquante : envoi d’image refusé.",
+      409
+    );
+  }
+  let draftOrigin: string;
+  try {
+    draftOrigin = normalizeWpOrigin(generation.wpUrl);
+  } catch {
+    throw new FeaturedImageServiceError(
+      "URL WordPress du brouillon invalide.",
+      409
+    );
+  }
+  const configuredOrigin = normalizeWpOrigin(wp.url);
+  if (draftOrigin !== configuredOrigin) {
+    throw new FeaturedImageServiceError(
+      "Ce brouillon appartient à un autre site WordPress que celui configuré. Envoi d’image refusé.",
+      409,
+      "WP_SITE_MISMATCH"
+    );
+  }
+}
+
 function cleanOptionalText(value: unknown, max: number): string | null {
   if (value === undefined || value === null) {
     return null;
@@ -357,6 +392,8 @@ export async function uploadFeaturedImageToWordPress(input: {
 
   try {
     const generation = await loadEligibleGeneration(input.generationId);
+    await assertFeaturedImageTargetsCurrentWordPress(generation);
+
     const row = await db.articleFeaturedImage.findFirst({
       where: { id: input.imageId, generationId: input.generationId },
     });

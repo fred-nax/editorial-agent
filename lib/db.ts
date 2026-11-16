@@ -11,7 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /** Change quand le schéma Prisma change, pour ne pas réutiliser un client généré avant. */
-const PRISMA_CLIENT_TOKEN = "wordpress-content-type-v7-6-1c-20261115";
+const PRISMA_CLIENT_TOKEN = "app-settings-inventory-valid-v7-7-0-20261116b";
 
 type PrismaModule = {
   PrismaClient: typeof PrismaClient;
@@ -84,6 +84,17 @@ function wordpressContentTypeReady(prisma: typeof Prisma): boolean {
   return model?.fields.some((field) => field.name === "contentType") ?? false;
 }
 
+/** V7.7.0 — configuration OpenAI / WordPress persistée + invalidation inventaire. */
+function appSettingsReady(prisma: typeof Prisma): boolean {
+  const model = prisma.dmmf.datamodel.models.find(
+    (item) => item.name === "AppSettings"
+  );
+  return (
+    Boolean(model) &&
+    (model?.fields.some((field) => field.name === "inventoryValid") ?? false)
+  );
+}
+
 function clientMatchesSchema(prisma: typeof Prisma): boolean {
   return (
     topicHasOrigin(prisma) &&
@@ -92,7 +103,8 @@ function clientMatchesSchema(prisma: typeof Prisma): boolean {
     articleFeaturedImageExists(prisma) &&
     seoThemeCatalogV75Ready(prisma) &&
     googleIntegrationsReady(prisma) &&
-    wordpressContentTypeReady(prisma)
+    wordpressContentTypeReady(prisma) &&
+    appSettingsReady(prisma)
   );
 }
 

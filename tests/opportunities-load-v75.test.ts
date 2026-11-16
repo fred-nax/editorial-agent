@@ -7,10 +7,11 @@ describe("V7.5 — chargement opportunités (non-régression)", () => {
   it("le client Prisma détecte le catalogue V7.5 (sortOrder / themeId)", async () => {
     const source = await readFile("lib/db.ts", "utf8");
     assert.match(source, /PRISMA_CLIENT_TOKEN/);
-    assert.match(source, /wordpress-content-type-v7-6-1c/);
+    assert.match(source, /app-settings-inventory-valid-v7-7-0/);
     assert.match(source, /seoThemeCatalogV75Ready/);
     assert.match(source, /googleIntegrationsReady/);
     assert.match(source, /wordpressContentTypeReady/);
+    assert.match(source, /appSettingsReady/);
     assert.match(source, /GscPropertyDailyStat/);
     assert.match(source, /sortOrder/);
     assert.match(source, /legacyKey/);

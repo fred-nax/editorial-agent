@@ -23,26 +23,37 @@ function httpUrl(value: string | null | undefined): string | null {
 }
 
 export async function loadEditorialCorpus(): Promise<EditorialCorpus> {
+  const { isWordPressInventoryUsable } = await import(
+    "@/lib/settings/inventory-guard"
+  );
+  const inventoryUsable = await isWordPressInventoryUsable();
+
   const [diagnostic, postCount, topicCount, generationCount, posts, topics, generations] =
     await Promise.all([
       getWordPressInventoryDiagnostic(),
-      db.wordPressPost.count({ where: { status: { in: KNOWN_POST_STATUSES } } }),
+      inventoryUsable
+        ? db.wordPressPost.count({
+            where: { status: { in: KNOWN_POST_STATUSES } },
+          })
+        : Promise.resolve(0),
       db.topic.count({ where: { status: { not: "archived" } } }),
       db.articleGeneration.count({
         where: { status: { in: ["completed", "failed"] } },
       }),
-      db.wordPressPost.findMany({
-        where: { status: { in: KNOWN_POST_STATUSES } },
-        select: {
-          wpPostId: true,
-          title: true,
-          slug: true,
-          url: true,
-          excerpt: true,
-          status: true,
-        },
-        take: POST_LIMIT,
-      }),
+      inventoryUsable
+        ? db.wordPressPost.findMany({
+            where: { status: { in: KNOWN_POST_STATUSES } },
+            select: {
+              wpPostId: true,
+              title: true,
+              slug: true,
+              url: true,
+              excerpt: true,
+              status: true,
+            },
+            take: POST_LIMIT,
+          })
+        : Promise.resolve([]),
       db.topic.findMany({
         where: { status: { not: "archived" } },
         select: { id: true, subject: true, angle: true, status: true },

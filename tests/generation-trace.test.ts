@@ -396,9 +396,12 @@ describe("rapport de génération", () => {
     const trace = readFileSync(resolve("lib/generation-trace.ts"), "utf8");
     const tools = readFileSync(resolve("lib/agent/tools.ts"), "utf8");
     const prompt = readFileSync(resolve("lib/agent/prompt.ts"), "utf8");
-    const calls = session.match(/openai\.beta\.agents\.[A-Za-z0-9_.]+/g) ?? [];
+    const calls =
+      session.match(
+        /(?:openai|client)\.beta\.agents\.[A-Za-z0-9_.]+/g
+      ) ?? [];
     assert.deepEqual(
-      [...new Set(calls)].sort(),
+      [...new Set(calls.map((c) => c.replace(/^client\./, "openai.")))].sort(),
       [
         "openai.beta.agents.sessions.create",
         "openai.beta.agents.sessions.events.create",
@@ -407,7 +410,7 @@ describe("rapport de génération", () => {
       ].sort()
     );
     assert.doesNotMatch(session, /sessions\.items|agents\.update/);
-    assert.match(session, /agent_id: env\.OPENAI_AGENT_ID/);
+    assert.match(session, /agent_id: connections\.openai\.agentId/);
     assert.match(session, /agentSessionTools/);
     assert.match(session, /buildArticlePrompt/);
     assert.match(session, /observeAgentEvent/);

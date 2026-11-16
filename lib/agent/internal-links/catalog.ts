@@ -89,6 +89,13 @@ export async function loadPublishedCatalog(): Promise<{
   entries: CatalogEntry[];
   stale: boolean;
 }> {
+  const { isWordPressInventoryUsable } = await import(
+    "@/lib/settings/inventory-guard"
+  );
+  if (!(await isWordPressInventoryUsable())) {
+    return { entries: [], stale: true };
+  }
+
   const stale = await isInventoryStale();
 
   const rows = await db.wordPressPost.findMany({

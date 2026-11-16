@@ -165,7 +165,7 @@ describe("contexte de génération", () => {
     const wordpress = readFileSync(resolve("lib/wordpress.ts"), "utf8");
     assert.doesNotMatch(helper, /openai|OPENAI_AGENT_ID|agents\.update|createWordPressDraft/i);
     assert.doesNotMatch(generation, /openai\.beta\.agents|instructions/);
-    assert.match(session, /agent_id: env\.OPENAI_AGENT_ID/);
+    assert.match(session, /agent_id: connections\.openai\.agentId/);
     assert.match(session, /agentSessionTools/);
     assert.match(wordpress, /status:\s*"draft"/);
     assert.match(generation, /status: "queued"/);

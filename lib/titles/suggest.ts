@@ -1,4 +1,4 @@
-import { openai } from "@/lib/openai";
+import { getOpenAIClient } from "@/lib/openai";
 import {
   languageLabel,
   type EditorialContext,
@@ -193,6 +193,7 @@ export async function suggestEditorialTitles(input: {
       language: input.editorial?.language ?? null,
     });
 
+    const openai = await getOpenAIClient();
     const response = await openai.responses.create({
       model: TITLE_SUGGESTION_MODEL,
       input: prompt,

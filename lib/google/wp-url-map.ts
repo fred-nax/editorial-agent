@@ -3,6 +3,13 @@ import { normalizePublicUrl } from "@/lib/google/url-normalize";
 
 /** Map URL normalisée → wpPostId pour les articles publiés inventoriés. */
 export async function buildPublishedUrlMap(): Promise<Map<string, number>> {
+  const { isWordPressInventoryUsable } = await import(
+    "@/lib/settings/inventory-guard"
+  );
+  if (!(await isWordPressInventoryUsable())) {
+    return new Map();
+  }
+
   const posts = await db.wordPressPost.findMany({
     where: { status: "publish" },
     select: { wpPostId: true, url: true },

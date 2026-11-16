@@ -32,7 +32,8 @@ export function createConfiguredAgentClient(agentId: string): AgentConfigClient 
           400
         );
       }
-      const { openai } = await import("@/lib/openai");
+      const { getOpenAIClient } = await import("@/lib/openai");
+      const openai = await getOpenAIClient();
       const agent = await openai.beta.agents.retrieve(agentId);
       return toRecord(agent);
     },
@@ -44,7 +45,8 @@ export function createConfiguredAgentClient(agentId: string): AgentConfigClient 
           400
         );
       }
-      const { openai } = await import("@/lib/openai");
+      const { getOpenAIClient } = await import("@/lib/openai");
+      const openai = await getOpenAIClient();
       await openai.beta.agents.update(agentId, { instructions });
     },
   };

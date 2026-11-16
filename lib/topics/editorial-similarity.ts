@@ -454,19 +454,26 @@ export async function loadPublishedInventory(): Promise<{
   posts: PublishedPostRecord[];
   meta: EditorialInventoryMeta;
 }> {
+  const { isWordPressInventoryUsable } = await import(
+    "@/lib/settings/inventory-guard"
+  );
+  const inventoryUsable = await isWordPressInventoryUsable();
+
   const [diagnostic, posts] = await Promise.all([
     getWordPressInventoryDiagnostic(),
-    db.wordPressPost.findMany({
-      where: { status: "publish" },
-      select: {
-        wpPostId: true,
-        title: true,
-        slug: true,
-        url: true,
-        excerpt: true,
-      },
-      take: 2500,
-    }),
+    inventoryUsable
+      ? db.wordPressPost.findMany({
+          where: { status: "publish" },
+          select: {
+            wpPostId: true,
+            title: true,
+            slug: true,
+            url: true,
+            excerpt: true,
+          },
+          take: 2500,
+        })
+      : Promise.resolve([]),
   ]);
 
   const coverage = resolveInventoryCoverage({

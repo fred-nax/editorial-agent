@@ -345,6 +345,25 @@ model SeoOpportunity {
   @@index([editorialUrgency])
 }
 
+/// Configuration installation (mono-site). Secrets chiffrés AES-256-GCM.
+/// Priorité : valeurs DB > variables d'environnement. Jamais de secret en clair.
+model AppSettings {
+  id                     String   @id @default("default")
+  clientName             String?
+  siteName               String?
+  openaiAgentId          String?
+  openaiApiKeyEncrypted  String?
+  wpUrl                  String?
+  wpUsername             String?
+  wpAppPasswordEncrypted String?
+  /// Origin WP ayant peuplé l'inventaire local (anti-contamination inter-sites).
+  inventoryWpOrigin      String?
+  /// false après changement de site jusqu'à une sync full réussie du nouveau WP.
+  inventoryValid         Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
 /// Connexion Google OAuth (mono-site / installation). Jetons chiffrés au repos.
 model GoogleConnection {
   id                    String   @id @default("default")

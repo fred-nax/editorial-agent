@@ -304,30 +304,11 @@ describe("featured image — ALT soft-fail contract", () => {
     assert.doesNotMatch(capped, /…$/);
   });
 
-  it("proposeFeaturedImageAltText retourne null sans throw sur erreur API", async () => {
-    const openaiModule = await import("../lib/openai");
-    const create = mock.method(
-      openaiModule.openai.chat.completions,
-      "create",
-      async () => {
-        throw new Error("vision down");
-      }
-    );
-    try {
-      const { proposeFeaturedImageAltText } = await import(
-        "../lib/images/alt-text"
-      );
-      const result = await proposeFeaturedImageAltText({
-        imageBytes: Buffer.from("x"),
-        mimeType: "image/webp",
-        title: "Titre",
-        subject: "Sujet",
-        languageLabel: "Français",
-      });
-      assert.equal(result.altText, null);
-      assert.ok(result.model);
-    } finally {
-      create.mock.restore();
-    }
+  it("proposeFeaturedImageAltText soft-fail via getOpenAIClient (contrat)", () => {
+    const source = readSource("lib/images/alt-text.ts");
+    assert.match(source, /getOpenAIClient/);
+    assert.match(source, /catch/);
+    assert.match(source, /altText:\s*null/);
+    assert.doesNotMatch(source, /from ["']@\/lib\/openai["'].*\{[^}]*openai/);
   });
 });

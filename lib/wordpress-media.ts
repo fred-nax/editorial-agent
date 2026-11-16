@@ -1,4 +1,11 @@
-import { env } from "./env";
+import {
+  resolveWordPressConfig,
+  type WordPressConfig,
+} from "@/lib/settings/app-settings";
+import {
+  fetchWordPressNoRedirect,
+  WordPressUrlError,
+} from "@/lib/settings/wp-url";
 
 export type WordPressPostSnapshot = {
   id: number;
@@ -24,15 +31,23 @@ export class WordPressMediaError extends Error {
   }
 }
 
-function getWpAuthHeader(): string {
-  const token = Buffer.from(
-    `${env.WP_USERNAME}:${env.WP_APP_PASSWORD}`
-  ).toString("base64");
+async function getWp(): Promise<WordPressConfig> {
+  const config = await resolveWordPressConfig();
+  if (!config) {
+    throw new WordPressMediaError("WordPress non configuré.", 503);
+  }
+  return config;
+}
+
+function getWpAuthHeader(wp: WordPressConfig): string {
+  const token = Buffer.from(`${wp.username}:${wp.appPassword}`).toString(
+    "base64"
+  );
   return `Basic ${token}`;
 }
 
-function wpUrl(path: string): string {
-  return `${env.WP_URL.replace(/\/$/, "")}${path}`;
+function wpUrl(wp: WordPressConfig, path: string): string {
+  return `${wp.url.replace(/\/$/, "")}${path}`;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -47,14 +62,23 @@ async function readJson<T>(response: Response): Promise<T> {
 export async function fetchWordPressPost(
   postId: number
 ): Promise<WordPressPostSnapshot> {
-  const response = await fetch(
-    wpUrl(`/wp-json/wp/v2/posts/${postId}?context=edit`),
-    {
-      method: "GET",
-      headers: { Authorization: getWpAuthHeader() },
-      cache: "no-store",
+  const wp = await getWp();
+  let response: Response;
+  try {
+    response = await fetchWordPressNoRedirect(
+      wpUrl(wp, `/wp-json/wp/v2/posts/${postId}?context=edit`),
+      {
+        method: "GET",
+        headers: { Authorization: getWpAuthHeader(wp) },
+        cache: "no-store",
+      }
+    );
+  } catch (error) {
+    if (error instanceof WordPressUrlError) {
+      throw new WordPressMediaError(error.message, error.status);
     }
-  );
+    throw error;
+  }
   const data = await readJson<{
     id?: number;
     status?: string;
@@ -86,16 +110,25 @@ export async function uploadWordPressMedia(input: {
   mimeType: string;
   altText?: string | null;
 }): Promise<WordPressMediaSnapshot> {
+  const wp = await getWp();
   const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const response = await fetch(wpUrl("/wp-json/wp/v2/media"), {
-    method: "POST",
-    headers: {
-      Authorization: getWpAuthHeader(),
-      "Content-Type": input.mimeType,
-      "Content-Disposition": `attachment; filename="${safeName}"`,
-    },
-    body: new Uint8Array(input.bytes),
-  });
+  let response: Response;
+  try {
+    response = await fetchWordPressNoRedirect(wpUrl(wp, "/wp-json/wp/v2/media"), {
+      method: "POST",
+      headers: {
+        Authorization: getWpAuthHeader(wp),
+        "Content-Type": input.mimeType,
+        "Content-Disposition": `attachment; filename="${safeName}"`,
+      },
+      body: new Uint8Array(input.bytes),
+    });
+  } catch (error) {
+    if (error instanceof WordPressUrlError) {
+      throw new WordPressMediaError(error.message, error.status);
+    }
+    throw error;
+  }
 
   const data = await readJson<{
     id?: number;
@@ -134,14 +167,26 @@ export async function updateWordPressMediaAltText(
   mediaId: number,
   altText: string
 ): Promise<void> {
-  const response = await fetch(wpUrl(`/wp-json/wp/v2/media/${mediaId}`), {
-    method: "POST",
-    headers: {
-      Authorization: getWpAuthHeader(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ alt_text: altText }),
-  });
+  const wp = await getWp();
+  let response: Response;
+  try {
+    response = await fetchWordPressNoRedirect(
+      wpUrl(wp, `/wp-json/wp/v2/media/${mediaId}`),
+      {
+        method: "POST",
+        headers: {
+          Authorization: getWpAuthHeader(wp),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ alt_text: altText }),
+      }
+    );
+  } catch (error) {
+    if (error instanceof WordPressUrlError) {
+      throw new WordPressMediaError(error.message, error.status);
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     throw new WordPressMediaError(
@@ -159,14 +204,26 @@ export async function setWordPressFeaturedMedia(
   postId: number,
   mediaId: number
 ): Promise<WordPressPostSnapshot> {
-  const response = await fetch(wpUrl(`/wp-json/wp/v2/posts/${postId}`), {
-    method: "POST",
-    headers: {
-      Authorization: getWpAuthHeader(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ featured_media: mediaId }),
-  });
+  const wp = await getWp();
+  let response: Response;
+  try {
+    response = await fetchWordPressNoRedirect(
+      wpUrl(wp, `/wp-json/wp/v2/posts/${postId}`),
+      {
+        method: "POST",
+        headers: {
+          Authorization: getWpAuthHeader(wp),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ featured_media: mediaId }),
+      }
+    );
+  } catch (error) {
+    if (error instanceof WordPressUrlError) {
+      throw new WordPressMediaError(error.message, error.status);
+    }
+    throw error;
+  }
 
   const data = await readJson<{
     id?: number;

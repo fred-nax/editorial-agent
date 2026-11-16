@@ -1,4 +1,4 @@
-import { openai } from "@/lib/openai";
+import { getOpenAIClient } from "@/lib/openai";
 import { FEATURED_ALT_MODEL, MAX_ALT_TEXT_LENGTH } from "./config";
 
 export type AltTextInput = {
@@ -56,6 +56,7 @@ export async function proposeFeaturedImageAltText(
   const dataUrl = `data:${input.mimeType};base64,${input.imageBytes.toString("base64")}`;
 
   try {
+    const openai = await getOpenAIClient();
     const completion = await openai.chat.completions.create({
       model: FEATURED_ALT_MODEL,
       max_tokens: 160,

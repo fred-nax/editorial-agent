@@ -1,4 +1,4 @@
-import { openai } from "@/lib/openai";
+import { getOpenAIClient } from "@/lib/openai";
 import { EDITORIAL_SIMILARITY_MODEL } from "./editorial-similarity-config";
 import {
   releaseSimilarityAiSlot,
@@ -182,6 +182,7 @@ export async function analyzeEditorialSimilarityWithAi(input: {
       ].join(" | ")
     );
 
+    const openai = await getOpenAIClient();
     const response = await openai.responses.create({
       model: EDITORIAL_SIMILARITY_MODEL,
       temperature: 0.2,

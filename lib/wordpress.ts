@@ -1,4 +1,8 @@
-import { env } from "./env";
+import {
+  resolveWordPressConfig,
+  type WordPressConfig,
+} from "@/lib/settings/app-settings";
+import { fetchWordPressNoRedirect } from "@/lib/settings/wp-url";
 
 export type WordPressDraftInput = {
   title: string;
@@ -31,27 +35,43 @@ type WordPressPostResponse = {
   categories?: number[];
 };
 
-function getWpAuthHeader(): string {
-  const token = Buffer.from(
-    `${env.WP_USERNAME}:${env.WP_APP_PASSWORD}`
-  ).toString("base64");
-
+function authHeader(username: string, appPassword: string): string {
+  const token = Buffer.from(`${username}:${appPassword}`).toString("base64");
   return `Basic ${token}`;
+}
+
+async function resolveCredentials(
+  override?: WordPressConfig
+): Promise<WordPressConfig> {
+  if (override) {
+    return override;
+  }
+  const config = await resolveWordPressConfig();
+  if (!config) {
+    throw new Error("WordPress non configuré.");
+  }
+  return config;
 }
 
 /**
  * Création brouillon + Slim SEO.
  * Le statut WordPress est toujours forcé à draft.
+ * @param credentials Snapshot de connexion (génération en cours) — optionnel.
  */
-export async function createWordPressDraft({
-  title,
-  content,
-  excerpt = "",
-  slug = "",
-  meta_title = "",
-  meta_description = "",
-  categoryIds = [],
-}: WordPressDraftInput): Promise<WordPressDraftResult> {
+export async function createWordPressDraft(
+  {
+    title,
+    content,
+    excerpt = "",
+    slug = "",
+    meta_title = "",
+    meta_description = "",
+    categoryIds = [],
+  }: WordPressDraftInput,
+  credentials?: WordPressConfig
+): Promise<WordPressDraftResult> {
+  const wp = await resolveCredentials(credentials);
+
   const payload = {
     title,
     content,
@@ -67,14 +87,17 @@ export async function createWordPressDraft({
     },
   };
 
-  const response = await fetch(`${env.WP_URL}/wp-json/wp/v2/posts`, {
-    method: "POST",
-    headers: {
-      Authorization: getWpAuthHeader(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetchWordPressNoRedirect(
+    `${wp.url}/wp-json/wp/v2/posts`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: authHeader(wp.username, wp.appPassword),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
 
   const data = (await response.json()) as WordPressPostResponse;
 

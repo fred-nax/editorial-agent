@@ -16,17 +16,24 @@ export async function findSimilarContent(input: {
   similarTopics: SimilarTopicMatch[];
   duplicateRisk: "none" | "low" | "medium" | "high";
 }> {
+  const { isWordPressInventoryUsable } = await import(
+    "@/lib/settings/inventory-guard"
+  );
+  const inventoryUsable = await isWordPressInventoryUsable();
+
   const [posts, topics] = await Promise.all([
-    db.wordPressPost.findMany({
-      select: {
-        wpPostId: true,
-        title: true,
-        url: true,
-        slug: true,
-        excerpt: true,
-      },
-      take: 2000,
-    }),
+    inventoryUsable
+      ? db.wordPressPost.findMany({
+          select: {
+            wpPostId: true,
+            title: true,
+            url: true,
+            slug: true,
+            excerpt: true,
+          },
+          take: 2000,
+        })
+      : Promise.resolve([]),
     db.topic.findMany({
       where: { status: { in: ["pending", "generating", "completed"] } },
       select: { id: true, subject: true, angle: true },

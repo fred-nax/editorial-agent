@@ -1,6 +1,5 @@
 import { inspect } from "node:util";
 import { detectCategories } from "../categories";
-import { env } from "../env";
 import { logInfo } from "../logger";
 import { estimateLlmCostUsd } from "../openai-pricing";
 import {
@@ -12,7 +11,9 @@ import {
   type AgentProgressEvent,
   type GenerationStage,
 } from "../progress";
-import { openai } from "../openai";
+import type OpenAI from "openai";
+import { createOpenAIClient } from "../openai";
+import { resolveRuntimeConnections } from "../settings/app-settings";
 import {
   createWordPressDraft,
   type WordPressDraftInput,
@@ -201,14 +202,15 @@ type SessionUsageCollection = {
  * Aucun calcul de coût.
  */
 async function collectSessionUsage(
-  sessionId: string
+  sessionId: string,
+  client: OpenAI
 ): Promise<SessionUsageCollection> {
   const maxAttempts = 16;
   const delayBetweenAttemptsMs = 2000;
   const startedAt = Date.now();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const session = await openai.beta.agents.sessions.retrieve(sessionId);
+    const session = await client.beta.agents.sessions.retrieve(sessionId);
     const model =
       typeof session.agent?.model === "string" && session.agent.model.trim()
         ? session.agent.model.trim()
@@ -243,7 +245,7 @@ async function collectSessionUsage(
     let turnsSum: TokenUsageSnapshot | null = null;
     let turnsWithUsage = 0;
     let turnsRaw: Record<string, unknown> | null = null;
-    const turns = await openai.beta.agents.sessions.turns.list(sessionId, {
+    const turns = await client.beta.agents.sessions.turns.list(sessionId, {
       order: "asc",
     });
     for await (const turn of turns) {
@@ -357,6 +359,11 @@ export async function runAgentSession(
   let emittedCombinedWork = false;
   let emittedWriting = false;
 
+  // Snapshot figé pour toute la génération (changement Paramètres mid-flight ignoré).
+  const connections = await resolveRuntimeConnections();
+  const openai = createOpenAIClient(connections.openai.apiKey);
+  const wordpressCredentials = connections.wordpress;
+
   await emitProgress(
     onProgress,
     "preparing",
@@ -417,13 +424,13 @@ export async function runAgentSession(
   }
 
   const allowedInternalUrls = linkPlan.selected.map((item) => item.url);
-  const wpHost = siteHostFromWpUrl(env.WP_URL);
+  const wpHost = siteHostFromWpUrl(wordpressCredentials.url);
 
   log(onLog, "");
   log(onLog, "Création de la session...");
 
   const stream = await openai.beta.agents.sessions.create({
-    agent_id: env.OPENAI_AGENT_ID,
+    agent_id: connections.openai.agentId,
     agent: {
       tools: agentSessionTools,
     },
@@ -594,10 +601,13 @@ export async function runAgentSession(
               `Catégories : ${detectedCategories.map((c) => c.name).join(", ")}`
             );
 
-            const result = await createWordPressDraft({
-              ...args,
-              categoryIds,
-            });
+            const result = await createWordPressDraft(
+              {
+                ...args,
+                categoryIds,
+              },
+              wordpressCredentials
+            );
 
             wordpressResult = result;
             draftMeta = {
@@ -710,7 +720,7 @@ export async function runAgentSession(
     throw error;
   }
 
-  const collected = await collectSessionUsage(sessionId);
+  const collected = await collectSessionUsage(sessionId, openai);
   const usage = collected.usage;
   const estimatedCost =
     usage !== null

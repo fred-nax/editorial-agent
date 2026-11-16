@@ -324,9 +324,9 @@ describe("instructions de l’agent éditorial", () => {
     );
     const route = readSource("app/api/agent/instructions/route.ts");
     assert.match(route, /requireAuth/);
-    assert.match(route, /env\.OPENAI_AGENT_ID/);
+    assert.match(route, /resolveOpenAiConfig/);
     assert.doesNotMatch(route, /OPENAI_API_KEY/);
-    assert.doesNotMatch(route, /prisma|db\./);
+    assert.doesNotMatch(route, /env\.OPENAI_AGENT_ID/);
     const ui = readSource("components/EditorialAgentSettings.tsx");
     assert.doesNotMatch(ui, /OPENAI_API_KEY|process\.env/);
     const session = readSource("lib/agent/run-session.ts");

@@ -48,7 +48,8 @@ export function createOpenAiSuggestionClient(): SuggestionClient {
   return {
     async suggest(input: string) {
       assertLiveSuggestionsAllowed();
-      const { openai } = await import("@/lib/openai");
+      const { getOpenAIClient } = await import("@/lib/openai");
+      const openai = await getOpenAIClient();
       return openai.responses.create({
         model: VEILLE_SUGGESTION_MODEL,
         input,

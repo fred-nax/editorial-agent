@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { logError, logInfo } from "../logger";
-import { openai } from "../openai";
+import { getOpenAIClient } from "../openai";
 import {
   resolveDomainQuotas,
   totalQuota,
@@ -217,6 +217,7 @@ async function requestDomainCandidates(
     return [];
   }
 
+  const openai = await getOpenAIClient();
   const response = await openai.responses.create({
     model: "gpt-5.6-terra",
     tools: [{ type: "web_search" }],
@@ -244,6 +245,7 @@ async function requestFreeTopicCandidates(
   goal: ResearchGoal,
   instructions: string | null
 ): Promise<RawOpportunityCandidate[]> {
+  const openai = await getOpenAIClient();
   const response = await openai.responses.create({
     model: "gpt-5.6-terra",
     tools: [{ type: "web_search" }],
@@ -270,6 +272,7 @@ async function aiSaysDuplicate(
   right: RawOpportunityCandidate
 ): Promise<boolean> {
   try {
+    const openai = await getOpenAIClient();
     const response = await openai.responses.create({
       model: "gpt-5.6-terra",
       input: [

@@ -38,7 +38,8 @@ export function createOpenAiWatchClient(): VeilleSearchClient {
   return {
     async search(input, query: VeilleQuery) {
       assertLiveWatchAllowed();
-      const { openai } = await import("@/lib/openai");
+      const { getOpenAIClient } = await import("@/lib/openai");
+      const openai = await getOpenAIClient();
       return openai.responses.create({
         model: "gpt-5.6-terra",
         tools: [buildWebSearchToolConfig(query)],
