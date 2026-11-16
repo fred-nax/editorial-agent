@@ -1,52 +1,86 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useId, useState } from "react";
 import { loginAction } from "./actions";
 
 export function LoginForm() {
   const [state, formAction, pending] = useActionState(loginAction, undefined);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const emailId = useId();
+  const passwordId = useId();
+  const errorId = useId();
 
   return (
-    <form action={formAction} className="space-y-4">
-      <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-slate-800">
-          Email
-        </span>
+    <form action={formAction} noValidate>
+      <div className="field">
+        <label htmlFor={emailId}>Adresse e-mail</label>
         <input
+          id={emailId}
           type="email"
           name="email"
           autoComplete="username"
+          placeholder="vous@naxialis.com"
           required
-          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-naxialis focus:ring-2 focus:ring-naxialis/20"
+          disabled={pending}
+          aria-invalid={state?.error ? true : undefined}
+          aria-describedby={state?.error ? errorId : undefined}
         />
-      </label>
+      </div>
 
-      <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-slate-800">
-          Mot de passe
-        </span>
-        <input
-          type="password"
-          name="password"
-          autoComplete="current-password"
-          required
-          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-naxialis focus:ring-2 focus:ring-naxialis/20"
-        />
-      </label>
+      <div className="field">
+        <label htmlFor={passwordId}>Mot de passe</label>
+        <div className="password-wrap">
+          <input
+            id={passwordId}
+            type={passwordVisible ? "text" : "password"}
+            name="password"
+            autoComplete="current-password"
+            placeholder="Votre mot de passe"
+            required
+            disabled={pending}
+            aria-invalid={state?.error ? true : undefined}
+            aria-describedby={state?.error ? errorId : undefined}
+          />
+          <button
+            className="toggle"
+            type="button"
+            onClick={() => setPasswordVisible((value) => !value)}
+            aria-label={
+              passwordVisible
+                ? "Masquer le mot de passe"
+                : "Afficher le mot de passe"
+            }
+            disabled={pending}
+          >
+            {passwordVisible ? "Masquer" : "Afficher"}
+          </button>
+        </div>
+      </div>
+
+      <button className="submit" type="submit" disabled={pending}>
+        {pending ? "Connexion…" : "Se connecter"}
+        {!pending ? (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <path d="M4 12h16m-6-6 6 6-6 6" />
+          </svg>
+        ) : null}
+      </button>
 
       {state?.error ? (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p id={errorId} className="hint error" role="alert">
           {state.error}
         </p>
-      ) : null}
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded-md bg-naxialis px-4 py-2.5 text-sm font-medium text-white hover:bg-naxialis-dark disabled:opacity-60"
-      >
-        {pending ? "Connexion…" : "Se connecter"}
-      </button>
+      ) : (
+        <p className="hint" role="status" aria-live="polite">
+          Accès réservé aux utilisateurs autorisés.
+        </p>
+      )}
     </form>
   );
 }
