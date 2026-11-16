@@ -180,6 +180,8 @@ model WordPressPost {
   slug        String
   url         String
   status      String
+  /// Type WordPress : "post" | "page" (défaut post pour l’historique).
+  contentType String    @default("post")
   excerpt     String?
   contentText String?
   categories  Json?
@@ -191,6 +193,7 @@ model WordPressPost {
 
   @@index([slug])
   @@index([status])
+  @@index([contentType])
   @@index([modifiedAt])
 }
 
@@ -340,4 +343,144 @@ model SeoOpportunity {
   @@index([searchRunId])
   @@index([trendType])
   @@index([editorialUrgency])
+}
+
+/// Connexion Google OAuth (mono-site / installation). Jetons chiffrés au repos.
+model GoogleConnection {
+  id                    String   @id @default("default")
+  googleAccountEmail    String?
+  googleAccountSub      String?
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String
+  status                String   @default("connected")
+  lastError             String?
+  connectedAt           DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  selection GooglePropertySelection?
+  syncRuns  GoogleSyncRun[]
+}
+
+/// Propriétés GSC + GA4 sélectionnées pour cette installation.
+model GooglePropertySelection {
+  id                 String   @id @default("default")
+  connectionId       String   @unique
+  gscPropertyUrl     String?
+  gscPropertyType    String?
+  gscPermissionLevel String?
+  ga4AccountId       String?
+  ga4PropertyId      String?
+  ga4PropertyName    String?
+  updatedAt          DateTime @updatedAt
+
+  connection GoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+}
+
+model GoogleSyncRun {
+  id           String    @id @default(cuid())
+  connectionId String    @default("default")
+  status       String
+  mode         String
+  gscUpserted  Int       @default(0)
+  ga4Upserted  Int       @default(0)
+  rangeStart   DateTime? @db.Date
+  rangeEnd     DateTime? @db.Date
+  error        String?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  connection GoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([startedAt])
+}
+
+/// Totaux Search Console quotidiens au niveau propriété (pas une somme de pages).
+model GscPropertyDailyStat {
+  id          String   @id @default(cuid())
+  propertyUrl String
+  date        DateTime @db.Date
+  clicks      Float    @default(0)
+  impressions Float    @default(0)
+  ctr         Float    @default(0)
+  position    Float    @default(0)
+  hasData     Boolean  @default(true)
+  syncedAt    DateTime @default(now())
+
+  @@unique([propertyUrl, date])
+  @@index([propertyUrl, date])
+}
+
+/// Stats Search Console quotidiennes par URL (upsert).
+model GscPageDailyStat {
+  id          String   @id @default(cuid())
+  propertyUrl String
+  pageUrl     String
+  pageUrlNorm String
+  date        DateTime @db.Date
+  clicks      Float    @default(0)
+  impressions Float    @default(0)
+  ctr         Float    @default(0)
+  position    Float    @default(0)
+  hasData     Boolean  @default(true)
+  wpPostId    Int?
+  syncedAt    DateTime @default(now())
+
+  @@unique([propertyUrl, pageUrlNorm, date])
+  @@index([propertyUrl, date])
+  @@index([pageUrlNorm])
+  @@index([wpPostId])
+}
+
+/// Requêtes GSC quotidiennes (top) par page.
+model GscQueryDailyStat {
+  id          String   @id @default(cuid())
+  propertyUrl String
+  pageUrlNorm String
+  query       String
+  date        DateTime @db.Date
+  clicks      Float    @default(0)
+  impressions Float    @default(0)
+  ctr         Float    @default(0)
+  position    Float    @default(0)
+  syncedAt    DateTime @default(now())
+
+  @@unique([propertyUrl, pageUrlNorm, query, date])
+  @@index([propertyUrl, pageUrlNorm, date])
+}
+
+/// Stats GA4 quotidiennes par page.
+model Ga4PageDailyStat {
+  id              String   @id @default(cuid())
+  propertyId      String
+  pagePath        String
+  pageUrlNorm     String
+  date            DateTime @db.Date
+  sessions        Int      @default(0)
+  totalUsers      Int      @default(0)
+  engagedSessions Int      @default(0)
+  aiSessions      Int      @default(0)
+  wpPostId        Int?
+  syncedAt        DateTime @default(now())
+
+  @@unique([propertyId, pageUrlNorm, date])
+  @@index([propertyId, date])
+  @@index([pageUrlNorm])
+  @@index([wpPostId])
+}
+
+/// Répartition des sessions GA4 par source classifiée (quotidien).
+model Ga4PageSourceDailyStat {
+  id          String   @id @default(cuid())
+  propertyId  String
+  pageUrlNorm String
+  date        DateTime @db.Date
+  sourceKey   String
+  sessions    Int      @default(0)
+  syncedAt    DateTime @default(now())
+
+  @@unique([propertyId, pageUrlNorm, date, sourceKey])
+  @@index([propertyId, pageUrlNorm, date])
 }

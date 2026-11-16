@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { EditorialAgentSettings } from "@/components/EditorialAgentSettings";
+import { GoogleIntegrationsSettings } from "@/components/GoogleIntegrationsSettings";
 import { getServiceStatuses } from "@/lib/config-status";
 
 export const metadata: Metadata = {
@@ -22,6 +23,8 @@ export default function SettingsPage() {
       </div>
 
       <EditorialAgentSettings />
+
+      <GoogleIntegrationsSettings />
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-slate-900">Services</h2>

@@ -11,7 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /** Change quand le schéma Prisma change, pour ne pas réutiliser un client généré avant. */
-const PRISMA_CLIENT_TOKEN = "seo-themes-catalog-v7-5-20261113";
+const PRISMA_CLIENT_TOKEN = "wordpress-content-type-v7-6-1c-20261115";
 
 type PrismaModule = {
   PrismaClient: typeof PrismaClient;
@@ -61,13 +61,38 @@ function seoThemeCatalogV75Ready(prisma: typeof Prisma): boolean {
   );
 }
 
+/** V7.6.1 — modèles Google Search Console / GA4. */
+function googleIntegrationsReady(prisma: typeof Prisma): boolean {
+  const names = new Set(prisma.dmmf.datamodel.models.map((model) => model.name));
+  return (
+    names.has("GoogleConnection") &&
+    names.has("GooglePropertySelection") &&
+    names.has("GoogleSyncRun") &&
+    names.has("GscPageDailyStat") &&
+    names.has("GscPropertyDailyStat") &&
+    names.has("GscQueryDailyStat") &&
+    names.has("Ga4PageDailyStat") &&
+    names.has("Ga4PageSourceDailyStat")
+  );
+}
+
+/** Inventaire WP : contentType post|page. */
+function wordpressContentTypeReady(prisma: typeof Prisma): boolean {
+  const model = prisma.dmmf.datamodel.models.find(
+    (item) => item.name === "WordPressPost"
+  );
+  return model?.fields.some((field) => field.name === "contentType") ?? false;
+}
+
 function clientMatchesSchema(prisma: typeof Prisma): boolean {
   return (
     topicHasOrigin(prisma) &&
     articleGenerationHasTrace(prisma) &&
     editorialWatchSearchExists(prisma) &&
     articleFeaturedImageExists(prisma) &&
-    seoThemeCatalogV75Ready(prisma)
+    seoThemeCatalogV75Ready(prisma) &&
+    googleIntegrationsReady(prisma) &&
+    wordpressContentTypeReady(prisma)
   );
 }
 

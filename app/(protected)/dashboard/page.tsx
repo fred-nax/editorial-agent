@@ -9,6 +9,7 @@ import { DashboardFrame } from "@/components/dashboard/frame";
 import { DashboardGenerateCard } from "@/components/dashboard/generate-card";
 import { DashboardKpiCards } from "@/components/dashboard/kpi-cards";
 import { DashboardRecentGenerations } from "@/components/dashboard/recent-generations";
+import { DashboardSeoTrafficStrip } from "@/components/dashboard/seo-traffic-strip";
 import { DashboardTopicPreview } from "@/components/dashboard/topic-preview";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db";
@@ -170,6 +171,8 @@ export default async function DashboardPage() {
           },
         ]}
       />
+
+      <DashboardSeoTrafficStrip />
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-5 lg:gap-6">
         <div className="lg:col-span-3">

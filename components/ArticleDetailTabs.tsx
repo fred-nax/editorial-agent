@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Image } from "lucide-react";
+import { Image, LineChart } from "lucide-react";
 import {
   ARTICLE_DETAIL_TABS,
   moveArticleDetailTab,
@@ -13,17 +13,19 @@ export function ArticleDetailTabs({
   article,
   usage,
   featured,
+  performances,
   initialTab = "report",
 }: {
   report: ReactNode;
   article: ReactNode;
   usage: ReactNode;
   featured: ReactNode;
+  performances: ReactNode;
   initialTab?: ArticleDetailTabId;
 }) {
   const [active, setActive] = useState<ArticleDetailTabId>(initialTab);
   const tabRefs = useRef<Partial<Record<ArticleDetailTabId, HTMLButtonElement | null>>>({});
-  const panels = { report, article, usage, featured };
+  const panels = { report, article, usage, featured, performances };
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const next = moveArticleDetailTab(active, event.key);
@@ -66,6 +68,9 @@ export function ArticleDetailTabs({
             >
               {tab.id === "featured" ? (
                 <Image className="size-3.5 shrink-0" aria-hidden />
+              ) : null}
+              {tab.id === "performances" ? (
+                <LineChart className="size-3.5 shrink-0" aria-hidden />
               ) : null}
               {tab.label}
             </button>

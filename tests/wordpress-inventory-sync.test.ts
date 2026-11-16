@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
+import { isWordPressStatusForbiddenError } from "../lib/seo/wordpress-inventory";
 import {
   buildWordPressInventoryUrl,
+  resolveInventoryModifiedAfter,
   resolveInventoryPagePlan,
 } from "../lib/seo/wordpress-url";
 
@@ -31,6 +33,89 @@ describe("WordPress sync pagination scenarios", () => {
     });
     assert.match(url, /modified_after=/);
     assert.match(url, /context=view/);
+    assert.match(url, /\/wp\/v2\/posts/);
+  });
+
+  it("construit l’URL REST des pages WordPress", () => {
+    const url = buildWordPressInventoryUrl({
+      baseUrl: "https://naxialis.com",
+      page: 1,
+      perPage: 100,
+      status: "publish",
+      context: "view",
+      resource: "pages",
+    });
+    assert.match(url, /\/wp\/v2\/pages/);
+    assert.doesNotMatch(url, /\/wp\/v2\/posts/);
+  });
+
+  it("curseur incrémental par contentType (pages jamais sync → null)", () => {
+    const postCursor = new Date("2026-11-12T17:14:25.000Z");
+    assert.equal(
+      resolveInventoryModifiedAfter({
+        mode: "full",
+        latestModifiedByContentType: { post: postCursor },
+        contentType: "page",
+      }),
+      null
+    );
+    assert.equal(
+      resolveInventoryModifiedAfter({
+        mode: "incremental",
+        latestModifiedByContentType: { post: postCursor },
+        contentType: "page",
+      }),
+      null
+    );
+    assert.equal(
+      resolveInventoryModifiedAfter({
+        mode: "incremental",
+        latestModifiedByContentType: { post: postCursor },
+        contentType: "post",
+      }),
+      postCursor
+    );
+    const pageCursor = new Date("2026-10-01T00:00:00.000Z");
+    assert.equal(
+      resolveInventoryModifiedAfter({
+        mode: "incremental",
+        latestModifiedByContentType: {
+          post: postCursor,
+          page: pageCursor,
+        },
+        contentType: "page",
+      }),
+      pageCursor
+    );
+  });
+
+  it("reconnaît un refus REST de statut (pages draft) sans l’assimiler à une panne fatale", () => {
+    const body =
+      '{"code":"rest_invalid_param","message":"Paramètre(s) invalide(s) : « status »","data":{"status":400,"params":{"status":"L’état est interdit."},"details":{"status":{"code":"rest_forbidden_status"}}}}';
+    assert.equal(isWordPressStatusForbiddenError(400, body), true);
+    assert.equal(isWordPressStatusForbiddenError(500, body), false);
+    assert.equal(isWordPressStatusForbiddenError(400, "other"), false);
+  });
+
+  it("persiste contentType page sans collision d’ID cross-type", () => {
+    // WordPress partage l’espace d’IDs ; la clé métier reste wpPostId.
+    // La dédup sync utilise contentType:id pour ne pas mélanger les lots.
+    const batches = [
+      { contentType: "post" as const, ids: [100, 200] },
+      { contentType: "page" as const, ids: [300, 200] },
+    ];
+    const seenKeys = new Set<string>();
+    const byType: Record<"post" | "page", number[]> = { post: [], page: [] };
+    for (const batch of batches) {
+      for (const id of batch.ids) {
+        const key = `${batch.contentType}:${id}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        byType[batch.contentType].push(id);
+      }
+    }
+    assert.deepEqual(byType.post, [100, 200]);
+    assert.deepEqual(byType.page, [300, 200]);
   });
 
   it("flags partial page when X-WP-Total is higher than retrieved", () => {

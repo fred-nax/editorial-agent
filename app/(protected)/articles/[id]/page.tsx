@@ -8,6 +8,7 @@ import {
   FeaturedImagePanel,
   FeaturedImageUnavailable,
 } from "@/components/articles/FeaturedImagePanel";
+import { ArticlePerformancesPanel } from "@/components/articles/ArticlePerformancesPanel";
 import { EditorialContextPanel } from "@/components/EditorialContextPanel";
 import { GenerationLiveRefresh } from "@/components/GenerationLiveRefresh";
 import { GenerationProgress } from "@/components/GenerationProgress";
@@ -24,8 +25,10 @@ import {
   formatTokenCount,
 } from "@/lib/format";
 import { parseStoredEditorialContext } from "@/lib/editorial-context";
+import { resolvePublishedUrlForGeneration } from "@/lib/google/wp-url-map";
 import { toFeaturedImagePublic } from "@/lib/images/types";
 import { formatModelLabel } from "@/lib/openai-pricing";
+import type { ArticleDetailTabId } from "@/lib/article-detail-tabs";
 
 type ArticleDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -81,6 +84,18 @@ export default async function ArticleDetailPage({
     article.inputTokens !== null && article.outputTokens !== null
       ? formatTokenCount(article.inputTokens + article.outputTokens)
       : null;
+
+  const publishedPerf = await resolvePublishedUrlForGeneration({
+    wpPostId: article.wpPostId,
+    wpUrl: article.wpUrl,
+  });
+
+  const initialTab: ArticleDetailTabId =
+    tab === "featured"
+      ? "featured"
+      : tab === "performances"
+        ? "performances"
+        : "report";
 
   return (
     <div className="min-w-0 space-y-6">
@@ -141,7 +156,7 @@ export default async function ArticleDetailPage({
       <EditorialContextPanel value={article.editorialContext} />
 
       <ArticleDetailTabs
-        initialTab={tab === "featured" ? "featured" : "report"}
+        initialTab={initialTab}
         report={
           <GenerationReport
             trace={article.trace}
@@ -192,6 +207,12 @@ export default async function ArticleDetailPage({
           ) : (
             <FeaturedImageUnavailable />
           )
+        }
+        performances={
+          <ArticlePerformancesPanel
+            published={Boolean(publishedPerf)}
+            pageUrlNorm={publishedPerf?.pageUrlNorm ?? null}
+          />
         }
       />
     </div>

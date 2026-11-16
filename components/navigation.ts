@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  ChartNoAxesCombined,
   History,
   LayoutDashboard,
   ListTodo,
@@ -20,6 +21,7 @@ export const navigation: NavItem[] = [
   { href: "/articles/new", label: "Nouvel article", icon: SquarePen },
   { href: "/articles", label: "Historique", icon: History },
   { href: "/topics", label: "File éditoriale", icon: ListTodo },
+  { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { href: "/opportunities", label: "Opportunités SEO", icon: SearchCheck },
   { href: "/veille", label: "Veille éditoriale", icon: Radar },
   { href: "/settings", label: "Paramètres", icon: Settings },
@@ -35,6 +37,9 @@ export function isNavActive(pathname: string, href: string): boolean {
   if (href === "/articles/new") {
     return pathname === "/articles/new";
   }
+  if (href === "/analytics") {
+    return pathname === "/analytics" || pathname.startsWith("/analytics/");
+  }
   return pathname === href;
 }
 
@@ -45,6 +50,9 @@ export function sectionTitle(pathname: string): string {
   }
   if (pathname.startsWith("/articles/") && pathname !== "/articles/new") {
     return "Historique";
+  }
+  if (pathname.startsWith("/analytics")) {
+    return "Analytics";
   }
   return "Naxialis Content Agent";
 }

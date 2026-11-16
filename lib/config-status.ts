@@ -22,11 +22,18 @@ export function getServiceStatuses(): ServiceStatus[] {
       process.env.ADMIN_EMAIL &&
       process.env.ADMIN_PASSWORD_HASH
   );
+  const googleConfigured = Boolean(
+    process.env.GOOGLE_CLIENT_ID &&
+      process.env.GOOGLE_CLIENT_SECRET &&
+      process.env.GOOGLE_TOKEN_ENCRYPTION_KEY &&
+      (process.env.AUTH_URL || process.env.NEXTAUTH_URL)
+  );
 
   return [
     { label: "OpenAI", configured: openaiConfigured },
     { label: "WordPress", configured: wordpressConfigured },
     { label: "PostgreSQL", configured: databaseConfigured },
     { label: "Authentification", configured: authConfigured },
+    { label: "Google (GSC / GA4)", configured: googleConfigured },
   ];
 }

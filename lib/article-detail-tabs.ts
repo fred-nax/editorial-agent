@@ -3,6 +3,7 @@ export const ARTICLE_DETAIL_TABS = [
   { id: "article", label: "Article & SEO" },
   { id: "usage", label: "Consommation OpenAI" },
   { id: "featured", label: "Image à la une" },
+  { id: "performances", label: "Performances SEO" },
 ] as const;
 
 export type ArticleDetailTabId = (typeof ARTICLE_DETAIL_TABS)[number]["id"];

@@ -36,6 +36,7 @@ describe("retrait du module AI Visibility Monitor", () => {
       "/articles/new",
       "/articles",
       "/topics",
+      "/analytics",
       "/opportunities",
       "/veille",
       "/settings",

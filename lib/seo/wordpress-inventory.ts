@@ -5,10 +5,31 @@ import { logError, logInfo } from "../logger";
 import { stripHtml } from "./normalize";
 import {
   buildWordPressInventoryUrl,
+  resolveInventoryModifiedAfter,
+  resolveInventoryPagePlan,
+  type WordPressInventoryResource,
+} from "./wordpress-url";
+
+export {
+  buildWordPressInventoryUrl,
+  resolveInventoryModifiedAfter,
   resolveInventoryPagePlan,
 } from "./wordpress-url";
 
-export { buildWordPressInventoryUrl, resolveInventoryPagePlan } from "./wordpress-url";
+export type WordPressContentType = "post" | "page";
+
+/** Détecte un refus REST WP sur le paramètre status (pages draft, etc.). */
+export function isWordPressStatusForbiddenError(
+  statusCode: number,
+  body: string
+): boolean {
+  if (statusCode !== 400 && statusCode !== 403) {
+    return false;
+  }
+  return /rest_forbidden_status|rest_invalid_param|état est interdit|status is forbidden/i.test(
+    body
+  );
+}
 
 type WpRestPost = {
   id: number;
@@ -30,6 +51,7 @@ type StatusFetchResult = {
   fetchedCount: number;
   pagesFetched: number;
   headerInconsistent: boolean;
+  statusForbidden: boolean;
   posts: WpRestPost[];
 };
 
@@ -92,11 +114,13 @@ export async function fetchWordPressPage(params: {
   status: string;
   context: "view" | "edit";
   modifiedAfter?: Date | null;
+  resource?: WordPressInventoryResource;
 }): Promise<{
   posts: WpRestPost[];
   totalPages: number | null;
   totalItems: number | null;
   headerInconsistent: boolean;
+  statusForbidden?: boolean;
 }> {
   const url = buildWordPressInventoryUrl({
     baseUrl: env.WP_URL,
@@ -105,6 +129,7 @@ export async function fetchWordPressPage(params: {
     status: params.status,
     context: params.context,
     modifiedAfter: params.modifiedAfter,
+    resource: params.resource ?? "posts",
   });
 
   const response = await fetchWithRetry(url);
@@ -120,6 +145,17 @@ export async function fetchWordPressPage(params: {
 
   if (!response.ok) {
     const body = await response.text();
+    // Statut non listable pour ce type/compte (ex. pages draft) :
+    // ne pas faire échouer toute la sync (publish déjà récupéré).
+    if (isWordPressStatusForbiddenError(response.status, body)) {
+      return {
+        posts: [],
+        totalPages: 0,
+        totalItems: 0,
+        headerInconsistent: false,
+        statusForbidden: true,
+      };
+    }
     throw new Error(
       `WordPress inventory error ${response.status}: ${body.slice(0, 300)}`
     );
@@ -155,14 +191,17 @@ async function fetchAllPostsForStatus(params: {
   context: "view" | "edit";
   modifiedAfter?: Date | null;
   perPage?: number;
+  resource?: WordPressInventoryResource;
 }): Promise<StatusFetchResult> {
   const perPage = params.perPage ?? 100;
+  const resource = params.resource ?? "posts";
   const posts: WpRestPost[] = [];
   let page = 1;
   let totalPages = 1;
   let announcedTotal: number | null = null;
   let pagesFetched = 0;
   let headerInconsistent = false;
+  let statusForbidden = false;
 
   while (page <= totalPages && page <= 200) {
     const result = await fetchWordPressPage({
@@ -171,12 +210,17 @@ async function fetchAllPostsForStatus(params: {
       status: params.status,
       context: params.context,
       modifiedAfter: params.modifiedAfter,
+      resource,
     });
 
     pagesFetched += 1;
     if (page === 1) {
       announcedTotal = result.totalItems;
       headerInconsistent = result.headerInconsistent;
+      statusForbidden = Boolean(result.statusForbidden);
+      if (statusForbidden) {
+        break;
+      }
     }
     if (result.totalPages !== null) {
       totalPages = result.totalPages;
@@ -199,11 +243,15 @@ async function fetchAllPostsForStatus(params: {
     fetchedCount: posts.length,
     pagesFetched,
     headerInconsistent,
+    statusForbidden,
     posts,
   };
 }
 
-async function upsertPosts(posts: WpRestPost[]): Promise<{
+async function upsertPosts(
+  posts: WpRestPost[],
+  contentType: WordPressContentType
+): Promise<{
   upsertedCount: number;
   statusBreakdown: Record<string, number>;
 }> {
@@ -214,8 +262,10 @@ async function upsertPosts(posts: WpRestPost[]): Promise<{
     if (!post.id) {
       continue;
     }
+    const fallbackLabel = contentType === "page" ? "Page" : "Post";
     const title =
-      stripHtml(post.title?.rendered ?? "").slice(0, 500) || `Post #${post.id}`;
+      stripHtml(post.title?.rendered ?? "").slice(0, 500) ||
+      `${fallbackLabel} #${post.id}`;
     const excerpt =
       stripHtml(post.excerpt?.rendered ?? "").slice(0, 2000) || null;
     const contentText =
@@ -231,6 +281,7 @@ async function upsertPosts(posts: WpRestPost[]): Promise<{
         slug: post.slug ?? String(post.id),
         url: post.link ?? `${env.WP_URL}/?p=${post.id}`,
         status,
+        contentType,
         excerpt,
         contentText,
         categories: post.categories ?? [],
@@ -243,6 +294,7 @@ async function upsertPosts(posts: WpRestPost[]): Promise<{
         slug: post.slug ?? String(post.id),
         url: post.link ?? `${env.WP_URL}/?p=${post.id}`,
         status,
+        contentType,
         excerpt,
         contentText,
         categories: post.categories ?? [],
@@ -323,7 +375,7 @@ export async function persistWordPressSyncRun(
 
 /**
  * Synchronisation lecture seule de l'inventaire WordPress.
- * - publish via context=view (périmètre public complet)
+ * - posts + pages (publish via context=view)
  * - draft/private/pending/future via context=edit (selon capacités du compte)
  * Upsert uniquement — aucune suppression locale destructive.
  */
@@ -339,64 +391,111 @@ export async function processWordPressInventorySync(options: {
   let maxTotalPages: number | null = null;
   const statusBreakdown: Record<string, number> = {};
   const notes: string[] = [];
-  const seenIds = new Set<number>();
+  /** Clé `${contentType}:${id}` — IDs WP globaux, mais dédup par type explicite. */
+  const seenKeys = new Set<string>();
 
   try {
-    let modifiedAfter: Date | null = null;
+    const latestModifiedByContentType: Partial<
+      Record<WordPressContentType, Date | null>
+    > = {};
     if (mode === "incremental") {
-      const latest = await db.wordPressPost.findFirst({
-        orderBy: { modifiedAt: "desc" },
-        select: { modifiedAt: true },
+      for (const contentType of ["post", "page"] as const) {
+        const latest = await db.wordPressPost.findFirst({
+          where: { contentType },
+          orderBy: { modifiedAt: "desc" },
+          select: { modifiedAt: true },
+        });
+        latestModifiedByContentType[contentType] = latest?.modifiedAt ?? null;
+      }
+    }
+
+    type TypedFetch = StatusFetchResult & { contentType: WordPressContentType };
+    const fetches: TypedFetch[] = [];
+    const resources: Array<{
+      resource: WordPressInventoryResource;
+      contentType: WordPressContentType;
+    }> = [
+      { resource: "posts", contentType: "post" },
+      { resource: "pages", contentType: "page" },
+    ];
+
+    for (const { resource, contentType } of resources) {
+      const modifiedAfter = resolveInventoryModifiedAfter({
+        mode,
+        latestModifiedByContentType,
+        contentType,
       });
-      modifiedAfter = latest?.modifiedAt ?? null;
+      for (const status of PUBLIC_STATUSES) {
+        fetches.push({
+          ...(await fetchAllPostsForStatus({
+            status,
+            context: "view",
+            modifiedAfter,
+            resource,
+          })),
+          contentType,
+        });
+      }
+
+      // Les pages hors publish sont souvent interdites (rest_forbidden_status)
+      // pour Application Password — on ne les demande que pour les posts.
+      const privateStatuses =
+        contentType === "page" ? ([] as const) : PRIVATE_STATUSES;
+      for (const status of privateStatuses) {
+        fetches.push({
+          ...(await fetchAllPostsForStatus({
+            status,
+            context: "edit",
+            modifiedAfter,
+            resource,
+          })),
+          contentType,
+        });
+      }
     }
 
-    const fetches: StatusFetchResult[] = [];
-
-    for (const status of PUBLIC_STATUSES) {
-      fetches.push(
-        await fetchAllPostsForStatus({
-          status,
-          context: "view",
-          modifiedAfter: mode === "incremental" ? modifiedAfter : null,
-        })
-      );
-    }
-
-    for (const status of PRIVATE_STATUSES) {
-      fetches.push(
-        await fetchAllPostsForStatus({
-          status,
-          context: "edit",
-          modifiedAfter: mode === "incremental" ? modifiedAfter : null,
-        })
-      );
-    }
-
-    const allPosts: WpRestPost[] = [];
+    const byType: Record<WordPressContentType, WpRestPost[]> = {
+      post: [],
+      page: [],
+    };
     for (const fetchResult of fetches) {
       pagesFetched += fetchResult.pagesFetched;
       if (fetchResult.announcedTotal !== null) {
         expectedTotal += fetchResult.announcedTotal;
       }
+      if (fetchResult.statusForbidden) {
+        notes.push(
+          `Statut WP « ${fetchResult.status} » interdit pour ${fetchResult.contentType} (context=${fetchResult.context}) — ignoré.`
+        );
+      }
       if (fetchResult.headerInconsistent) {
         notes.push(
-          `Incohérence WP pour « ${fetchResult.status} » (context=${fetchResult.context}) : X-WP-Total=${fetchResult.announcedTotal}, récupérés=${fetchResult.fetchedCount}.`
+          `Incohérence WP pour « ${fetchResult.status} » (${fetchResult.contentType}, context=${fetchResult.context}) : X-WP-Total=${fetchResult.announcedTotal}, récupérés=${fetchResult.fetchedCount}.`
         );
       }
       for (const post of fetchResult.posts) {
-        if (!post.id || seenIds.has(post.id)) {
+        if (!post.id) {
           continue;
         }
-        seenIds.add(post.id);
-        allPosts.push(post);
+        const key = `${fetchResult.contentType}:${post.id}`;
+        if (seenKeys.has(key)) {
+          continue;
+        }
+        seenKeys.add(key);
+        byType[fetchResult.contentType].push(post);
       }
     }
 
-    fetchedCount = allPosts.length;
-    const upsert = await upsertPosts(allPosts);
-    upsertedCount = upsert.upsertedCount;
-    mergeBreakdown(statusBreakdown, upsert.statusBreakdown);
+    fetchedCount = byType.post.length + byType.page.length;
+    const upsertPostsResult = await upsertPosts(byType.post, "post");
+    const upsertPagesResult = await upsertPosts(byType.page, "page");
+    upsertedCount =
+      upsertPostsResult.upsertedCount + upsertPagesResult.upsertedCount;
+    mergeBreakdown(statusBreakdown, upsertPostsResult.statusBreakdown);
+    mergeBreakdown(statusBreakdown, upsertPagesResult.statusBreakdown);
+    notes.push(
+      `Inventaire : ${byType.post.length} article(s), ${byType.page.length} page(s).`
+    );
 
     const storedCount = await db.wordPressPost.count();
     maxTotalPages = pagesFetched;
@@ -406,10 +505,12 @@ export async function processWordPressInventorySync(options: {
         `Annoncés API (somme des statuts) : ${expectedTotal}. Accessibles et récupérés : ${fetchedCount}. Écart souvent dû à context=edit / capacités Application Password.`
       );
     } else if (mode === "incremental") {
+      const postCursor = latestModifiedByContentType.post;
+      const pageCursor = latestModifiedByContentType.page;
       notes.push(
-        `Sync incrémentale : ${fetchedCount} post(s) récupéré(s)${
-          modifiedAfter ? ` depuis ${modifiedAfter.toISOString()}` : ""
-        }.`
+        `Sync incrémentale : ${fetchedCount} contenu(s) récupéré(s) (${byType.post.length} article(s), ${byType.page.length} page(s))` +
+          `; curseur articles=${postCursor ? postCursor.toISOString() : "aucun"}` +
+          `, curseur pages=${pageCursor ? pageCursor.toISOString() : "aucun"}.`
       );
     } else if (expectedTotal === fetchedCount) {
       notes.push(

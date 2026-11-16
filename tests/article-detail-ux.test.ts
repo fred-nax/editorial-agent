@@ -18,7 +18,7 @@ function source(path: string): string {
 }
 
 describe("historique détail UX", () => {
-  it("propose les quatre onglets et ouvre le rapport", () => {
+  it("propose les cinq onglets et ouvre le rapport", () => {
     assert.deepEqual(
       ARTICLE_DETAIL_TABS.map((tab) => tab.label),
       [
@@ -26,10 +26,12 @@ describe("historique détail UX", () => {
         "Article & SEO",
         "Consommation OpenAI",
         "Image à la une",
+        "Performances SEO",
       ]
     );
     assert.equal(ARTICLE_DETAIL_TABS[0].id, "report");
     assert.equal(ARTICLE_DETAIL_TABS[3].id, "featured");
+    assert.equal(ARTICLE_DETAIL_TABS[4].id, "performances");
     const tabs = source("components/ArticleDetailTabs.tsx");
     assert.match(tabs, /useState<ArticleDetailTabId>\(initialTab\)/);
     assert.match(tabs, /initialTab = "report"/);
@@ -38,10 +40,13 @@ describe("historique détail UX", () => {
     assert.match(tabs, /from "lucide-react"/);
     assert.match(tabs, /\bImage\b/);
     assert.match(tabs, /featured/);
+    assert.match(tabs, /performances/);
     assert.doesNotMatch(tabs, /fetch\(|openai|wordpress/i);
     const page = source("app/(protected)/articles/[id]/page.tsx");
     assert.match(page, /featured=\{/);
     assert.match(page, /FeaturedImagePanel/);
+    assert.match(page, /performances=\{/);
+    assert.match(page, /ArticlePerformancesPanel/);
     assert.doesNotMatch(
       page,
       /EditorialContextPanel[\s\S]*FeaturedImagePanel[\s\S]*ArticleDetailTabs/
@@ -52,10 +57,11 @@ describe("historique détail UX", () => {
     assert.equal(moveArticleDetailTab("report", "ArrowRight"), "article");
     assert.equal(moveArticleDetailTab("article", "ArrowRight"), "usage");
     assert.equal(moveArticleDetailTab("usage", "ArrowRight"), "featured");
-    assert.equal(moveArticleDetailTab("featured", "ArrowRight"), "report");
-    assert.equal(moveArticleDetailTab("report", "ArrowLeft"), "featured");
+    assert.equal(moveArticleDetailTab("featured", "ArrowRight"), "performances");
+    assert.equal(moveArticleDetailTab("performances", "ArrowRight"), "report");
+    assert.equal(moveArticleDetailTab("report", "ArrowLeft"), "performances");
     assert.equal(moveArticleDetailTab("usage", "Home"), "report");
-    assert.equal(moveArticleDetailTab("report", "End"), "featured");
+    assert.equal(moveArticleDetailTab("report", "End"), "performances");
     assert.equal(moveArticleDetailTab("article", "Tab"), "article");
   });
 
