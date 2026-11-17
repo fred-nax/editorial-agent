@@ -22,9 +22,15 @@ import {
   type SyncedWpCategory,
   type WordPressCategoryConfig,
 } from "@/lib/wordpress-categories";
+import {
+  isWpSeoPlugin,
+  normalizeWpSeoPlugin,
+  type WpSeoPlugin,
+} from "@/lib/wordpress-seo";
 
 export { APP_SETTINGS_ID } from "@/lib/settings/app-settings-id";
 export { AppSettingsDecryptError } from "@/lib/settings/decrypt";
+export type { WpSeoPlugin };
 
 export type OpenAiConfig = {
   apiKey: string;
@@ -87,6 +93,8 @@ export type PublicAppSettings = {
     usable: boolean;
     siteMismatch: boolean;
   };
+  /** Plugin SEO WordPress — slim_seo par défaut (installations existantes). */
+  wpSeoPlugin: WpSeoPlugin;
   encryptionConfigured: boolean;
   secretsDecryptError: string | null;
 };
@@ -106,6 +114,7 @@ type AppSettingsRow = {
   wpDefaultCategoryId: number | null;
   wpCategoriesSyncedAt: Date | null;
   wpCategoriesOrigin: string | null;
+  wpSeoPlugin: string | null;
 };
 
 function emptyCategoryFields() {
@@ -146,11 +155,18 @@ async function loadRow(): Promise<AppSettingsRow | null> {
       wpDefaultCategoryId: row.wpDefaultCategoryId ?? null,
       wpCategoriesSyncedAt: row.wpCategoriesSyncedAt ?? null,
       wpCategoriesOrigin: row.wpCategoriesOrigin ?? null,
+      wpSeoPlugin: row.wpSeoPlugin ?? null,
     };
   } catch {
     // Table absente avant migrate — fallback env uniquement.
     return null;
   }
+}
+
+/** Plugin SEO configuré — null / inconnu → slim_seo (rétrocompat). */
+export async function resolveWpSeoPlugin(): Promise<WpSeoPlugin> {
+  const row = await loadRow();
+  return normalizeWpSeoPlugin(row?.wpSeoPlugin);
 }
 
 function buildCategoriesPublic(
@@ -354,9 +370,22 @@ export async function getPublicAppSettings(): Promise<PublicAppSettings> {
       reason: inventory.reason,
     },
     categories: buildCategoriesPublic(row, effectiveWpOrigin),
+    wpSeoPlugin: normalizeWpSeoPlugin(row?.wpSeoPlugin),
     encryptionConfigured: isAppSettingsEncryptionConfigured(),
     secretsDecryptError,
   };
+}
+
+export async function updateWpSeoPlugin(
+  plugin: string
+): Promise<PublicAppSettings> {
+  if (!isWpSeoPlugin(plugin)) {
+    throw new Error(
+      "Plugin SEO invalide. Valeurs acceptées : slim_seo, yoast_seo."
+    );
+  }
+  await upsertRow({ wpSeoPlugin: plugin });
+  return getPublicAppSettings();
 }
 
 async function upsertRow(

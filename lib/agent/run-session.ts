@@ -653,6 +653,15 @@ export async function runAgentSession(
             log(onLog, `ID : ${result.post_id}`);
             log(onLog, `Statut : ${result.status}`);
             log(onLog, `Lien : ${result.link}`);
+            log(onLog, `Plugin SEO : ${result.seo_plugin}`);
+            if (result.seo_persisted) {
+              log(onLog, "✅ Métadonnées SEO vérifiées");
+            } else {
+              log(
+                onLog,
+                `⚠️ Métadonnées SEO non persistées (brouillon conservé) : ${result.seo_error ?? "erreur inconnue"}`
+              );
+            }
 
             await openai.beta.agents.sessions.events.create(sessionId, {
               events: [

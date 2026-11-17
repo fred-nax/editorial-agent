@@ -6,6 +6,8 @@ export type SyncedWpCategoryView = {
   description: string;
 };
 
+export type WpSeoPluginView = "slim_seo" | "yoast_seo";
+
 export type PublicSettingsView = {
   clientName: string | null;
   siteName: string | null;
@@ -42,6 +44,7 @@ export type PublicSettingsView = {
     usable: boolean;
     siteMismatch: boolean;
   };
+  wpSeoPlugin: WpSeoPluginView;
   encryptionConfigured: boolean;
   secretsDecryptError: string | null;
 };

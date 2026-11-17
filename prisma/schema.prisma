@@ -369,6 +369,8 @@ model AppSettings {
   wpCategoriesSyncedAt   DateTime?
   /// Origin WP du snapshot de catégories (anti-contamination inter-sites).
   wpCategoriesOrigin     String?
+  /// Plugin SEO WordPress : slim_seo (défaut) | yoast_seo.
+  wpSeoPlugin            String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }

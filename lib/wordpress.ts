@@ -1,8 +1,14 @@
 import {
   resolveWordPressConfig,
+  resolveWpSeoPlugin,
   type WordPressConfig,
 } from "@/lib/settings/app-settings";
 import { fetchWordPressNoRedirect } from "@/lib/settings/wp-url";
+import {
+  buildSeoRestMeta,
+  verifySeoRestMeta,
+  type WpSeoPlugin,
+} from "@/lib/wordpress-seo";
 
 export type WordPressDraftInput = {
   title: string;
@@ -23,6 +29,12 @@ export type WordPressDraftResult = {
   categories: number[];
   meta_title: string;
   meta_description: string;
+  /** Plugin SEO utilisé pour ce brouillon. */
+  seo_plugin: WpSeoPlugin;
+  /** true si les métadonnées SEO ont été vérifiées en lecture après écriture. */
+  seo_persisted: boolean;
+  /** Message d’échec SEO distinct — le brouillon WordPress est conservé. */
+  seo_error: string | null;
 };
 
 type WordPressPostResponse = {
@@ -33,6 +45,7 @@ type WordPressPostResponse = {
   };
   link?: string;
   categories?: number[];
+  meta?: Record<string, unknown>;
 };
 
 function authHeader(username: string, appPassword: string): string {
@@ -53,9 +66,33 @@ async function resolveCredentials(
   return config;
 }
 
+async function fetchPostMetaForVerify(
+  wp: WordPressConfig,
+  postId: number
+): Promise<Record<string, unknown> | null> {
+  const response = await fetchWordPressNoRedirect(
+    `${wp.url}/wp-json/wp/v2/posts/${postId}?context=edit`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: authHeader(wp.username, wp.appPassword),
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as WordPressPostResponse;
+  return data.meta && typeof data.meta === "object" ? data.meta : null;
+}
+
 /**
- * Création brouillon + Slim SEO.
+ * Création brouillon WordPress + métadonnées SEO via adaptateur (Slim SEO / Yoast).
  * Le statut WordPress est toujours forcé à draft.
+ * En cas d’échec SEO après création, le brouillon est conservé (pas de suppression / pas de doublon).
  * @param credentials Snapshot de connexion (génération en cours) — optionnel.
  */
 export async function createWordPressDraft(
@@ -71,21 +108,22 @@ export async function createWordPressDraft(
   credentials?: WordPressConfig
 ): Promise<WordPressDraftResult> {
   const wp = await resolveCredentials(credentials);
+  const seoPlugin = await resolveWpSeoPlugin();
+  const seoFields = { meta_title, meta_description };
+  const adapter = buildSeoRestMeta(seoPlugin, seoFields);
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     title,
     content,
     excerpt,
     slug,
     status: "draft" as const,
     categories: categoryIds,
-    meta: {
-      slim_seo: {
-        title: meta_title,
-        description: meta_description,
-      },
-    },
   };
+
+  if (adapter.restMeta) {
+    payload.meta = adapter.restMeta;
+  }
 
   const response = await fetchWordPressNoRedirect(
     `${wp.url}/wp-json/wp/v2/posts`,
@@ -107,6 +145,30 @@ export async function createWordPressDraft(
     );
   }
 
+  // Vérification distincte — ne pas supprimer ni recréer le brouillon.
+  let seoPersisted = false;
+  let seoError: string | null = null;
+
+  try {
+    const metaFromCreate =
+      data.meta && typeof data.meta === "object" ? data.meta : null;
+    let verify = verifySeoRestMeta(seoPlugin, metaFromCreate, seoFields);
+
+    if (!verify.persisted) {
+      const metaFromGet = await fetchPostMetaForVerify(wp, data.id);
+      verify = verifySeoRestMeta(seoPlugin, metaFromGet, seoFields);
+    }
+
+    seoPersisted = verify.persisted;
+    seoError = verify.error;
+  } catch (error) {
+    seoPersisted = false;
+    seoError =
+      error instanceof Error
+        ? error.message
+        : "Vérification des métadonnées SEO impossible.";
+  }
+
   return {
     success: true,
     post_id: data.id,
@@ -116,5 +178,8 @@ export async function createWordPressDraft(
     categories: data.categories ?? categoryIds,
     meta_title,
     meta_description,
+    seo_plugin: seoPlugin,
+    seo_persisted: seoPersisted,
+    seo_error: seoError,
   };
 }

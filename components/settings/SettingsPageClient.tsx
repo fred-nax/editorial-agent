@@ -6,6 +6,7 @@ import { GoogleIntegrationsSettings } from "@/components/GoogleIntegrationsSetti
 import { EditorialSettingsSection } from "@/components/settings/EditorialSettingsSection";
 import { GeneralSettingsSection } from "@/components/settings/GeneralSettingsSection";
 import { OpenAiSettingsSection } from "@/components/settings/OpenAiSettingsSection";
+import { SeoPluginSettingsSection } from "@/components/settings/SeoPluginSettingsSection";
 import {
   ServiceStatusSection,
   type ServiceStatusView,
@@ -64,6 +65,8 @@ export function SettingsPageClient({
       <EditorialSettingsSection settings={settings} onUpdated={setSettings} />
 
       <WordPressSettingsSection settings={settings} onUpdated={setSettings} />
+
+      <SeoPluginSettingsSection settings={settings} onUpdated={setSettings} />
 
       <div className="space-y-3">
         <div>
