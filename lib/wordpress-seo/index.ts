@@ -20,6 +20,12 @@ export {
 
 export { YOAST_META_DESC_KEY, YOAST_META_TITLE_KEY } from "./yoast-seo";
 
+export {
+  diagnoseWordPressSeo,
+  type SeoDiagnoseResult,
+  type SeoDiagnoseStatus,
+} from "./diagnose";
+
 export function buildSeoRestMeta(
   plugin: WpSeoPlugin,
   fields: SeoMetaFields

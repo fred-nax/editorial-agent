@@ -13,6 +13,19 @@ type Props = {
   onUpdated: (next: PublicSettingsView) => void;
 };
 
+type DiagnoseStatus = "compatible" | "incomplete" | "connection_error";
+
+type DiagnosePayload = {
+  status: DiagnoseStatus;
+  message: string;
+  plugin?: string;
+  restConnected?: boolean;
+  metaFieldsAccessible?: boolean;
+  editCapabilityDetected?: boolean | null;
+  writeValidated?: boolean;
+  error?: string;
+};
+
 const OPTIONS: { value: WpSeoPluginView; label: string; hint: string }[] = [
   {
     value: "slim_seo",
@@ -30,16 +43,29 @@ function pluginLabel(value: WpSeoPluginView): string {
   return value === "yoast_seo" ? "Yoast SEO" : "Slim SEO";
 }
 
+function diagnoseBannerClass(status: DiagnoseStatus): string {
+  if (status === "compatible") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  }
+  if (status === "incomplete") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+  return "border-red-200 bg-red-50 text-red-900";
+}
+
 export function SeoPluginSettingsSection({ settings, onUpdated }: Props) {
   const [plugin, setPlugin] = useState<WpSeoPluginView>(settings.wpSeoPlugin);
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [diagnose, setDiagnose] = useState<DiagnosePayload | null>(null);
 
   async function save() {
     setSaving(true);
     setError(null);
     setNotice(null);
+    setDiagnose(null);
     try {
       const response = await fetch("/api/settings/seo-plugin", {
         method: "PATCH",
@@ -63,6 +89,35 @@ export function SeoPluginSettingsSection({ settings, onUpdated }: Props) {
       setError("Enregistrement impossible.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function checkSeoConnection() {
+    setChecking(true);
+    setError(null);
+    setNotice(null);
+    setDiagnose(null);
+    try {
+      const response = await fetch(
+        `/api/settings/seo-plugin/check?plugin=${encodeURIComponent(plugin)}`,
+        {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        }
+      );
+      const payload = (await response.json()) as DiagnosePayload;
+      if (!payload.status) {
+        setError(payload.error ?? "Diagnostic SEO impossible.");
+        return;
+      }
+      setDiagnose(payload);
+    } catch {
+      setError(
+        "Impossible de vérifier la configuration SEO WordPress. Vérifiez la connexion et les identifiants configurés."
+      );
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -103,6 +158,7 @@ export function SeoPluginSettingsSection({ settings, onUpdated }: Props) {
                 setPlugin(option.value);
                 setNotice(null);
                 setError(null);
+                setDiagnose(null);
               }}
             />
             <span>
@@ -115,12 +171,32 @@ export function SeoPluginSettingsSection({ settings, onUpdated }: Props) {
         ))}
       </fieldset>
 
-      {plugin === "yoast_seo" ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Yoast SEO nécessite l’extension WordPress « Naxialis Yoast REST Meta »
-          pour exposer les champs en écriture REST. Validez d’abord sur un site
-          de test (brouillons uniquement).
+      {plugin === "yoast_seo" && !diagnose && !checking ? (
+        <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          Cliquez sur « Vérifier la connexion SEO » pour contrôler si les champs
+          Yoast (`_yoast_wpseo_title`, `_yoast_wpseo_metadesc`) sont exposés via
+          l’API REST WordPress. Aucun brouillon n’est créé ni modifié.
         </p>
+      ) : null}
+
+      {checking ? (
+        <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          Vérification de la connexion SEO en cours…
+        </p>
+      ) : null}
+
+      {diagnose ? (
+        <div
+          className={`space-y-1 rounded-md border px-3 py-2 text-sm ${diagnoseBannerClass(diagnose.status)}`}
+        >
+          <p>{diagnose.message}</p>
+          {diagnose.status === "compatible" && !diagnose.writeValidated ? (
+            <p className="text-xs opacity-90">
+              Niveau 1 — compatibilité détectée. L’écriture réelle sur un
+              brouillon n’a pas encore été validée.
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {error ? (
@@ -134,13 +210,21 @@ export function SeoPluginSettingsSection({ settings, onUpdated }: Props) {
         </p>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
           onClick={() => void save()}
-          disabled={saving || plugin === settings.wpSeoPlugin}
+          disabled={saving || checking || plugin === settings.wpSeoPlugin}
         >
           {saving ? "Enregistrement…" : "Enregistrer le plugin SEO"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void checkSeoConnection()}
+          disabled={checking || saving}
+        >
+          {checking ? "Vérification…" : "Vérifier la connexion SEO"}
         </Button>
         <Label className="text-xs text-slate-500">
           Valeur technique : {plugin}
