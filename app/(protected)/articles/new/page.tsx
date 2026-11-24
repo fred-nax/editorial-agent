@@ -61,8 +61,9 @@ export default async function NewArticlePage({
           Nouvel article
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          Préparez le sujet, lancez la génération, puis finalisez le brouillon
-          dans WordPress.
+          Préparez le sujet, choisissez la destination CMS, lancez la
+          génération, puis finalisez le brouillon (WordPress uniquement pour
+          l’instant).
         </p>
         {initial?.topicId ? (
           <p className="mt-2 text-xs text-slate-500">

@@ -77,6 +77,10 @@ model ArticleGeneration {
   wpUrl           String?
   /// Statut renvoyé par WordPress à la création du brouillon. Null si non enregistré.
   wpStatus        String?
+  /// Destination CMS : wordpress (défaut / historique) | webflow (futur). Null = wordpress.
+  cmsDestination  String?
+  /// Identifiant externe CMS (ex. String(wpPostId) pour WordPress). Null si non publié côté CMS.
+  cmsExternalId   String?
   categories      Json?
   metaTitle       String?
   metaDescription String?

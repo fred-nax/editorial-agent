@@ -10,9 +10,12 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Lightbulb, Loader2, Sparkles } from "lucide-react";
+import { CmsDestinationPicker } from "@/components/cms/CmsDestinationPicker";
 import { EditorialRapprochementPanel } from "@/components/EditorialRapprochementPanel";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
+import type { CmsDestinationId } from "@/lib/cms/types";
+import { DEFAULT_CMS_DESTINATION } from "@/lib/cms/types";
 import {
   Accordion,
   AccordionContent,
@@ -129,6 +132,9 @@ export function ArticleForm({
   const formId = `article-generation-form-${reactId.replaceAll(":", "")}`;
   const topicId = initial?.topicId?.trim() || null;
   const [subject, setSubject] = useState(initial?.subject ?? "");
+  const [cmsDestination, setCmsDestination] = useState<CmsDestinationId>(
+    DEFAULT_CMS_DESTINATION
+  );
   const [angle, setAngle] = useState(initial?.angle ?? "");
   const [language, setLanguage] = useState(AGENT_DECIDES_VALUE);
   const [audience, setAudience] = useState(AGENT_DECIDES_VALUE);
@@ -407,7 +413,10 @@ export function ArticleForm({
     const wantFeatured = isFull && generateFeaturedImage;
     setFeaturedImageRequested(wantFeatured);
 
-    const payloadBody: Record<string, unknown> = { subject: value };
+    const payloadBody: Record<string, unknown> = {
+      subject: value,
+      cmsDestination,
+    };
     if (angle.trim()) {
       payloadBody.angle = angle.trim();
     }
@@ -545,6 +554,15 @@ export function ArticleForm({
 
   const fields = (
     <>
+      <CmsDestinationPicker
+        value={cmsDestination}
+        onChange={(next) => {
+          setCmsDestination(next);
+          resetOutcomeState();
+        }}
+        disabled={busy}
+      />
+
       <div className="space-y-2">
         <Label htmlFor={`${formId}-subject`} className="text-[#0F172A]">
           Sujet de l’article

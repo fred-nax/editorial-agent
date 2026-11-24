@@ -12,6 +12,7 @@ import {
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
 import { recoverFeaturedImageJobs } from "@/lib/images/pipeline";
 import { parseFeaturedImageRequest } from "@/lib/images/request";
+import { parseCmsDestinationInput } from "@/lib/cms";
 import { requireAuth } from "@/lib/require-auth";
 
 export const runtime = "nodejs";
@@ -44,6 +45,13 @@ export async function POST(request: Request) {
         ? body.topicId.trim()
         : undefined;
     const featuredImageRequest = parseFeaturedImageRequest(body);
+    const destinationParsed = parseCmsDestinationInput(body.cmsDestination);
+    if (!destinationParsed.ok) {
+      return NextResponse.json(
+        { error: destinationParsed.error },
+        { status: 400 }
+      );
+    }
 
     let subject: string;
     let resolvedTopicId: string | undefined;
@@ -82,6 +90,7 @@ export async function POST(request: Request) {
       topicId: resolvedTopicId,
       editorialContext,
       featuredImageRequest,
+      cmsDestination: destinationParsed.destination,
     });
 
     enqueueArticleGeneration(generation.id);

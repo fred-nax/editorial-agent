@@ -23,8 +23,9 @@ import {
   resolveCategoriesForSubject,
   sanitizeCategoryIdsForWordPress,
 } from "../wordpress-categories";
+import { getCmsConnector } from "../cms";
+import { normalizeWpSeoPlugin } from "../wordpress-seo";
 import {
-  createWordPressDraft,
   type WordPressDraftInput,
   type WordPressDraftResult,
 } from "../wordpress";
@@ -634,13 +635,32 @@ export async function runAgentSession(
               `Catégories : ${detectedCategories.map((c) => c.name).join(", ")}`
             );
 
-            const result = await createWordPressDraft(
-              {
-                ...args,
-                categoryIds,
-              },
+            // Connecteur CMS WordPress — même createWordPressDraft sous-jacent.
+            const cmsResult = await getCmsConnector(
+              "wordpress",
               wordpressCredentials
-            );
+            ).createDraft({
+              ...args,
+              categoryIds,
+            });
+            if (!cmsResult.wordpress) {
+              throw new Error("Réponse CMS WordPress incomplète.");
+            }
+            const result: WordPressDraftResult = {
+              success: true,
+              post_id: cmsResult.wordpress.post_id,
+              status: cmsResult.status,
+              title: cmsResult.title,
+              link: cmsResult.link,
+              categories: cmsResult.wordpress.categories,
+              meta_title: cmsResult.wordpress.meta_title,
+              meta_description: cmsResult.wordpress.meta_description,
+              seo_plugin: normalizeWpSeoPlugin(
+                cmsResult.wordpress.seo_plugin
+              ),
+              seo_persisted: Boolean(cmsResult.wordpress.seo_persisted),
+              seo_error: cmsResult.wordpress.seo_error ?? null,
+            };
 
             wordpressResult = result;
             draftMeta = {

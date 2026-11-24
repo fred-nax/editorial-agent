@@ -106,17 +106,22 @@ export async function createQueuedGeneration(input: {
   topicId?: string;
   editorialContext?: EditorialContext | null;
   featuredImageRequest?: FeaturedImageRequest | null;
+  /** Destination CMS — wordpress par défaut. Webflow refusé en amont. */
+  cmsDestination?: string | null;
 }) {
   const editorial =
     input.editorialContext && hasEditorialContext(input.editorialContext)
       ? input.editorialContext
       : null;
 
+  const cmsDestination = input.cmsDestination?.trim() || "wordpress";
+
   const generation = await db.articleGeneration.create({
     data: {
       subject: input.subject,
       status: "queued",
       topicId: input.topicId,
+      cmsDestination,
       editorialContext: editorial
         ? (editorial as Prisma.InputJsonValue)
         : undefined,
@@ -230,6 +235,8 @@ export async function processArticleGeneration(
         wpStatus: storedTrace.wpStatus,
         wpPostId: result.wordpress.postId,
         wpUrl: result.wordpress.link || null,
+        cmsDestination: generation.cmsDestination ?? "wordpress",
+        cmsExternalId: String(result.wordpress.postId),
         title: result.wordpress.title || null,
         slug: result.wordpress.slug || null,
         excerpt: result.wordpress.excerpt || null,
@@ -285,7 +292,12 @@ export async function processArticleGeneration(
         trace: storedTrace.trace as Prisma.InputJsonValue,
         wpStatus: storedTrace.wpStatus,
         ...(storedTrace.wpPostId
-          ? { wpPostId: storedTrace.wpPostId, wpUrl: storedTrace.wpUrl }
+          ? {
+              wpPostId: storedTrace.wpPostId,
+              wpUrl: storedTrace.wpUrl,
+              cmsDestination: generation.cmsDestination ?? "wordpress",
+              cmsExternalId: String(storedTrace.wpPostId),
+            }
           : {}),
         progressStage: "failed",
         progressMessage: PROGRESS_MESSAGES.failed,

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import { EditorialAgentSettings } from "@/components/EditorialAgentSettings";
 import { GoogleIntegrationsSettings } from "@/components/GoogleIntegrationsSettings";
@@ -39,6 +40,18 @@ export function SettingsPageClient({
         <p className="mt-1 text-sm text-slate-600">
           Configuration de l’installation, des connexions OpenAI / WordPress et
           de Google. Aucun secret n’est affiché.
+        </p>
+        <p className="mt-2 text-sm">
+          <Link
+            href="/settings/integrations"
+            className="font-medium text-naxialis hover:underline"
+          >
+            Intégrations CMS →
+          </Link>
+          <span className="text-slate-500">
+            {" "}
+            destinations WordPress / Webflow
+          </span>
         </p>
       </div>
 

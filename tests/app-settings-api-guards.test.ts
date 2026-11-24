@@ -21,6 +21,8 @@ describe("AppSettings API — garde-fous", () => {
       "app/api/settings/wordpress/acknowledge-inventory/route.ts",
       "app/api/settings/seo-plugin/route.ts",
       "app/api/settings/seo-plugin/check/route.ts",
+      "app/api/cms/destinations/route.ts",
+      "app/api/cms/wordpress/test/route.ts",
     ];
     for (const route of routes) {
       const source = read(route);
