@@ -23,7 +23,9 @@ import {
   resolveCategoriesForSubject,
   sanitizeCategoryIdsForWordPress,
 } from "../wordpress-categories";
-import { getCmsConnector } from "../cms";
+import { getCmsConnector, normalizeCmsDestination } from "../cms";
+import { resolveEditorialAgentForDestination } from "./registry";
+import { CREATE_WORDPRESS_DRAFT_TOOL_NAME } from "./tools";
 import { normalizeWpSeoPlugin } from "../wordpress-seo";
 import {
   type WordPressDraftInput,
@@ -42,10 +44,6 @@ import {
   type GenerationEventTrace,
 } from "../generation-trace";
 import { buildArticlePrompt } from "./prompt";
-import {
-  agentSessionTools,
-  CREATE_WORDPRESS_DRAFT_TOOL_NAME,
-} from "./tools";
 
 function siteHostFromWpUrl(wpUrl: string, fallbackHost: string): string {
   try {
@@ -66,6 +64,11 @@ export type RunAgentSessionOptions = {
   onProgress?: AgentProgressHandler;
   /** Message ponctuel. Absent : le sujet seul, comme aujourd'hui. */
   generationMessage?: string;
+  /**
+   * Destination CMS de la génération (persistée sur ArticleGeneration).
+   * Défaut wordpress. Détermine l’agent OpenAI et les outils autorisés.
+   */
+  cmsDestination?: string | null;
 };
 
 export type RunAgentSessionResult = {
@@ -110,7 +113,13 @@ export type RunAgentSessionResult = {
 
 export class AgentSessionError extends Error {
   readonly sessionId: string | null;
-  readonly code: "turn_failed" | "turn_cancelled" | "no_draft" | "missing_session";
+  readonly code:
+    | "turn_failed"
+    | "turn_cancelled"
+    | "no_draft"
+    | "missing_session"
+    | "tool_not_allowed_for_cms"
+    | "tool_not_allowed_for_agent";
 
   constructor(
     message: string,
@@ -365,6 +374,9 @@ export async function runAgentSession(
   let emittedWriting = false;
 
   // Snapshot figé pour toute la génération (changement Paramètres mid-flight ignoré).
+  const cmsDestination = normalizeCmsDestination(options.cmsDestination);
+  const editorialAgent =
+    await resolveEditorialAgentForDestination(cmsDestination);
   const connections = await resolveRuntimeConnections();
   const openai = createOpenAIClient(connections.openai.apiKey);
   const wordpressCredentials = connections.wordpress;
@@ -460,12 +472,28 @@ export async function runAgentSession(
   );
 
   log(onLog, "");
+  log(
+    onLog,
+    `Agent éditorial : ${editorialAgent.label} (${editorialAgent.agentIdSource})`
+  );
+  log(onLog, `Destination CMS : ${cmsDestination}`);
   log(onLog, "Création de la session...");
 
+  // Agent + outils résolus pour la destination — pas de repli silencieux.
+  if (editorialAgent.agentId !== connections.openai.agentId) {
+    // WordPress doit utiliser le même agent que RuntimeConnections.
+    // Webflow (futur) peut différer ; wordpress ne doit jamais diverger.
+    if (cmsDestination === "wordpress") {
+      throw new Error(
+        "Incohérence agent WordPress entre le registre éditorial et RuntimeConnections."
+      );
+    }
+  }
+
   const stream = await openai.beta.agents.sessions.create({
-    agent_id: connections.openai.agentId,
+    agent_id: editorialAgent.agentId,
     agent: {
-      tools: agentSessionTools,
+      tools: editorialAgent.tools,
     },
     environment: {
       type: "none",
@@ -578,6 +606,23 @@ export async function runAgentSession(
             action.type === "function_call" &&
             action.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME
           ) {
+            if (cmsDestination !== "wordpress") {
+              throw new AgentSessionError(
+                `Outil ${CREATE_WORDPRESS_DRAFT_TOOL_NAME} refusé pour la destination « ${cmsDestination} ».`,
+                "tool_not_allowed_for_cms"
+              );
+            }
+            if (
+              !editorialAgent.allowedToolNames.includes(
+                CREATE_WORDPRESS_DRAFT_TOOL_NAME
+              )
+            ) {
+              throw new AgentSessionError(
+                "Outil WordPress non autorisé pour cet agent éditorial.",
+                "tool_not_allowed_for_agent"
+              );
+            }
+
             await emitProgress(
               onProgress,
               "creating_wordpress",

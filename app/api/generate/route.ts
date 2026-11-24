@@ -12,6 +12,7 @@ import {
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
 import { recoverFeaturedImageJobs } from "@/lib/images/pipeline";
 import { parseFeaturedImageRequest } from "@/lib/images/request";
+import { resolveEditorialAgentForDestination } from "@/lib/agent/registry";
 import { parseCmsDestinationInput } from "@/lib/cms";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -49,6 +50,20 @@ export async function POST(request: Request) {
     if (!destinationParsed.ok) {
       return NextResponse.json(
         { error: destinationParsed.error },
+        { status: 400 }
+      );
+    }
+
+    try {
+      await resolveEditorialAgentForDestination(destinationParsed.destination);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Agent éditorial indisponible pour cette destination.",
+        },
         { status: 400 }
       );
     }

@@ -10,7 +10,10 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Lightbulb, Loader2, Sparkles } from "lucide-react";
-import { CmsDestinationPicker } from "@/components/cms/CmsDestinationPicker";
+import {
+  CmsDestinationPicker,
+  type CmsAgentStatusView,
+} from "@/components/cms/CmsDestinationPicker";
 import { EditorialRapprochementPanel } from "@/components/EditorialRapprochementPanel";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
@@ -135,6 +138,7 @@ export function ArticleForm({
   const [cmsDestination, setCmsDestination] = useState<CmsDestinationId>(
     DEFAULT_CMS_DESTINATION
   );
+  const [cmsAgents, setCmsAgents] = useState<CmsAgentStatusView[]>([]);
   const [angle, setAngle] = useState(initial?.angle ?? "");
   const [language, setLanguage] = useState(AGENT_DECIDES_VALUE);
   const [audience, setAudience] = useState(AGENT_DECIDES_VALUE);
@@ -228,6 +232,31 @@ export function ArticleForm({
       if (pollRef.current) {
         window.clearInterval(pollRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/cms/destinations", {
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          agents?: CmsAgentStatusView[];
+        };
+        if (!cancelled && Array.isArray(payload.agents)) {
+          setCmsAgents(payload.agents);
+        }
+      } catch {
+        // Silencieux : le sélecteur reste utilisable sans statut agent.
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -561,6 +590,7 @@ export function ArticleForm({
           resetOutcomeState();
         }}
         disabled={busy}
+        agents={cmsAgents}
       />
 
       <div className="space-y-2">

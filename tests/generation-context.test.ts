@@ -165,8 +165,10 @@ describe("contexte de génération", () => {
     const wordpress = readFileSync(resolve("lib/wordpress.ts"), "utf8");
     assert.doesNotMatch(helper, /openai|OPENAI_AGENT_ID|agents\.update|createWordPressDraft/i);
     assert.doesNotMatch(generation, /openai\.beta\.agents|instructions/);
-    assert.match(session, /agent_id: connections\.openai\.agentId/);
-    assert.match(session, /agentSessionTools/);
+    // V7.9.1 : agent résolu via registre éditorial (WordPress = OPENAI_AGENT_ID / AppSettings).
+    assert.match(session, /resolveEditorialAgentForDestination/);
+    assert.match(session, /agent_id:\s*editorialAgent\.agentId/);
+    assert.match(session, /tools:\s*editorialAgent\.tools/);
     assert.match(wordpress, /status:\s*"draft"/);
     assert.match(generation, /status: "queued"/);
     assert.match(generation, /status: "completed"/);

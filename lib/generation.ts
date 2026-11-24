@@ -205,6 +205,7 @@ export async function processArticleGeneration(
       runAgentSession(subject, {
         generationMessage:
           generationMessage === subject ? undefined : generationMessage,
+        cmsDestination: generation.cmsDestination ?? "wordpress",
         onProgress: async (progress) => {
           await updateGenerationProgress(id, progress.stage, progress.message);
         },

@@ -410,8 +410,10 @@ describe("rapport de génération", () => {
       ].sort()
     );
     assert.doesNotMatch(session, /sessions\.items|agents\.update/);
-    assert.match(session, /agent_id: connections\.openai\.agentId/);
-    assert.match(session, /agentSessionTools/);
+    // V7.9.1 : agent + outils issus du registre CMS (pas de bascule silencieuse).
+    assert.match(session, /resolveEditorialAgentForDestination/);
+    assert.match(session, /agent_id:\s*editorialAgent\.agentId/);
+    assert.match(session, /tools:\s*editorialAgent\.tools/);
     assert.match(session, /buildArticlePrompt/);
     assert.match(session, /observeAgentEvent/);
     assert.match(wordpress, /status:\s*"draft"/);
