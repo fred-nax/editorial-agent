@@ -21,8 +21,15 @@ describe("AppSettings API — garde-fous", () => {
       "app/api/settings/wordpress/acknowledge-inventory/route.ts",
       "app/api/settings/seo-plugin/route.ts",
       "app/api/settings/seo-plugin/check/route.ts",
+      "app/api/settings/webflow/route.ts",
+      "app/api/settings/webflow/test/route.ts",
+      "app/api/settings/webflow/sites/route.ts",
+      "app/api/settings/webflow/collections/route.ts",
+      "app/api/settings/webflow/collections/[collectionId]/fields/route.ts",
+      "app/api/settings/webflow/mapping/validate/route.ts",
       "app/api/cms/destinations/route.ts",
       "app/api/cms/wordpress/test/route.ts",
+      "app/api/cms/webflow/test/route.ts",
     ];
     for (const route of routes) {
       const source = read(route);
@@ -34,10 +41,13 @@ describe("AppSettings API — garde-fous", () => {
   it("ne journalise jamais les secrets en clair dans les routes", () => {
     const openaiRoute = read("app/api/settings/openai/route.ts");
     const wpRoute = read("app/api/settings/wordpress/route.ts");
+    const webflowRoute = read("app/api/settings/webflow/route.ts");
     assert.doesNotMatch(openaiRoute, /apiKey\s*,/);
     assert.doesNotMatch(wpRoute, /appPassword\s*,/);
+    assert.doesNotMatch(webflowRoute, /apiToken\s*,/);
     assert.doesNotMatch(openaiRoute, /logInfo\([^)]*apiKey/);
     assert.doesNotMatch(wpRoute, /logInfo\([^)]*appPassword/);
+    assert.doesNotMatch(webflowRoute, /logInfo\([^)]*apiToken/);
   });
 
   it("createWordPressDraft force status draft", () => {

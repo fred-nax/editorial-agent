@@ -27,6 +27,12 @@ import {
   normalizeWpSeoPlugin,
   type WpSeoPlugin,
 } from "@/lib/wordpress-seo";
+import {
+  normalizeWebflowFieldMappingInput,
+  parseWebflowFieldMappingJson,
+  serializeWebflowFieldMapping,
+  type WebflowFieldMapping,
+} from "@/lib/webflow";
 
 export { APP_SETTINGS_ID } from "@/lib/settings/app-settings-id";
 export { AppSettingsDecryptError } from "@/lib/settings/decrypt";
@@ -46,6 +52,18 @@ export type WordPressConfig = {
   urlSource: "database" | "env";
   usernameSource: "database" | "env";
   appPasswordSource: "database" | "env";
+};
+
+export type WebflowConfig = {
+  apiToken: string;
+  siteId: string | null;
+  collectionId: string | null;
+  agentId: string | null;
+  fieldMapping: WebflowFieldMapping;
+  apiTokenSource: "database" | "env";
+  siteIdSource: "database" | "env" | null;
+  collectionIdSource: "database" | "env" | null;
+  agentIdSource: "database" | "env" | null;
 };
 
 /** Snapshot stable pour une génération / sync (pas de relecture mid-flight). */
@@ -73,6 +91,20 @@ export type PublicAppSettings = {
     usernameSource: "database" | "env" | null;
     appPasswordConfigured: boolean;
     appPasswordSource: "database" | "env" | null;
+  };
+  /** Vue publique Webflow — aucun token / secret. */
+  webflow: {
+    agentId: string | null;
+    agentIdSource: "database" | "env" | null;
+    apiTokenConfigured: boolean;
+    apiTokenSource: "database" | "env" | null;
+    siteId: string | null;
+    siteIdSource: "database" | "env" | null;
+    collectionId: string | null;
+    collectionIdSource: "database" | "env" | null;
+    fieldMapping: WebflowFieldMapping;
+    /** true si token + agent + site + collection présents (mapping peut rester incomplet). */
+    connectionConfigured: boolean;
   };
   inventory: {
     wpOrigin: string | null;
@@ -115,6 +147,11 @@ type AppSettingsRow = {
   wpCategoriesSyncedAt: Date | null;
   wpCategoriesOrigin: string | null;
   wpSeoPlugin: string | null;
+  openaiWebflowAgentId: string | null;
+  webflowApiTokenEncrypted: string | null;
+  webflowSiteId: string | null;
+  webflowCollectionId: string | null;
+  webflowFieldMappingJson: string | null;
 };
 
 function emptyCategoryFields() {
@@ -156,6 +193,11 @@ async function loadRow(): Promise<AppSettingsRow | null> {
       wpCategoriesSyncedAt: row.wpCategoriesSyncedAt ?? null,
       wpCategoriesOrigin: row.wpCategoriesOrigin ?? null,
       wpSeoPlugin: row.wpSeoPlugin ?? null,
+      openaiWebflowAgentId: row.openaiWebflowAgentId ?? null,
+      webflowApiTokenEncrypted: row.webflowApiTokenEncrypted ?? null,
+      webflowSiteId: row.webflowSiteId ?? null,
+      webflowCollectionId: row.webflowCollectionId ?? null,
+      webflowFieldMappingJson: row.webflowFieldMappingJson ?? null,
     };
   } catch {
     // Table absente avant migrate — fallback env uniquement.
@@ -278,6 +320,61 @@ export async function resolveWordPressConfig(): Promise<WordPressConfig | null> 
   };
 }
 
+/**
+ * Résout la connexion Webflow (token requis).
+ * Agent / site / collection / mapping peuvent être partiels (UI de configuration).
+ * Jamais de repli sur les identifiants WordPress.
+ */
+export async function resolveWebflowConfig(): Promise<WebflowConfig | null> {
+  const row = await loadRow();
+  const tokenDb = decryptAppSettingsSecret(row?.webflowApiTokenEncrypted);
+  const apiToken = preferDbThenEnv(tokenDb, readEnv("WEBFLOW_API_TOKEN"));
+  if (!apiToken.value) {
+    return null;
+  }
+
+  const siteId = preferDbThenEnv(row?.webflowSiteId, readEnv("WEBFLOW_SITE_ID"));
+  const collectionId = preferDbThenEnv(
+    row?.webflowCollectionId,
+    readEnv("WEBFLOW_COLLECTION_ID")
+  );
+  const agentId = preferDbThenEnv(
+    row?.openaiWebflowAgentId,
+    readEnv("OPENAI_WEBFLOW_AGENT_ID")
+  );
+
+  return {
+    apiToken: apiToken.value,
+    siteId: siteId.value,
+    collectionId: collectionId.value,
+    agentId: agentId.value,
+    fieldMapping: parseWebflowFieldMappingJson(row?.webflowFieldMappingJson),
+    apiTokenSource: apiToken.source === "database" ? "database" : "env",
+    siteIdSource: siteId.source,
+    collectionIdSource: collectionId.source,
+    agentIdSource: agentId.source,
+  };
+}
+
+/** Identifiant agent Webflow seul (DB puis env) — sans fallback WordPress. */
+export async function resolveWebflowAgentId(): Promise<{
+  agentId: string | null;
+  agentIdSource: "database" | "env" | null;
+} | null> {
+  const row = await loadRow();
+  const agentId = preferDbThenEnv(
+    row?.openaiWebflowAgentId,
+    readEnv("OPENAI_WEBFLOW_AGENT_ID")
+  );
+  if (!agentId.value) {
+    return { agentId: null, agentIdSource: null };
+  }
+  return {
+    agentId: agentId.value,
+    agentIdSource: agentId.source === "database" ? "database" : "env",
+  };
+}
+
 export async function resolveRuntimeConnections(): Promise<RuntimeConnections> {
   const row = await loadRow();
   const openai = await resolveOpenAiConfig();
@@ -331,6 +428,39 @@ export async function getPublicAppSettings(): Promise<PublicAppSettings> {
   const wpPassDb = Boolean(row?.wpAppPasswordEncrypted?.trim());
   const wpPassEnv = Boolean(readEnv("WP_APP_PASSWORD"));
 
+  let webflow: WebflowConfig | null = null;
+  try {
+    webflow = await resolveWebflowConfig();
+  } catch (error) {
+    if (error instanceof AppSettingsDecryptError) {
+      secretsDecryptError = secretsDecryptError ?? error.message;
+    } else {
+      throw error;
+    }
+  }
+
+  const wfTokenDb = Boolean(row?.webflowApiTokenEncrypted?.trim());
+  const wfTokenEnv = Boolean(readEnv("WEBFLOW_API_TOKEN"));
+  const wfAgentDb = Boolean(row?.openaiWebflowAgentId?.trim());
+  const wfAgentEnv = Boolean(readEnv("OPENAI_WEBFLOW_AGENT_ID"));
+  const wfSiteDb = Boolean(row?.webflowSiteId?.trim());
+  const wfSiteEnv = Boolean(readEnv("WEBFLOW_SITE_ID"));
+  const wfCollectionDb = Boolean(row?.webflowCollectionId?.trim());
+  const wfCollectionEnv = Boolean(readEnv("WEBFLOW_COLLECTION_ID"));
+  const fieldMapping =
+    webflow?.fieldMapping ??
+    parseWebflowFieldMappingJson(row?.webflowFieldMappingJson);
+  const publicAgentId =
+    webflow?.agentId ??
+    (wfAgentDb ? row?.openaiWebflowAgentId?.trim() ?? null : null);
+  const publicSiteId =
+    webflow?.siteId ?? (wfSiteDb ? row?.webflowSiteId?.trim() ?? null : null);
+  const publicCollectionId =
+    webflow?.collectionId ??
+    (wfCollectionDb ? row?.webflowCollectionId?.trim() ?? null : null);
+  const apiTokenConfigured =
+    Boolean(webflow?.apiToken) || wfTokenDb || wfTokenEnv;
+
   const effectiveWpOrigin =
     inventory.effectiveOrigin ||
     (wordpress?.url ? normalizeWpOrigin(wordpress.url) : null);
@@ -358,6 +488,31 @@ export async function getPublicAppSettings(): Promise<PublicAppSettings> {
       appPasswordSource:
         wordpress?.appPasswordSource ??
         (wpPassDb ? "database" : wpPassEnv ? "env" : null),
+    },
+    webflow: {
+      agentId: publicAgentId,
+      agentIdSource:
+        webflow?.agentIdSource ??
+        (wfAgentDb ? "database" : wfAgentEnv ? "env" : null),
+      apiTokenConfigured,
+      apiTokenSource:
+        webflow?.apiTokenSource ??
+        (wfTokenDb ? "database" : wfTokenEnv ? "env" : null),
+      siteId: publicSiteId,
+      siteIdSource:
+        webflow?.siteIdSource ??
+        (wfSiteDb ? "database" : wfSiteEnv ? "env" : null),
+      collectionId: publicCollectionId,
+      collectionIdSource:
+        webflow?.collectionIdSource ??
+        (wfCollectionDb ? "database" : wfCollectionEnv ? "env" : null),
+      fieldMapping,
+      connectionConfigured: Boolean(
+        apiTokenConfigured &&
+          publicAgentId &&
+          publicSiteId &&
+          publicCollectionId
+      ),
     },
     inventory: {
       wpOrigin: inventory.inventoryOrigin,
@@ -523,6 +678,77 @@ export async function updateWordPressSettings(input: {
       throw new Error("Mot de passe d’application WordPress invalide.");
     }
     data.wpAppPasswordEncrypted = encryptAppSecret(password);
+  }
+
+  if (Object.keys(data).length === 0) {
+    return getPublicAppSettings();
+  }
+
+  await upsertRow(data);
+  return getPublicAppSettings();
+}
+
+export async function updateWebflowSettings(input: {
+  apiToken?: string;
+  agentId?: string | null;
+  siteId?: string | null;
+  collectionId?: string | null;
+  fieldMapping?: unknown;
+}): Promise<PublicAppSettings> {
+  if (!isAppSettingsEncryptionConfigured() && input.apiToken?.trim()) {
+    throw new Error(
+      "APP_SETTINGS_ENCRYPTION_KEY requis pour enregistrer un token Webflow."
+    );
+  }
+
+  const data: {
+    webflowApiTokenEncrypted?: string | null;
+    openaiWebflowAgentId?: string | null;
+    webflowSiteId?: string | null;
+    webflowCollectionId?: string | null;
+    webflowFieldMappingJson?: string | null;
+  } = {};
+
+  if (input.apiToken !== undefined && input.apiToken.trim() !== "") {
+    const token = input.apiToken.trim();
+    if (token.length < 8 || token.length > 512) {
+      throw new Error("Token API Webflow invalide.");
+    }
+    data.webflowApiTokenEncrypted = encryptAppSecret(token);
+  }
+
+  if (input.agentId !== undefined) {
+    const agentId = input.agentId?.trim() || null;
+    if (agentId) {
+      if (agentId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(agentId)) {
+        throw new Error("Identifiant d’agent OpenAI Webflow invalide.");
+      }
+    }
+    data.openaiWebflowAgentId = agentId;
+  }
+
+  if (input.siteId !== undefined) {
+    const siteId = input.siteId?.trim() || null;
+    if (siteId && (siteId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(siteId))) {
+      throw new Error("Identifiant de site Webflow invalide.");
+    }
+    data.webflowSiteId = siteId;
+  }
+
+  if (input.collectionId !== undefined) {
+    const collectionId = input.collectionId?.trim() || null;
+    if (
+      collectionId &&
+      (collectionId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(collectionId))
+    ) {
+      throw new Error("Identifiant de collection Webflow invalide.");
+    }
+    data.webflowCollectionId = collectionId;
+  }
+
+  if (input.fieldMapping !== undefined) {
+    const mapping = normalizeWebflowFieldMappingInput(input.fieldMapping);
+    data.webflowFieldMappingJson = serializeWebflowFieldMapping(mapping);
   }
 
   if (Object.keys(data).length === 0) {

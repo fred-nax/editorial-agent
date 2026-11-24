@@ -4,6 +4,7 @@ import {
   History,
   LayoutDashboard,
   ListTodo,
+  Plug,
   Radar,
   SearchCheck,
   Settings,
@@ -25,6 +26,7 @@ export const navigation: NavItem[] = [
   { href: "/opportunities", label: "Opportunités SEO", icon: SearchCheck },
   { href: "/veille", label: "Veille éditoriale", icon: Radar },
   { href: "/settings", label: "Paramètres", icon: Settings },
+  { href: "/settings/integrations", label: "Intégrations", icon: Plug },
 ];
 
 export function isNavActive(pathname: string, href: string): boolean {
@@ -40,6 +42,16 @@ export function isNavActive(pathname: string, href: string): boolean {
   if (href === "/analytics") {
     return pathname === "/analytics" || pathname.startsWith("/analytics/");
   }
+  // Paramètres ≠ Intégrations (sous-route dédiée).
+  if (href === "/settings") {
+    return pathname === "/settings";
+  }
+  if (href === "/settings/integrations") {
+    return (
+      pathname === "/settings/integrations" ||
+      pathname.startsWith("/settings/integrations/")
+    );
+  }
   return pathname === href;
 }
 
@@ -53,6 +65,9 @@ export function sectionTitle(pathname: string): string {
   }
   if (pathname.startsWith("/analytics")) {
     return "Analytics";
+  }
+  if (pathname.startsWith("/settings/integrations")) {
+    return "Intégrations";
   }
   return "Naxialis Content Agent";
 }

@@ -53,10 +53,20 @@ describe("V7.9.0 — multi-CMS destinations", () => {
     assert.equal(unknown.ok, false);
   });
 
-  it("getCmsConnector webflow lève une erreur (pas de faux connecteur)", () => {
-    assert.throws(
-      () => getCmsConnector("webflow"),
-      /Webflow n’est pas disponible/i
+  it("getCmsConnector webflow expose un connecteur lecture seule (createDraft refusé)", async () => {
+    const connector = getCmsConnector("webflow");
+    assert.equal(connector.id, "webflow");
+    await assert.rejects(
+      () =>
+        connector.createDraft({
+          title: "x",
+          content: "y",
+          excerpt: "z",
+          slug: "x",
+          meta_title: "t",
+          meta_description: "d",
+        }),
+      /non activée|lecture seule|Validez/i
     );
   });
 

@@ -29,6 +29,8 @@ export default async function CmsIntegrationsPage() {
       agents={agents}
       wordpressConfigured={wordpressConfigured}
       wordpressUrl={settings.wordpress.url}
+      webflow={settings.webflow}
+      encryptionConfigured={settings.encryptionConfigured}
     />
   );
 }

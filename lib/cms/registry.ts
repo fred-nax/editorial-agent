@@ -1,4 +1,5 @@
 import { createWordPressConnector } from "@/lib/cms/wordpress-connector";
+import { createWebflowConnector } from "@/lib/cms/webflow-connector";
 import type {
   CmsConnector,
   CmsDestinationDescriptor,
@@ -13,7 +14,7 @@ import type { WordPressConfig } from "@/lib/settings/app-settings";
 
 /**
  * Catalogue des destinations CMS.
- * Webflow est listé mais non activé — aucun connecteur fonctionnel.
+ * Webflow : connexion + mapping en lecture seule (V7.10.0) — génération non activée.
  */
 export const CMS_DESTINATION_CATALOG: readonly CmsDestinationDescriptor[] = [
   {
@@ -28,7 +29,7 @@ export const CMS_DESTINATION_CATALOG: readonly CmsDestinationDescriptor[] = [
     id: "webflow",
     label: "Webflow",
     description:
-      "Destination prévue. Connecteur et serveur MCP non disponibles dans cette version.",
+      "Connexion Data API V2 et mapping CMS (lecture seule). Génération d’items non activée.",
     status: "coming_soon",
     enabled: false,
   },
@@ -93,7 +94,10 @@ export function getCmsConnector(
     return createWordPressConnector(wordpressCredentials);
   }
 
-  throw new Error(
-    "Le connecteur Webflow n’est pas disponible dans cette version."
-  );
+  if (id === "webflow") {
+    // Test de connexion / lecture uniquement — createDraft refuse.
+    return createWebflowConnector();
+  }
+
+  throw new Error(`Connecteur CMS inconnu pour « ${id} ».`);
 }

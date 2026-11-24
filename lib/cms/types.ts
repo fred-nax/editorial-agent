@@ -1,7 +1,7 @@
 /**
- * Couche multi-CMS (V7.9.0).
- * WordPress = première destination active.
- * Webflow = réservé (non activé) — aucun faux connecteur fonctionnel.
+ * Couche multi-CMS (V7.9.0+).
+ * WordPress = destination active (brouillons).
+ * Webflow = connexion + mapping lecture seule (V7.10.0) — génération désactivée.
  */
 
 export const CMS_DESTINATION_IDS = ["wordpress", "webflow"] as const;

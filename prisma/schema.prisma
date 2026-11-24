@@ -375,6 +375,16 @@ model AppSettings {
   wpCategoriesOrigin     String?
   /// Plugin SEO WordPress : slim_seo (défaut) | yoast_seo.
   wpSeoPlugin            String?
+  /// Agent OpenAI dédié Webflow (OPENAI_WEBFLOW_AGENT_ID). Jamais de repli WP.
+  openaiWebflowAgentId   String?
+  /// Token Data API V2 chiffré (WEBFLOW_API_TOKEN).
+  webflowApiTokenEncrypted String?
+  /// Site Webflow sélectionné (WEBFLOW_SITE_ID).
+  webflowSiteId          String?
+  /// Collection CMS cible (WEBFLOW_COLLECTION_ID).
+  webflowCollectionId    String?
+  /// Mapping éditorial → champs collection (JSON).
+  webflowFieldMappingJson String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }

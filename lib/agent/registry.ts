@@ -8,11 +8,15 @@ import {
   normalizeCmsDestination,
   type CmsDestinationId,
 } from "@/lib/cms";
-import { resolveOpenAiConfig } from "@/lib/settings/app-settings";
+import {
+  resolveOpenAiConfig,
+  resolveWebflowAgentId,
+} from "@/lib/settings/app-settings";
 import {
   agentSessionTools,
   CREATE_WORDPRESS_DRAFT_TOOL_NAME,
 } from "@/lib/agent/tools";
+import { CREATE_WEBFLOW_DRAFT_TOOL_NAME } from "@/lib/agent/webflow-draft-tool";
 
 export type EditorialAgentSource = "database" | "env";
 
@@ -49,10 +53,10 @@ export const EDITORIAL_AGENT_PROFILES: readonly EditorialAgentProfile[] = [
     cmsDestination: "webflow",
     label: "Agent éditorial Webflow",
     description:
-      "Agent dédié futur (OPENAI_WEBFLOW_AGENT_ID). Non utilisable tant que Webflow n’est pas activé.",
+      "Agent dédié (OPENAI_WEBFLOW_AGENT_ID / AppSettings). create_webflow_draft préparé mais non branché (génération désactivée).",
     agentEnvKey: "OPENAI_WEBFLOW_AGENT_ID",
-    // Pas de create_wordpress_draft — isolation stricte des outils.
-    allowedToolNames: ["web_search"],
+    // create_webflow_draft listé pour documentation ; non inclus dans les tools de session.
+    allowedToolNames: ["web_search", CREATE_WEBFLOW_DRAFT_TOOL_NAME],
   },
 ] as const;
 
@@ -71,7 +75,7 @@ export function getEditorialAgentProfile(
 /**
  * Outils OpenAI autorisés pour une destination.
  * WordPress : outils historiques inchangés.
- * Webflow : sous-ensemble sans create_wordpress_draft (et destination encore désactivée).
+ * Webflow : web_search uniquement tant que create_webflow_draft n’est pas activé.
  */
 export function getAgentToolsForDestination(
   destination: CmsDestinationId
@@ -98,21 +102,17 @@ export function getAgentToolsForDestination(
     return tools;
   }
 
-  // Webflow : uniquement web_search pour l’instant (pas de faux outil CMS).
+  // Webflow : pas de create_wordpress_draft ; create_webflow_draft non branché.
   return agentSessionTools.filter(
     (tool) => tool.type === "web_search" && allowed.has("web_search")
   );
 }
 
-function readEnv(name: string): string | null {
-  const value = process.env[name]?.trim();
-  return value || null;
-}
-
 /**
  * Résout l’agent OpenAI pour une destination CMS.
  * - WordPress : AppSettings.openaiAgentId puis OPENAI_AGENT_ID (comportement historique).
- * - Webflow : uniquement OPENAI_WEBFLOW_AGENT_ID — jamais de repli sur WordPress.
+ * - Webflow : AppSettings.openaiWebflowAgentId puis OPENAI_WEBFLOW_AGENT_ID — jamais de repli WP.
+ * La destination Webflow reste désactivée (génération refusée) en V7.10.0.
  */
 export async function resolveEditorialAgentForDestination(
   destinationInput: CmsDestinationId | string | null | undefined
@@ -126,7 +126,7 @@ export async function resolveEditorialAgentForDestination(
   if (!isCmsDestinationEnabled(destination)) {
     throw new Error(
       destination === "webflow"
-        ? "Webflow n’est pas encore disponible. Sélectionnez WordPress."
+        ? "Webflow n’est pas encore disponible pour la génération. Validez la connexion et le mapping, puis utilisez WordPress."
         : `La destination CMS « ${destination} » n’est pas activée.`
     );
   }
@@ -154,19 +154,19 @@ export async function resolveEditorialAgentForDestination(
     };
   }
 
-  // Webflow — pas de fallback silencieux vers OPENAI_AGENT_ID.
-  const webflowAgentId = readEnv("OPENAI_WEBFLOW_AGENT_ID");
-  if (!webflowAgentId) {
+  // Webflow — pas de fallback silencieux vers OPENAI_AGENT_ID / agent WP.
+  const webflowAgent = await resolveWebflowAgentId();
+  if (!webflowAgent?.agentId || !webflowAgent.agentIdSource) {
     throw new Error(
-      "Agent éditorial Webflow non configuré (OPENAI_WEBFLOW_AGENT_ID manquant). Aucun repli sur l’agent WordPress."
+      "Agent éditorial Webflow non configuré (OPENAI_WEBFLOW_AGENT_ID / AppSettings). Aucun repli sur l’agent WordPress."
     );
   }
 
   return {
     cmsDestination: "webflow",
     label: profile.label,
-    agentId: webflowAgentId,
-    agentIdSource: "env",
+    agentId: webflowAgent.agentId,
+    agentIdSource: webflowAgent.agentIdSource,
     tools,
     allowedToolNames: profile.allowedToolNames,
   };
@@ -189,7 +189,7 @@ export async function listPublicEditorialAgentStatuses(): Promise<
   PublicEditorialAgentStatus[]
 > {
   const openai = await resolveOpenAiConfig();
-  const webflowAgentId = readEnv("OPENAI_WEBFLOW_AGENT_ID");
+  const webflowAgent = await resolveWebflowAgentId();
 
   return EDITORIAL_AGENT_PROFILES.map((profile) => {
     const destinationEnabled = isCmsDestinationEnabled(profile.cmsDestination);
@@ -206,15 +206,17 @@ export async function listPublicEditorialAgentStatuses(): Promise<
         destinationEnabled,
       };
     }
-    const configured = Boolean(webflowAgentId);
+    const configured = Boolean(webflowAgent?.agentId);
     return {
       cmsDestination: profile.cmsDestination,
       label: profile.label,
       description: profile.description,
       agentEnvKey: profile.agentEnvKey,
       configured,
-      agentIdSource: configured ? "env" : null,
-      agentIdConfiguredLength: configured ? webflowAgentId!.length : null,
+      agentIdSource: configured ? webflowAgent!.agentIdSource : null,
+      agentIdConfiguredLength: configured
+        ? webflowAgent!.agentId!.length
+        : null,
       destinationEnabled,
     };
   });

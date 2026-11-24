@@ -96,6 +96,7 @@ describe("V7.9.1 — agents éditoriaux par CMS", () => {
     assert.match(picker, /Agent éditorial/);
     assert.match(picker, /Bientôt/);
     assert.match(picker, /agents/);
+    assert.match(picker, /génération d’items non activée/i);
     const form = read("components/ArticleForm.tsx");
     assert.match(form, /\/api\/cms\/destinations/);
     assert.match(form, /CmsDestinationPicker/);
@@ -105,9 +106,11 @@ describe("V7.9.1 — agents éditoriaux par CMS", () => {
     const panel = read("components/cms/CmsIntegrationsPanel.tsx");
     assert.match(panel, /Agent éditorial/);
     assert.match(panel, /agentEnvKey/);
+    assert.match(panel, /WebflowConfigPanel/);
     assert.doesNotMatch(panel, /OPENAI_API_KEY|appPassword|sk-/);
     const page = read("app/(protected)/settings/integrations/page.tsx");
     assert.match(page, /listPublicEditorialAgentStatuses/);
+    assert.match(page, /webflow=\{settings\.webflow\}/);
     const api = read("app/api/cms/destinations/route.ts");
     assert.match(api, /listPublicEditorialAgentStatuses/);
     assert.match(api, /requireAuth/);

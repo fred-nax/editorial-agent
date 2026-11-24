@@ -32,7 +32,7 @@ const OPTIONS: {
   {
     id: "webflow",
     label: "Webflow",
-    hint: "Bientôt disponible — connecteur et agent non activés.",
+    hint: "Connexion et mapping disponibles — génération d’items non activée.",
     enabled: false,
   },
 ];

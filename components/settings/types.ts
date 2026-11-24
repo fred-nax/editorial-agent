@@ -8,6 +8,18 @@ export type SyncedWpCategoryView = {
 
 export type WpSeoPluginView = "slim_seo" | "yoast_seo";
 
+export type WebflowFieldMappingView = Partial<
+  Record<
+    string,
+    {
+      fieldId: string;
+      fieldSlug?: string | null;
+      fieldType?: string | null;
+      displayName?: string | null;
+    } | null
+  >
+>;
+
 export type PublicSettingsView = {
   clientName: string | null;
   siteName: string | null;
@@ -24,6 +36,18 @@ export type PublicSettingsView = {
     usernameSource: "database" | "env" | null;
     appPasswordConfigured: boolean;
     appPasswordSource: "database" | "env" | null;
+  };
+  webflow: {
+    agentId: string | null;
+    agentIdSource: "database" | "env" | null;
+    apiTokenConfigured: boolean;
+    apiTokenSource: "database" | "env" | null;
+    siteId: string | null;
+    siteIdSource: "database" | "env" | null;
+    collectionId: string | null;
+    collectionIdSource: "database" | "env" | null;
+    fieldMapping: WebflowFieldMappingView;
+    connectionConfigured: boolean;
   };
   inventory: {
     wpOrigin: string | null;

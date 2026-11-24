@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { WebflowConfigPanel } from "@/components/cms/WebflowConfigPanel";
+import type { PublicSettingsView } from "@/components/settings/types";
 import type { CmsDestinationDescriptor } from "@/lib/cms/types";
 import type { PublicEditorialAgentStatus } from "@/lib/agent/registry";
 
@@ -11,6 +13,8 @@ type Props = {
   agents: PublicEditorialAgentStatus[];
   wordpressConfigured: boolean;
   wordpressUrl: string | null;
+  webflow: PublicSettingsView["webflow"];
+  encryptionConfigured: boolean;
 };
 
 export function CmsIntegrationsPanel({
@@ -18,10 +22,13 @@ export function CmsIntegrationsPanel({
   agents,
   wordpressConfigured,
   wordpressUrl,
+  webflow: initialWebflow,
+  encryptionConfigured,
 }: Props) {
   const [testing, setTesting] = useState(false);
   const [testOk, setTestOk] = useState<boolean | null>(null);
   const [testMessage, setTestMessage] = useState<string | null>(null);
+  const [webflow, setWebflow] = useState(initialWebflow);
 
   async function testWordPress() {
     setTesting(true);
@@ -160,10 +167,29 @@ export function CmsIntegrationsPanel({
               ) : null}
 
               {destination.id === "webflow" ? (
-                <p className="border-t border-slate-100 pt-3 text-sm text-slate-500">
-                  Connecteur Webflow et agent dédié non branchés. Aucune
-                  simulation de connexion dans cette version.
-                </p>
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-700">
+                    Connexion Webflow :{" "}
+                    {webflow.connectionConfigured ? (
+                      <span className="font-medium text-emerald-800">
+                        configurée (lecture seule)
+                      </span>
+                    ) : webflow.apiTokenConfigured ? (
+                      <span className="font-medium text-amber-800">
+                        partielle — site / collection / agent à compléter
+                      </span>
+                    ) : (
+                      <span className="font-medium text-amber-800">
+                        non configurée
+                      </span>
+                    )}
+                  </p>
+                  <WebflowConfigPanel
+                    initial={webflow}
+                    encryptionConfigured={encryptionConfigured}
+                    onUpdated={setWebflow}
+                  />
+                </div>
               ) : null}
             </section>
           );
