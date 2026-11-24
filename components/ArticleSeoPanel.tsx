@@ -35,6 +35,9 @@ export function ArticleSeoPanel({
   metaDescription,
   wpPostId,
   wpUrl,
+  cmsDestination,
+  cmsExternalId,
+  wpStatus,
 }: {
   subject: string;
   preferredTitle?: string | null;
@@ -46,7 +49,12 @@ export function ArticleSeoPanel({
   metaDescription: string | null;
   wpPostId: number | null;
   wpUrl: string | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
+  wpStatus?: string | null;
 }) {
+  const isWebflow = cmsDestination === "webflow";
+
   return (
     <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 sm:px-5">
       <h2 className="text-sm font-semibold text-slate-900">Article et référencement</h2>
@@ -62,28 +70,56 @@ export function ArticleSeoPanel({
         <Field label="Titre final" value={displayField(title)} wide />
         <Field label="Extrait" value={displayField(excerpt)} wide />
         <Field label="Slug" value={displayField(slug)} />
-        <Field label="Catégories" value={displayField(categories)} />
+        {!isWebflow ? (
+          <Field label="Catégories" value={displayField(categories)} />
+        ) : (
+          <Field label="Destination" value="Webflow" />
+        )}
         <Field label="Meta title" value={displayField(metaTitle)} wide />
         <Field label="Meta description" value={displayField(metaDescription)} wide />
-        <Field label="Identifiant WordPress" value={wpPostId ? `#${wpPostId}` : "—"} />
-        <div>
-          <dt className="text-xs font-medium text-slate-500">Lien WordPress</dt>
-          <dd className="mt-1 text-sm break-all">
-            {wpUrl ? (
-              <Link
-                href={wpUrl}
-                className="text-naxialis hover:text-naxialis-dark"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {wpUrl}
-                <span className="sr-only">, nouvel onglet</span>
-              </Link>
-            ) : (
-              "—"
-            )}
-          </dd>
-        </div>
+        {isWebflow ? (
+          <>
+            <Field
+              label="Identifiant CMS Webflow"
+              value={displayField(cmsExternalId)}
+            />
+            <Field
+              label="Statut à la création"
+              value={wpStatus?.trim() ? wpStatus.trim() : "draft"}
+            />
+            <div className="sm:col-span-2">
+              <dt className="text-xs font-medium text-slate-500">Lien</dt>
+              <dd className="mt-1 text-sm text-slate-500">
+                Aucun lien d’édition fabriqué pour Webflow.
+              </dd>
+            </div>
+          </>
+        ) : (
+          <>
+            <Field
+              label="Identifiant WordPress"
+              value={wpPostId ? `#${wpPostId}` : "—"}
+            />
+            <div>
+              <dt className="text-xs font-medium text-slate-500">Lien WordPress</dt>
+              <dd className="mt-1 text-sm break-all">
+                {wpUrl ? (
+                  <Link
+                    href={wpUrl}
+                    className="text-naxialis hover:text-naxialis-dark"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {wpUrl}
+                    <span className="sr-only">, nouvel onglet</span>
+                  </Link>
+                ) : (
+                  "—"
+                )}
+              </dd>
+            </div>
+          </>
+        )}
       </dl>
     </section>
   );

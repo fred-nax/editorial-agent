@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArticleStatus } from "@/components/ArticleStatus";
+import { CmsDestinationBadge } from "@/components/cms/CmsDestinationBadge";
 import { formatDate, formatEstimatedCost } from "@/lib/format";
 import { runningStatusHint } from "@/lib/progress";
 import type { GenerationStatus } from "@/lib/status";
@@ -11,6 +12,8 @@ export type ArticleHistoryItem = {
   status: GenerationStatus;
   createdAt: Date | string;
   wpPostId: number | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
   estimatedCost: number | null;
   progressStage?: string | null;
 };
@@ -33,6 +36,30 @@ function HistoryStatus({
   return <ArticleStatus status={status} />;
 }
 
+function CmsRef({
+  cmsDestination,
+  cmsExternalId,
+  wpPostId,
+}: {
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
+  wpPostId: number | null;
+}) {
+  const isWebflow = cmsDestination === "webflow";
+  if (isWebflow) {
+    return (
+      <span className="text-slate-600">
+        {cmsExternalId ? cmsExternalId.slice(0, 12) : "—"}
+      </span>
+    );
+  }
+  return (
+    <span className="text-slate-600">
+      {wpPostId ? `#${wpPostId}` : "—"}
+    </span>
+  );
+}
+
 export function ArticleHistory({
   articles,
 }: {
@@ -53,10 +80,11 @@ export function ArticleHistory({
           <thead className="border-b border-slate-200 bg-slate-50 text-xs font-medium tracking-wide text-slate-500 uppercase">
             <tr>
               <th className="px-4 py-3">Sujet</th>
+              <th className="px-4 py-3">CMS</th>
               <th className="px-4 py-3">Statut</th>
               <th className="px-4 py-3">Titre</th>
               <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">WordPress</th>
+              <th className="px-4 py-3">Réf. CMS</th>
               <th className="px-4 py-3" title="Hors éventuels frais liés aux outils.">
                 Coût LLM estimé
               </th>
@@ -70,6 +98,9 @@ export function ArticleHistory({
                   {article.subject}
                 </td>
                 <td className="px-4 py-3">
+                  <CmsDestinationBadge destination={article.cmsDestination} />
+                </td>
+                <td className="px-4 py-3">
                   <HistoryStatus
                     status={article.status}
                     progressStage={article.progressStage}
@@ -81,8 +112,12 @@ export function ArticleHistory({
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                   {formatDate(article.createdAt)}
                 </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {article.wpPostId ? `#${article.wpPostId}` : "—"}
+                <td className="px-4 py-3">
+                  <CmsRef
+                    cmsDestination={article.cmsDestination}
+                    cmsExternalId={article.cmsExternalId}
+                    wpPostId={article.wpPostId}
+                  />
                 </td>
                 <td
                   className="px-4 py-3 text-slate-600"
@@ -119,6 +154,9 @@ export function ArticleHistory({
                 progressStage={article.progressStage}
               />
             </div>
+            <div className="mt-2">
+              <CmsDestinationBadge destination={article.cmsDestination} />
+            </div>
             <p className="mt-2 text-sm text-slate-600">
               {article.title ?? "Titre non généré"}
             </p>
@@ -128,9 +166,13 @@ export function ArticleHistory({
                 <dd className="text-slate-700">{formatDate(article.createdAt)}</dd>
               </div>
               <div>
-                <dt>WordPress</dt>
+                <dt>Réf. CMS</dt>
                 <dd className="text-slate-700">
-                  {article.wpPostId ? `#${article.wpPostId}` : "—"}
+                  <CmsRef
+                    cmsDestination={article.cmsDestination}
+                    cmsExternalId={article.cmsExternalId}
+                    wpPostId={article.wpPostId}
+                  />
                 </dd>
               </div>
               <div>

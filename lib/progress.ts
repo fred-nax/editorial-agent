@@ -1,3 +1,4 @@
+import type { CmsDestinationId } from "@/lib/cms/types";
 import type { GenerationStatus } from "./status";
 
 export type GenerationStage =
@@ -6,6 +7,7 @@ export type GenerationStage =
   | "researching"
   | "writing"
   | "creating_wordpress"
+  | "creating_webflow"
   | "finalizing"
   | "completed"
   | "failed";
@@ -23,6 +25,24 @@ export const GENERATION_TIMELINE_STEPS = [
   { stage: "finalizing", label: "Finalisation" },
 ] as const;
 
+export function getGenerationTimelineSteps(
+  destination: CmsDestinationId | string | null | undefined
+) {
+  const isWebflow = destination === "webflow";
+  return [
+    { stage: "preparing" as const, label: "Préparation" },
+    { stage: "researching" as const, label: "Recherche" },
+    { stage: "writing" as const, label: "Rédaction" },
+    {
+      stage: (isWebflow ? "creating_webflow" : "creating_wordpress") as
+        | "creating_webflow"
+        | "creating_wordpress",
+      label: isWebflow ? "Création Webflow" : "Création WordPress",
+    },
+    { stage: "finalizing" as const, label: "Finalisation" },
+  ];
+}
+
 const STAGE_ORDER: GenerationStage[] = [
   "queued",
   "preparing",
@@ -39,6 +59,7 @@ const STAGE_SHORT_LABEL: Record<GenerationStage, string> = {
   researching: "Recherche",
   writing: "Rédaction",
   creating_wordpress: "Création WordPress",
+  creating_webflow: "Création Webflow",
   finalizing: "Finalisation",
   completed: "Terminé",
   failed: "Échec",
@@ -52,6 +73,7 @@ export const PROGRESS_MESSAGES = {
   researching: "Recherche de sources et d’informations…",
   writing: "Rédaction de l’article…",
   creatingWordpress: "Création du brouillon WordPress…",
+  creatingWebflow: "Création du brouillon Webflow…",
   finalizing: "Finalisation de la génération…",
   completed: "Article terminé.",
   failed: "La génération a échoué.",
@@ -67,6 +89,7 @@ export function isGenerationStage(
     value === "researching" ||
     value === "writing" ||
     value === "creating_wordpress" ||
+    value === "creating_webflow" ||
     value === "finalizing" ||
     value === "completed" ||
     value === "failed"
@@ -76,6 +99,10 @@ export function isGenerationStage(
 export function stageIndex(stage: GenerationStage | null | undefined): number {
   if (!stage || stage === "failed") {
     return -1;
+  }
+  // creating_webflow occupe le même cran que creating_wordpress dans la timeline.
+  if (stage === "creating_webflow") {
+    return STAGE_ORDER.indexOf("creating_wordpress");
   }
   return STAGE_ORDER.indexOf(stage);
 }
@@ -135,20 +162,49 @@ export function runningStatusHint(
 
 export type TimelineStepState = "complete" | "current" | "upcoming" | "failed";
 
+/**
+ * Étape affichée pour un échec : conserve la dernière étape métier
+ * (recherche/rédaction/création) au lieu de retomber sur « Préparation ».
+ */
+export function resolveFailedDisplayStage(
+  status: GenerationStatus,
+  progressStage: GenerationStage
+): GenerationStage {
+  if (status !== "failed" && progressStage !== "failed") {
+    return progressStage;
+  }
+  if (
+    progressStage !== "failed" &&
+    progressStage !== "queued" &&
+    progressStage !== "completed"
+  ) {
+    return progressStage;
+  }
+  // Anciens enregistrements : progressStage stocké comme "failed".
+  return "writing";
+}
+
 export function timelineStepState(
-  stepStage: (typeof GENERATION_TIMELINE_STEPS)[number]["stage"],
+  stepStage:
+    | "preparing"
+    | "researching"
+    | "writing"
+    | "creating_wordpress"
+    | "creating_webflow"
+    | "finalizing",
   status: GenerationStatus,
   progressStage: GenerationStage
 ): TimelineStepState {
   const stepIdx = stageIndex(stepStage);
-  const currentIdx = stageIndex(
-    progressStage === "failed" ? "preparing" : progressStage
-  );
   const failed =
     status === "failed" || progressStage === "failed";
+  const displayStage = failed
+    ? resolveFailedDisplayStage(status, progressStage)
+    : progressStage;
+  const currentIdx = stageIndex(displayStage);
 
   if (failed) {
-    const failedIdx = currentIdx < 0 ? 0 : currentIdx;
+    const failedIdx = currentIdx < 0 ? stageIndex("writing") : currentIdx;
     if (stepIdx < failedIdx) {
       return "complete";
     }
@@ -176,8 +232,23 @@ export function timelineStepState(
 }
 
 export function failedStepLabel(progressStage: GenerationStage): string {
-  const label = stageShortLabel(
-    progressStage === "failed" ? "preparing" : progressStage
-  );
-  return `Échec pendant : ${label}`;
+  const display = resolveFailedDisplayStage("failed", progressStage);
+  return `Échec pendant : ${stageShortLabel(display)}`;
+}
+
+/**
+ * Conserve la dernière étape métier lors d’un échec (ne remplace pas par "failed").
+ */
+export function preserveProgressStageOnFailure(
+  currentStage: string | null | undefined
+): GenerationStage {
+  if (
+    isGenerationStage(currentStage) &&
+    currentStage !== "failed" &&
+    currentStage !== "completed" &&
+    currentStage !== "queued"
+  ) {
+    return currentStage;
+  }
+  return "writing";
 }

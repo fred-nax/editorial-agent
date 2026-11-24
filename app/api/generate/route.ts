@@ -14,6 +14,7 @@ import { recoverFeaturedImageJobs } from "@/lib/images/pipeline";
 import { parseFeaturedImageRequest } from "@/lib/images/request";
 import { resolveEditorialAgentForDestination } from "@/lib/agent/registry";
 import { parseCmsDestinationInput } from "@/lib/cms";
+import { getWebflowGenerationReadiness } from "@/lib/webflow/readiness";
 import { requireAuth } from "@/lib/require-auth";
 
 export const runtime = "nodejs";
@@ -52,6 +53,29 @@ export async function POST(request: Request) {
         { error: destinationParsed.error },
         { status: 400 }
       );
+    }
+
+    if (destinationParsed.destination === "webflow") {
+      const readiness = await getWebflowGenerationReadiness();
+      if (!readiness.ok) {
+        return NextResponse.json(
+          {
+            error: `Webflow non prêt : ${readiness.reasons.join(" ")}`,
+            reasons: readiness.reasons,
+          },
+          { status: 400 }
+        );
+      }
+      // Image à la une WordPress non applicable aux générations Webflow (V7.10.1).
+      if (featuredImageRequest?.enabled) {
+        return NextResponse.json(
+          {
+            error:
+              "L’image à la une n’est pas disponible pour les générations Webflow dans cette version.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     try {

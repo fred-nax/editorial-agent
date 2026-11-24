@@ -54,6 +54,15 @@ export type CmsDraftResult = {
     seo_persisted?: boolean;
     seo_error?: string | null;
   };
+  /** Présents pour Webflow uniquement — pas d’URL d’édition inventée. */
+  webflow?: {
+    itemId: string;
+    isDraft: true;
+    slug: string;
+    excerpt: string;
+    meta_title: string;
+    meta_description: string;
+  };
 };
 
 export type CmsConnectionTestResult = {

@@ -27,6 +27,7 @@ import type { FeaturedImageRequest } from "./images/request";
 import {
   PROGRESS_MESSAGES,
   isProgressAhead,
+  preserveProgressStageOnFailure,
   type GenerationStage,
 } from "./progress";
 
@@ -221,29 +222,32 @@ export async function processArticleGeneration(
   try {
     const result = await run(generation.subject);
     const durationMs = Date.now() - startedAt;
+    const destination = result.cmsDestination;
     const storedTrace = completedTraceUpdate(
       transmittedContext,
       result.trace,
-      result.wordpress.status
+      result.cms.status
     );
 
+    const isWebflow = destination === "webflow";
     await db.articleGeneration.update({
       where: { id },
       data: {
         status: "completed",
         sessionId: result.sessionId,
         trace: storedTrace.trace as Prisma.InputJsonValue,
-        wpStatus: storedTrace.wpStatus,
-        wpPostId: result.wordpress.postId,
-        wpUrl: result.wordpress.link || null,
-        cmsDestination: generation.cmsDestination ?? "wordpress",
-        cmsExternalId: String(result.wordpress.postId),
-        title: result.wordpress.title || null,
-        slug: result.wordpress.slug || null,
-        excerpt: result.wordpress.excerpt || null,
-        metaTitle: result.wordpress.metaTitle || null,
-        metaDescription: result.wordpress.metaDescription || null,
-        categories: result.detectedCategories,
+        wpStatus: isWebflow ? result.cms.status : storedTrace.wpStatus,
+        // Webflow : jamais de wpPostId / wpUrl inventés.
+        wpPostId: isWebflow ? null : result.wordpress?.postId ?? null,
+        wpUrl: isWebflow ? null : result.wordpress?.link || null,
+        cmsDestination: destination,
+        cmsExternalId: result.cms.externalId,
+        title: result.cms.title || null,
+        slug: result.cms.slug || null,
+        excerpt: result.cms.excerpt || null,
+        metaTitle: result.cms.metaTitle || null,
+        metaDescription: result.cms.metaDescription || null,
+        categories: isWebflow ? [] : result.detectedCategories,
         durationMs,
         error: null,
         inputTokens: result.inputTokens,
@@ -263,7 +267,9 @@ export async function processArticleGeneration(
     logInfo("generation", "completed", {
       generationId: id,
       sessionId: result.sessionId,
-      wpPostId: result.wordpress.postId,
+      cmsDestination: destination,
+      cmsExternalId: result.cms.externalId,
+      wpPostId: isWebflow ? null : result.wordpress?.postId ?? null,
       durationMs,
       inputTokens: result.inputTokens,
       cachedInputTokens: result.cachedInputTokens,
@@ -275,13 +281,23 @@ export async function processArticleGeneration(
       usageRetries: result.usageCollection.retries,
     });
 
-    // Image V7.1 : indépendante de l’agent ; jamais injectée dans le prompt éditorial.
-    await enqueueFeaturedImageAfterArticle(id);
+    // Image à la une : WordPress uniquement pour l’instant (V7.10.1).
+    if (!isWebflow) {
+      await enqueueFeaturedImageAfterArticle(id);
+    }
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const sessionId =
       error instanceof AgentSessionError ? error.sessionId : generation.sessionId;
     const storedTrace = failedTraceUpdate(transmittedContext, error);
+
+    const latest = await db.articleGeneration.findUnique({
+      where: { id },
+      select: { progressStage: true },
+    });
+    const preservedStage = preserveProgressStageOnFailure(
+      latest?.progressStage
+    );
 
     await db.articleGeneration.update({
       where: { id },
@@ -300,8 +316,10 @@ export async function processArticleGeneration(
               cmsExternalId: String(storedTrace.wpPostId),
             }
           : {}),
-        progressStage: "failed",
-        progressMessage: PROGRESS_MESSAGES.failed,
+        // Conserve recherche/rédaction/création — ne pas écraser en "failed"
+        // sinon l’UI affiche à tort un échec pendant la préparation.
+        progressStage: preservedStage,
+        progressMessage: toStoredError(error) || PROGRESS_MESSAGES.failed,
         progressUpdatedAt: new Date(),
       },
     });
@@ -338,22 +356,31 @@ export function enqueueArticleGeneration(
       message: toStoredError(error),
     });
 
-    await db.articleGeneration
-      .updateMany({
-        where: { id, status: "running" },
-        data: {
-          status: "failed",
-          error: toStoredError(error),
-          progressStage: "failed",
-          progressMessage: PROGRESS_MESSAGES.failed,
-          progressUpdatedAt: new Date(),
-        },
-      })
-      .catch((persistError) => {
+    void (async () => {
+      try {
+        const latest = await db.articleGeneration.findUnique({
+          where: { id },
+          select: { progressStage: true, status: true },
+        });
+        if (!latest || latest.status !== "running") {
+          return;
+        }
+        await db.articleGeneration.updateMany({
+          where: { id, status: "running" },
+          data: {
+            status: "failed",
+            error: toStoredError(error),
+            progressStage: preserveProgressStageOnFailure(latest.progressStage),
+            progressMessage: toStoredError(error) || PROGRESS_MESSAGES.failed,
+            progressUpdatedAt: new Date(),
+          },
+        });
+      } catch (persistError) {
         logError("generation", "unexpected failure", {
           generationId: id,
           message: toStoredError(persistError),
         });
-      });
+      }
+    })();
   });
 }

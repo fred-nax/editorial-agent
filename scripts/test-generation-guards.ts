@@ -10,6 +10,18 @@ function mockResult(subject: string): RunAgentSessionResult {
     success: true,
     sessionId: "sess_test_local",
     subject,
+    cmsDestination: "wordpress",
+    cms: {
+      destination: "wordpress",
+      externalId: "1",
+      status: "draft",
+      title: "Titre de test",
+      link: "https://example.com/?p=1",
+      metaTitle: "Meta title de test",
+      metaDescription: "Meta description de test",
+      slug: "titre-de-test",
+      excerpt: "Extrait de test",
+    },
     wordpress: {
       postId: 1,
       status: "draft",

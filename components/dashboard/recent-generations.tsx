@@ -6,6 +6,7 @@ import {
   dashboardIconBadgeClassName,
 } from "@/components/dashboard/card-shell";
 import { GenerationStatusBadge } from "@/components/dashboard/status-badge";
+import { CmsDestinationBadge } from "@/components/cms/CmsDestinationBadge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -33,6 +34,8 @@ export type DashboardGenerationRow = {
   createdAt: Date | string;
   wpPostId: number | null;
   wpUrl: string | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
   estimatedCost: number | null;
   progressStage?: string | null;
   error?: string | null;
@@ -61,13 +64,24 @@ function ArticleTitleCell({
   );
 }
 
-function WordPressAction({
+function CmsAction({
+  cmsDestination,
+  cmsExternalId,
   wpUrl,
   wpPostId,
 }: {
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
   wpUrl: string | null;
   wpPostId: number | null;
 }) {
+  if (cmsDestination === "webflow") {
+    return (
+      <span className="text-sm text-slate-600">
+        {cmsExternalId ? `ID ${cmsExternalId.slice(0, 10)}…` : "Webflow"}
+      </span>
+    );
+  }
   if (wpUrl && wpPostId) {
     return (
       <Button
@@ -107,7 +121,7 @@ export function DashboardRecentGenerations({
               </CardTitle>
             </div>
             <CardDescription className="text-sm text-slate-500">
-              Titres, statuts, coûts LLM et accès WordPress.
+              Titres, destinations CMS, statuts et coûts LLM.
             </CardDescription>
           </div>
           <Button
@@ -136,6 +150,9 @@ export function DashboardRecentGenerations({
                       Article
                     </TableHead>
                     <TableHead className="h-10 px-3 text-xs font-medium tracking-wide text-slate-600 uppercase">
+                      CMS
+                    </TableHead>
+                    <TableHead className="h-10 px-3 text-xs font-medium tracking-wide text-slate-600 uppercase">
                       Statut
                     </TableHead>
                     <TableHead className="h-10 px-3 text-xs font-medium tracking-wide text-slate-600 uppercase">
@@ -148,7 +165,7 @@ export function DashboardRecentGenerations({
                       Coût LLM
                     </TableHead>
                     <TableHead className="h-10 px-3 text-xs font-medium tracking-wide text-slate-600 uppercase">
-                      WordPress
+                      Réf.
                     </TableHead>
                     <TableHead className="h-10 px-5 text-right text-xs font-medium tracking-wide text-slate-600 uppercase">
                       Actions
@@ -162,6 +179,11 @@ export function DashboardRecentGenerations({
                         <ArticleTitleCell
                           title={article.title}
                           subject={article.subject}
+                        />
+                      </TableCell>
+                      <TableCell className="px-3 py-3.5">
+                        <CmsDestinationBadge
+                          destination={article.cmsDestination}
                         />
                       </TableCell>
                       <TableCell className="px-3 py-3.5">
@@ -180,7 +202,9 @@ export function DashboardRecentGenerations({
                         {formatEstimatedCost(article.estimatedCost)}
                       </TableCell>
                       <TableCell className="px-3 py-3.5">
-                        <WordPressAction
+                        <CmsAction
+                          cmsDestination={article.cmsDestination}
+                          cmsExternalId={article.cmsExternalId}
                           wpUrl={article.wpUrl}
                           wpPostId={article.wpPostId}
                         />
@@ -218,6 +242,11 @@ export function DashboardRecentGenerations({
                       progressStage={article.progressStage}
                     />
                   </div>
+                  <div className="mt-2">
+                    <CmsDestinationBadge
+                      destination={article.cmsDestination}
+                    />
+                  </div>
                   {article.status === "failed" && article.error ? (
                     <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-800">
                       {article.error}
@@ -243,7 +272,9 @@ export function DashboardRecentGenerations({
                     </div>
                   </dl>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <WordPressAction
+                    <CmsAction
+                      cmsDestination={article.cmsDestination}
+                      cmsExternalId={article.cmsExternalId}
                       wpUrl={article.wpUrl}
                       wpPostId={article.wpPostId}
                     />

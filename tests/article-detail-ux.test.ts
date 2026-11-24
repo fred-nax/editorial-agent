@@ -6,6 +6,7 @@ import { displayField } from "../components/ArticleSeoPanel";
 import { displayMetric } from "../components/GenerationUsage";
 import {
   ARTICLE_DETAIL_TABS,
+  getArticleDetailTabs,
   moveArticleDetailTab,
 } from "../lib/article-detail-tabs";
 import {
@@ -33,8 +34,9 @@ describe("historique détail UX", () => {
     assert.equal(ARTICLE_DETAIL_TABS[3].id, "featured");
     assert.equal(ARTICLE_DETAIL_TABS[4].id, "performances");
     const tabs = source("components/ArticleDetailTabs.tsx");
-    assert.match(tabs, /useState<ArticleDetailTabId>\(initialTab\)/);
+    assert.match(tabs, /useState<ArticleDetailTabId>\(resolvedInitial\)/);
     assert.match(tabs, /initialTab = "report"/);
+    assert.match(tabs, /getArticleDetailTabs/);
     assert.match(tabs, /role="tablist"/);
     assert.match(tabs, /overflow-x-auto/);
     assert.match(tabs, /from "lucide-react"/);
@@ -63,6 +65,21 @@ describe("historique détail UX", () => {
     assert.equal(moveArticleDetailTab("usage", "Home"), "report");
     assert.equal(moveArticleDetailTab("report", "End"), "performances");
     assert.equal(moveArticleDetailTab("article", "Tab"), "article");
+  });
+
+  it("masque image et performances pour Webflow", () => {
+    const webflowTabs = getArticleDetailTabs("webflow");
+    assert.deepEqual(
+      webflowTabs.map((tab) => tab.id),
+      ["report", "article", "usage"]
+    );
+    assert.equal(
+      moveArticleDetailTab("usage", "ArrowRight", webflowTabs),
+      "report"
+    );
+    const page = source("app/(protected)/articles/[id]/page.tsx");
+    assert.match(page, /getArticleDetailTabs/);
+    assert.match(page, /cmsDestination=\{cmsDestination\}/);
   });
 
   it("affiche le rapport lorsqu'une trace existe", () => {
@@ -94,13 +111,16 @@ describe("historique détail UX", () => {
     assert.equal(report.queries.length, 1);
     assert.equal(report.pages.length, 0);
     assert.equal(report.wordpress.statusAtCreation, "draft");
+    assert.equal(report.cms.destination, "wordpress");
     const view = source("components/GenerationReport.tsx");
     assert.match(view, /Contexte éditorial/);
     assert.match(view, /Recherches effectuées/);
     assert.match(view, /Pages consultées/);
     assert.match(view, /Résultat WordPress/);
+    assert.match(view, /Résultat Webflow/);
     assert.match(view, /report\.disclaimer/);
     assert.match(view, /break-all/);
+    assert.match(view, /Aucun lien d’édition fabriqué/);
   });
 
   it("laisse un état vide explicite sans traces", () => {

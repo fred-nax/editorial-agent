@@ -28,7 +28,11 @@ import { parseStoredEditorialContext } from "@/lib/editorial-context";
 import { resolvePublishedUrlForGeneration } from "@/lib/google/wp-url-map";
 import { toFeaturedImagePublic } from "@/lib/images/types";
 import { formatModelLabel } from "@/lib/openai-pricing";
-import type { ArticleDetailTabId } from "@/lib/article-detail-tabs";
+import { CmsDestinationBadge } from "@/components/cms/CmsDestinationBadge";
+import {
+  getArticleDetailTabs,
+  type ArticleDetailTabId,
+} from "@/lib/article-detail-tabs";
 
 type ArticleDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -66,7 +70,10 @@ export default async function ArticleDetailPage({
     notFound();
   }
 
+  const cmsDestination = article.cmsDestination ?? "wordpress";
+  const isWebflow = cmsDestination === "webflow";
   const canManageFeaturedImage =
+    !isWebflow &&
     article.status === "completed" &&
     typeof article.wpPostId === "number" &&
     article.wpPostId > 0;
@@ -85,17 +92,27 @@ export default async function ArticleDetailPage({
       ? formatTokenCount(article.inputTokens + article.outputTokens)
       : null;
 
-  const publishedPerf = await resolvePublishedUrlForGeneration({
-    wpPostId: article.wpPostId,
-    wpUrl: article.wpUrl,
-  });
+  const publishedPerf = !isWebflow
+    ? await resolvePublishedUrlForGeneration({
+        wpPostId: article.wpPostId,
+        wpUrl: article.wpUrl,
+      })
+    : null;
 
-  const initialTab: ArticleDetailTabId =
+  const visibleTabs = getArticleDetailTabs(cmsDestination);
+  const requestedTab: ArticleDetailTabId =
     tab === "featured"
       ? "featured"
       : tab === "performances"
         ? "performances"
-        : "report";
+        : tab === "article"
+          ? "article"
+          : tab === "usage"
+            ? "usage"
+            : "report";
+  const initialTab = visibleTabs.some((item) => item.id === requestedTab)
+    ? requestedTab
+    : visibleTabs[0]!.id;
 
   return (
     <div className="min-w-0 space-y-6">
@@ -111,7 +128,13 @@ export default async function ArticleDetailPage({
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <ArticleStatus status={article.status} />
-          {article.wpUrl ? (
+          <CmsDestinationBadge destination={cmsDestination} />
+          {article.cmsExternalId ? (
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
+              ID {article.cmsExternalId}
+            </span>
+          ) : null}
+          {!isWebflow && article.wpUrl ? (
             <Link
               href={article.wpUrl}
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-naxialis hover:text-naxialis-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-naxialis"
@@ -143,6 +166,8 @@ export default async function ArticleDetailPage({
           createdAt={article.createdAt}
           durationMs={article.durationMs}
           wpPostId={article.wpPostId}
+          cmsDestination={cmsDestination}
+          cmsExternalId={article.cmsExternalId}
           subject={article.subject}
         />
       ) : null}
@@ -157,6 +182,7 @@ export default async function ArticleDetailPage({
 
       <ArticleDetailTabs
         initialTab={initialTab}
+        cmsDestination={cmsDestination}
         report={
           <GenerationReport
             trace={article.trace}
@@ -164,6 +190,8 @@ export default async function ArticleDetailPage({
             wpPostId={article.wpPostId}
             wpUrl={article.wpUrl}
             wpStatus={article.wpStatus}
+            cmsDestination={cmsDestination}
+            cmsExternalId={article.cmsExternalId}
           />
         }
         article={
@@ -178,6 +206,9 @@ export default async function ArticleDetailPage({
             metaDescription={article.metaDescription}
             wpPostId={article.wpPostId}
             wpUrl={article.wpUrl}
+            cmsDestination={cmsDestination}
+            cmsExternalId={article.cmsExternalId}
+            wpStatus={article.wpStatus}
           />
         }
         usage={
@@ -194,7 +225,7 @@ export default async function ArticleDetailPage({
           />
         }
         featured={
-          canManageFeaturedImage ? (
+          isWebflow ? undefined : canManageFeaturedImage ? (
             <FeaturedImagePanel
               generationId={article.id}
               wpUrl={article.wpUrl}
@@ -209,10 +240,12 @@ export default async function ArticleDetailPage({
           )
         }
         performances={
-          <ArticlePerformancesPanel
-            published={Boolean(publishedPerf)}
-            pageUrlNorm={publishedPerf?.pageUrlNorm ?? null}
-          />
+          isWebflow ? undefined : (
+            <ArticlePerformancesPanel
+              published={Boolean(publishedPerf)}
+              pageUrlNorm={publishedPerf?.pageUrlNorm ?? null}
+            />
+          )
         }
       />
     </div>

@@ -1,6 +1,7 @@
 /**
- * Client HTTP Webflow Data API V2 — lecture seule (V7.10.0).
- * Utilise fetch natif. Aucun endpoint write / live / publish / delete.
+ * Client HTTP Webflow Data API V2 (V7.10.1).
+ * GET lecture + POST création d’items brouillon uniquement.
+ * Interdit : live, publish, delete, PATCH, PUT.
  */
 
 import {
@@ -9,40 +10,52 @@ import {
 } from "@/lib/webflow/errors";
 import { WEBFLOW_API_BASE } from "@/lib/webflow/types";
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_TIMEOUT_MS = 20_000;
 
 export type WebflowClientOptions = {
   apiToken: string;
   timeoutMs?: number;
-  /** Injecté pour les tests. */
   fetchImpl?: typeof fetch;
 };
 
 export type WebflowRequestOptions = {
-  method?: "GET";
+  method?: "GET" | "POST";
   path: string;
   query?: Record<string, string | undefined>;
+  body?: Record<string, unknown>;
 };
 
-/** Garde-fou : chemins d’écriture / publication refusés côté client. */
-const FORBIDDEN_PATH_PATTERN =
-  /\/(live|publish|items|fields)(\/|$)/i;
+const COLLECTION_ITEMS_PATH =
+  /^\/collections\/[^/]+\/items\/?$/i;
 
-export function assertWebflowReadOnlyPath(path: string): void {
+/** Garde-fou chemins / méthodes Webflow autorisés. */
+export function assertWebflowAllowedRequest(
+  method: "GET" | "POST",
+  path: string
+): void {
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  // Autoriser GET collections/{id} (détails + champs) ; interdire items / live / publish / fields mutations.
-  if (
-    /\/(live|publish)(\/|$)/i.test(normalized) ||
-    /\/items(\/|$)/i.test(normalized) ||
-    /\/fields(\/|$)/i.test(normalized)
-  ) {
+
+  if (/\/(live|publish)(\/|$)/i.test(normalized)) {
     throw new WebflowApiError(
       "bad_request",
-      "Opération Webflow d’écriture ou de publication refusée dans cette version."
+      "Endpoints Webflow live/publish interdits."
     );
   }
-  // Silence unused in some builds
-  void FORBIDDEN_PATH_PATTERN;
+  if (method === "GET") {
+    return;
+  }
+  if (method === "POST" && COLLECTION_ITEMS_PATH.test(normalized)) {
+    return;
+  }
+  throw new WebflowApiError(
+    "bad_request",
+    "Seuls GET et POST /collections/{id}/items (brouillon) sont autorisés."
+  );
+}
+
+/** @deprecated alias — compat tests V7.10.0 */
+export function assertWebflowReadOnlyPath(path: string): void {
+  assertWebflowAllowedRequest("GET", path);
 }
 
 export function createWebflowClient(options: WebflowClientOptions) {
@@ -58,13 +71,24 @@ export function createWebflowClient(options: WebflowClientOptions) {
   const fetchImpl = options.fetchImpl ?? fetch;
 
   async function request<T>(req: WebflowRequestOptions): Promise<T> {
-    if (req.method && req.method !== "GET") {
-      throw new WebflowApiError(
-        "bad_request",
-        "Seules les requêtes GET Webflow sont autorisées dans cette version."
-      );
+    const method = req.method ?? "GET";
+    assertWebflowAllowedRequest(method, req.path);
+
+    if (method === "POST") {
+      const body = req.body ?? {};
+      if (body.isDraft !== true || body.isArchived !== false) {
+        throw new WebflowApiError(
+          "bad_request",
+          "Création Webflow : isDraft=true et isArchived=false sont obligatoires."
+        );
+      }
+      if (/\/(live|publish)/i.test(req.path)) {
+        throw new WebflowApiError(
+          "bad_request",
+          "Publication Webflow interdite."
+        );
+      }
     }
-    assertWebflowReadOnlyPath(req.path);
 
     const url = new URL(
       req.path.startsWith("http")
@@ -84,11 +108,15 @@ export function createWebflowClient(options: WebflowClientOptions) {
 
     try {
       const response = await fetchImpl(url.toString(), {
-        method: "GET",
+        method,
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "application/json",
+          ...(method === "POST"
+            ? { "Content-Type": "application/json" }
+            : {}),
         },
+        body: method === "POST" ? JSON.stringify(req.body ?? {}) : undefined,
         signal: controller.signal,
       });
 
@@ -97,6 +125,11 @@ export function createWebflowClient(options: WebflowClientOptions) {
           response.status,
           response.headers.get("retry-after")
         );
+      }
+
+      // 202 Accepted possible pour create item
+      if (response.status === 204) {
+        return {} as T;
       }
 
       try {

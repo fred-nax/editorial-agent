@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { formatElapsed } from "@/lib/format";
 import {
-  GENERATION_TIMELINE_STEPS,
   failedStepLabel,
+  getGenerationTimelineSteps,
+  resolveFailedDisplayStage,
   resolveProgressStage,
   timelineStepState,
-  type GenerationStage,
   type TimelineStepState,
 } from "@/lib/progress";
 import type { GenerationStatus } from "@/lib/status";
@@ -19,6 +19,8 @@ export type GenerationProgressProps = {
   createdAt?: string | Date | null;
   durationMs?: number | null;
   wpPostId?: number | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
   subject?: string | null;
 };
 
@@ -117,12 +119,19 @@ export function GenerationProgress({
   createdAt,
   durationMs,
   wpPostId,
+  cmsDestination,
+  cmsExternalId,
   subject,
 }: GenerationProgressProps) {
   const stage = resolveProgressStage(status, progressStage);
   const live = status === "queued" || status === "running";
   const elapsedMs = useElapsedMs(createdAt, durationMs, live);
   const failed = status === "failed" || stage === "failed";
+  const failureDisplayStage = failed
+    ? resolveFailedDisplayStage(status, stage)
+    : stage;
+  const timeline = getGenerationTimelineSteps(cmsDestination);
+  const isWebflow = cmsDestination === "webflow";
 
   const heading =
     status === "completed"
@@ -143,21 +152,31 @@ export function GenerationProgress({
           <span className="text-slate-500">Sujet :</span> {subject}
         </p>
       ) : null}
+      {cmsDestination ? (
+        <p className="mt-1 text-xs text-slate-500">
+          Destination : {isWebflow ? "Webflow" : "WordPress"}
+        </p>
+      ) : null}
 
       {status === "completed" ? (
         <p className="mt-3 text-sm text-emerald-800">
-          {wpPostId
-            ? `Brouillon WordPress #${wpPostId} créé`
-            : "Brouillon WordPress créé"}
+          {isWebflow
+            ? cmsExternalId
+              ? `Brouillon Webflow créé (id ${cmsExternalId})`
+              : "Brouillon Webflow créé"
+            : wpPostId
+              ? `Brouillon WordPress #${wpPostId} créé`
+              : "Brouillon WordPress créé"}
         </p>
       ) : (
         <>
-          <div
-            className="mt-4 grid grid-cols-5 gap-1"
-            aria-hidden
-          >
-            {GENERATION_TIMELINE_STEPS.map((step) => {
-              const state = timelineStepState(step.stage, status, stage);
+          <div className="mt-4 grid grid-cols-5 gap-1" aria-hidden>
+            {timeline.map((step) => {
+              const state = timelineStepState(
+                step.stage,
+                status,
+                failureDisplayStage
+              );
               return (
                 <div
                   key={step.stage}
@@ -168,11 +187,15 @@ export function GenerationProgress({
           </div>
 
           <ol className="mt-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-2">
-            {GENERATION_TIMELINE_STEPS.map((step) => {
-              const state = timelineStepState(step.stage, status, stage);
+            {timeline.map((step) => {
+              const state = timelineStepState(
+                step.stage,
+                status,
+                failureDisplayStage
+              );
               const isFailedCurrent = failed && state === "failed";
               const label = isFailedCurrent
-                ? failedStepLabel(stage)
+                ? failedStepLabel(failureDisplayStage)
                 : step.label;
               const currentMessage =
                 state === "current" || isFailedCurrent ? message : null;

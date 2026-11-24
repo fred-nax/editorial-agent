@@ -17,18 +17,18 @@ function read(relativePath: string): string {
   return readFileSync(path.join(root, relativePath), "utf8");
 }
 
-describe("V7.9.0 — multi-CMS destinations", () => {
-  it("registre : WordPress actif, Webflow bientôt", () => {
+describe("V7.9.0 — multi-CMS destinations (évolué V7.10.1)", () => {
+  it("registre : WordPress et Webflow actifs au catalogue", () => {
     const destinations = listCmsDestinations();
     assert.equal(destinations.length, 2);
     assert.equal(destinations[0].id, "wordpress");
     assert.equal(destinations[0].enabled, true);
     assert.equal(destinations[1].id, "webflow");
-    assert.equal(destinations[1].enabled, false);
-    assert.equal(destinations[1].status, "coming_soon");
+    assert.equal(destinations[1].enabled, true);
+    assert.equal(destinations[1].status, "active");
     assert.equal(DEFAULT_CMS_DESTINATION, "wordpress");
     assert.equal(isCmsDestinationEnabled("wordpress"), true);
-    assert.equal(isCmsDestinationEnabled("webflow"), false);
+    assert.equal(isCmsDestinationEnabled("webflow"), true);
   });
 
   it("normalizeCmsDestination rétrocompat null → wordpress", () => {
@@ -38,7 +38,7 @@ describe("V7.9.0 — multi-CMS destinations", () => {
     assert.equal(normalizeCmsDestination("wordpress"), "wordpress");
   });
 
-  it("parseCmsDestinationInput refuse Webflow et valeurs inconnues", () => {
+  it("parseCmsDestinationInput accepte Webflow et refuse valeurs inconnues", () => {
     assert.deepEqual(parseCmsDestinationInput(undefined), {
       ok: true,
       destination: "wordpress",
@@ -47,15 +47,20 @@ describe("V7.9.0 — multi-CMS destinations", () => {
       ok: true,
       destination: "wordpress",
     });
-    const webflow = parseCmsDestinationInput("webflow");
-    assert.equal(webflow.ok, false);
+    assert.deepEqual(parseCmsDestinationInput("webflow"), {
+      ok: true,
+      destination: "webflow",
+    });
     const unknown = parseCmsDestinationInput("ghost");
     assert.equal(unknown.ok, false);
   });
 
-  it("getCmsConnector webflow expose un connecteur lecture seule (createDraft refusé)", async () => {
+  it("getCmsConnector webflow expose un connecteur createDraft", async () => {
     const connector = getCmsConnector("webflow");
     assert.equal(connector.id, "webflow");
+    assert.equal(typeof connector.createDraft, "function");
+    // Payload volontairement invalide : échoue en validation locale
+    // sans créer d’item distant (même si une config Webflow locale existe).
     await assert.rejects(
       () =>
         connector.createDraft({
@@ -66,7 +71,7 @@ describe("V7.9.0 — multi-CMS destinations", () => {
           meta_title: "t",
           meta_description: "d",
         }),
-      /non activée|lecture seule|Validez/i
+      /invalide|H2|H3|non configuré|Collection|Mapping|token/i
     );
   });
 
@@ -81,13 +86,15 @@ describe("V7.9.0 — multi-CMS destinations", () => {
     assert.doesNotMatch(wordpress, /status:\s*"publish"/);
   });
 
-  it("agent OpenAI et schéma tool inchangés", () => {
+  it("schéma tool WordPress inchangé ; Webflow isolé dans son module", () => {
     const tools = read("lib/agent/tools.ts");
     assert.match(tools, /create_wordpress_draft/);
-    assert.doesNotMatch(tools, /cmsDestination|webflow/);
+    assert.doesNotMatch(tools, /create_webflow_draft/);
+    const webflowTool = read("lib/agent/webflow-draft-tool.ts");
+    assert.match(webflowTool, /create_webflow_draft/);
     const run = read("lib/agent/run-session.ts");
     assert.match(run, /getCmsConnector/);
-    assert.doesNotMatch(run, /webflow/);
+    assert.match(run, /CREATE_WEBFLOW_DRAFT_TOOL_NAME/);
   });
 
   it("API generate valide la destination et stocke cmsDestination", () => {
@@ -104,7 +111,7 @@ describe("V7.9.0 — multi-CMS destinations", () => {
     const picker = read("components/cms/CmsDestinationPicker.tsx");
     assert.match(picker, /WordPress/);
     assert.match(picker, /Webflow/);
-    assert.match(picker, /Bientôt/);
+    assert.match(picker, /selectable/);
     const page = read("app/(protected)/settings/integrations/page.tsx");
     assert.match(page, /CmsIntegrationsPanel/);
     const panel = read("components/cms/CmsIntegrationsPanel.tsx");
@@ -142,11 +149,11 @@ describe("V7.9.0 — multi-CMS destinations", () => {
     assert.match(generation, /cmsDestination \?\? "wordpress"/);
   });
 
-  it("prévention doublons : webflow non sélectionnable côté API", () => {
+  it("prévention doublons : Webflow sélectionnable au catalogue, readiness runtime", () => {
     const parsed = parseCmsDestinationInput("webflow");
-    assert.equal(parsed.ok, false);
-    if (!parsed.ok) {
-      assert.match(parsed.error, /pas encore disponible/i);
-    }
+    assert.equal(parsed.ok, true);
+    const destinations = read("app/api/cms/destinations/route.ts");
+    assert.match(destinations, /getWebflowGenerationReadiness/);
+    assert.match(destinations, /selectable/);
   });
 });

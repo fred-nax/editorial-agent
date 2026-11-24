@@ -13,6 +13,7 @@ import { Lightbulb, Loader2, Sparkles } from "lucide-react";
 import {
   CmsDestinationPicker,
   type CmsAgentStatusView,
+  type CmsDestinationOptionView,
 } from "@/components/cms/CmsDestinationPicker";
 import { EditorialRapprochementPanel } from "@/components/EditorialRapprochementPanel";
 import { GenerationProgress } from "@/components/GenerationProgress";
@@ -76,6 +77,10 @@ type GenerationSnapshot = {
   title: string | null;
   wpPostId: number | null;
   wpUrl: string | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
   error: string | null;
   subject?: string | null;
   progressStage?: string | null;
@@ -83,6 +88,9 @@ type GenerationSnapshot = {
   progressUpdatedAt?: string | null;
   createdAt?: string | null;
   durationMs?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  estimatedCost?: number | null;
   featuredImage?: FeaturedImagePublic | null;
 };
 
@@ -139,6 +147,9 @@ export function ArticleForm({
     DEFAULT_CMS_DESTINATION
   );
   const [cmsAgents, setCmsAgents] = useState<CmsAgentStatusView[]>([]);
+  const [cmsDestinations, setCmsDestinations] = useState<
+    CmsDestinationOptionView[]
+  >([]);
   const [angle, setAngle] = useState(initial?.angle ?? "");
   const [language, setLanguage] = useState(AGENT_DECIDES_VALUE);
   const [audience, setAudience] = useState(AGENT_DECIDES_VALUE);
@@ -247,9 +258,27 @@ export function ArticleForm({
         }
         const payload = (await response.json()) as {
           agents?: CmsAgentStatusView[];
+          destinations?: Array<{
+            id: CmsDestinationId;
+            label: string;
+            description?: string;
+            selectable?: boolean;
+            readiness?: { ok?: boolean; reasons?: string[] } | null;
+          }>;
         };
         if (!cancelled && Array.isArray(payload.agents)) {
           setCmsAgents(payload.agents);
+        }
+        if (!cancelled && Array.isArray(payload.destinations)) {
+          setCmsDestinations(
+            payload.destinations.map((item) => ({
+              id: item.id,
+              label: item.label,
+              description: item.description,
+              selectable: Boolean(item.selectable),
+              readinessReasons: item.readiness?.reasons ?? [],
+            }))
+          );
         }
       } catch {
         // Silencieux : le sélecteur reste utilisable sans statut agent.
@@ -439,7 +468,8 @@ export function ArticleForm({
     setStartedAt(new Date().toISOString());
     lastProgressRef.current = null;
 
-    const wantFeatured = isFull && generateFeaturedImage;
+    const wantFeatured =
+      isFull && generateFeaturedImage && cmsDestination !== "webflow";
     setFeaturedImageRequested(wantFeatured);
 
     const payloadBody: Record<string, unknown> = {
@@ -587,10 +617,16 @@ export function ArticleForm({
         value={cmsDestination}
         onChange={(next) => {
           setCmsDestination(next);
+          if (next === "webflow") {
+            setGenerateFeaturedImage(false);
+          }
+          // Réinitialise l’issue et laisse EditorialRapprochementPanel
+          // purger ses résultats via enabled=false.
           resetOutcomeState();
         }}
         disabled={busy}
         agents={cmsAgents}
+        destinations={cmsDestinations}
       />
 
       <div className="space-y-2">
@@ -618,6 +654,7 @@ export function ArticleForm({
         angle={angle}
         layout={isFull ? "full" : "compact"}
         disabled={busy}
+        enabled={cmsDestination === "wordpress"}
       />
 
       {isFull ? (
@@ -983,12 +1020,17 @@ export function ArticleForm({
         <section className="space-y-4 rounded-lg border border-[#E2E8F0] bg-slate-50/60 p-4">
           <div className="space-y-1">
             <p className="text-sm font-semibold text-[#0F172A]">Image à la une</p>
+            {cmsDestination === "webflow" ? (
+              <p className="text-xs text-amber-800">
+                Non disponible pour Webflow dans cette version.
+              </p>
+            ) : null}
             <label className="flex cursor-pointer items-start gap-2.5 text-sm text-[#0F172A]">
               <input
                 type="checkbox"
                 className="mt-1 size-4 rounded border-[#E2E8F0] accent-naxialis"
-                checked={generateFeaturedImage}
-                disabled={busy}
+                checked={generateFeaturedImage && cmsDestination !== "webflow"}
+                disabled={busy || cmsDestination === "webflow"}
                 onChange={(event) => {
                   setGenerateFeaturedImage(event.target.checked);
                   resetOutcomeState();
@@ -998,7 +1040,7 @@ export function ArticleForm({
             </label>
           </div>
 
-          {generateFeaturedImage ? (
+          {generateFeaturedImage && cmsDestination !== "webflow" ? (
             <div className="space-y-4">
               <p className="text-xs leading-relaxed text-slate-600">
                 L’image sera générée après la création du brouillon. Vous pourrez
@@ -1095,9 +1137,9 @@ export function ArticleForm({
 
   const formHint = (
     <p className="text-sm leading-relaxed text-slate-600">
-      Ces paramètres orientent la rédaction sans remplacer les consignes de
-      votre agent. Vous pourrez modifier librement le brouillon dans WordPress
-      avant publication.
+      {cmsDestination === "webflow"
+        ? "Ces paramètres orientent la rédaction sans remplacer les consignes de votre agent. Le brouillon sera créé dans Webflow CMS (non publié) ; finalisez-le ensuite dans Webflow."
+        : "Ces paramètres orientent la rédaction sans remplacer les consignes de votre agent. Vous pourrez modifier librement le brouillon dans WordPress avant publication."}
     </p>
   );
 
@@ -1119,6 +1161,8 @@ export function ArticleForm({
           createdAt={generation.createdAt ?? startedAt}
           durationMs={generation.durationMs}
           wpPostId={generation.wpPostId}
+          cmsDestination={generation.cmsDestination ?? cmsDestination}
+          cmsExternalId={generation.cmsExternalId}
           subject={generation.subject ?? subject}
         />
       ) : null}
@@ -1137,9 +1181,34 @@ export function ArticleForm({
                 ? "Article et image prêts"
                 : generation.title ?? "Article terminé"}
             </p>
-            {generation.wpPostId ? (
+            <p className="mt-1 text-emerald-900">
+              Destination :{" "}
+              {(generation.cmsDestination ?? cmsDestination) === "webflow"
+                ? "Webflow"
+                : "WordPress"}
+            </p>
+            {generation.cmsExternalId ? (
+              <p className="mt-1 text-emerald-900">
+                Identifiant CMS : {generation.cmsExternalId}
+              </p>
+            ) : null}
+            {(generation.cmsDestination ?? cmsDestination) !== "webflow" &&
+            generation.wpPostId ? (
               <p className="mt-1 text-emerald-900">
                 WordPress #{generation.wpPostId}
+              </p>
+            ) : null}
+            {generation.metaTitle ? (
+              <p className="mt-1 text-xs text-emerald-900">
+                SEO title : {generation.metaTitle}
+              </p>
+            ) : null}
+            {typeof generation.durationMs === "number" ? (
+              <p className="mt-1 text-xs text-emerald-900">
+                Durée : {Math.round(generation.durationMs / 1000)}s
+                {generation.estimatedCost != null
+                  ? ` · coût estimé $${generation.estimatedCost.toFixed(4)}`
+                  : ""}
               </p>
             ) : null}
             {featuredBusy ? (
@@ -1156,7 +1225,8 @@ export function ArticleForm({
               </p>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
-              {generation.wpUrl ? (
+              {(generation.cmsDestination ?? cmsDestination) !== "webflow" &&
+              generation.wpUrl ? (
                 <Button
                   size="sm"
                   className="bg-naxialis text-white hover:bg-naxialis-dark"
@@ -1181,7 +1251,8 @@ export function ArticleForm({
               >
                 Voir le détail
               </Button>
-              {featuredImageRequested ? (
+              {featuredImageRequested &&
+              (generation.cmsDestination ?? cmsDestination) !== "webflow" ? (
                 <Button
                   size="sm"
                   variant="outline"

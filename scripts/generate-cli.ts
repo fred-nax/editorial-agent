@@ -21,9 +21,13 @@ try {
   console.log("");
   console.log("Résultat :");
   console.log(`Session : ${result.sessionId}`);
-  console.log(`WordPress ID : ${result.wordpress.postId}`);
-  console.log(`Statut : ${result.wordpress.status}`);
-  console.log(`Lien : ${result.wordpress.link}`);
+  console.log(`Destination : ${result.cmsDestination}`);
+  console.log(`CMS ID : ${result.cms.externalId}`);
+  console.log(`Statut : ${result.cms.status}`);
+  if (result.wordpress) {
+    console.log(`WordPress ID : ${result.wordpress.postId}`);
+    console.log(`Lien : ${result.wordpress.link}`);
+  }
   console.log(`Modèle : ${result.model ?? "—"}`);
   console.log(
     `Tokens in/cached/out/reasoning/total : ${result.inputTokens ?? "—"} / ${result.cachedInputTokens ?? "—"} / ${result.outputTokens ?? "—"} / ${result.reasoningTokens ?? "—"} / ${result.totalTokens ?? "—"}`

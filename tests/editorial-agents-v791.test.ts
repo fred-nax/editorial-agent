@@ -7,6 +7,9 @@ import {
   agentSessionTools,
 } from "../lib/agent/tools";
 import {
+  CREATE_WEBFLOW_DRAFT_TOOL_NAME,
+} from "../lib/agent/webflow-draft-tool";
+import {
   EDITORIAL_AGENT_PROFILES,
   getAgentToolsForDestination,
   getEditorialAgentProfile,
@@ -19,7 +22,7 @@ function read(relativePath: string): string {
   return readFileSync(path.join(root, relativePath), "utf8");
 }
 
-describe("V7.9.1 — agents éditoriaux par CMS", () => {
+describe("V7.9.1 — agents éditoriaux par CMS (évolué V7.10.1)", () => {
   it("profil WordPress par défaut avec outils historiques", () => {
     const profile = getEditorialAgentProfile("wordpress");
     assert.equal(profile.agentEnvKey, "OPENAI_AGENT_ID");
@@ -31,13 +34,23 @@ describe("V7.9.1 — agents éditoriaux par CMS", () => {
     assert.deepEqual(tools, agentSessionTools);
   });
 
-  it("profil Webflow sans create_wordpress_draft et sans fallback WP", () => {
+  it("profil Webflow : web_search + create_webflow_draft, sans WP", () => {
     const profile = getEditorialAgentProfile("webflow");
     assert.equal(profile.agentEnvKey, "OPENAI_WEBFLOW_AGENT_ID");
     assert.ok(!profile.allowedToolNames.includes(CREATE_WORDPRESS_DRAFT_TOOL_NAME));
+    assert.ok(profile.allowedToolNames.includes(CREATE_WEBFLOW_DRAFT_TOOL_NAME));
+    assert.ok(profile.allowedToolNames.includes("web_search"));
 
     const tools = getAgentToolsForDestination("webflow");
-    assert.ok(tools.every((tool) => tool.type === "web_search"));
+    assert.equal(tools.length, 2);
+    assert.ok(tools.some((tool) => tool.type === "web_search"));
+    assert.ok(
+      tools.some(
+        (tool) =>
+          tool.type === "function" &&
+          tool.name === CREATE_WEBFLOW_DRAFT_TOOL_NAME
+      )
+    );
     assert.ok(
       !tools.some(
         (tool) =>
@@ -51,8 +64,8 @@ describe("V7.9.1 — agents éditoriaux par CMS", () => {
     assert.match(registry, /OPENAI_WEBFLOW_AGENT_ID/);
   });
 
-  it("refuse destination désactivée ou inconnue", () => {
-    assert.equal(parseCmsDestinationInput("webflow").ok, false);
+  it("accepte Webflow au catalogue et refuse destination inconnue", () => {
+    assert.equal(parseCmsDestinationInput("webflow").ok, true);
     assert.equal(parseCmsDestinationInput("ghost").ok, false);
     assert.deepEqual(parseCmsDestinationInput(undefined), {
       ok: true,
@@ -89,14 +102,14 @@ describe("V7.9.1 — agents éditoriaux par CMS", () => {
     const route = read("app/api/generate/route.ts");
     assert.match(route, /parseCmsDestinationInput/);
     assert.match(route, /resolveEditorialAgentForDestination/);
+    assert.match(route, /getWebflowGenerationReadiness/);
   });
 
-  it("UI affiche l’agent associé et Webflow bientôt", () => {
+  it("UI affiche l’agent associé et readiness Webflow", () => {
     const picker = read("components/cms/CmsDestinationPicker.tsx");
     assert.match(picker, /Agent éditorial/);
-    assert.match(picker, /Bientôt/);
+    assert.match(picker, /selectable/);
     assert.match(picker, /agents/);
-    assert.match(picker, /génération d’items non activée/i);
     const form = read("components/ArticleForm.tsx");
     assert.match(form, /\/api\/cms\/destinations/);
     assert.match(form, /CmsDestinationPicker/);

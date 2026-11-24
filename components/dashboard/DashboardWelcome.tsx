@@ -21,8 +21,8 @@ export function DashboardWelcome() {
           </h2>
           <p className="max-w-md text-sm leading-relaxed text-slate-600 sm:text-[15px]">
             Une nouvelle idée d&apos;article&nbsp;? Votre assistant éditorial est
-            prêt à vous accompagner pour rechercher, rédiger et préparer vos articles
-            brouillons WordPress.
+            prêt à vous accompagner pour rechercher, rédiger et préparer vos
+            brouillons WordPress ou Webflow.
           </p>
           <Button
             size="lg"

@@ -65,6 +65,8 @@ export default async function DashboardPage() {
 
   const [
     draftsThisMonth,
+    draftsWordpressThisMonth,
+    draftsWebflowThisMonth,
     pendingTopics,
     runningGenerations,
     llmCostThisMonth,
@@ -72,10 +74,25 @@ export default async function DashboardPage() {
     recentTopics,
     recentWatchSearches,
   ] = await Promise.all([
+    // Total brouillons réussis (WP historique null + wordpress + webflow).
     db.articleGeneration.count({
       where: {
         status: "completed",
         createdAt: { gte: monthStart },
+      },
+    }),
+    db.articleGeneration.count({
+      where: {
+        status: "completed",
+        createdAt: { gte: monthStart },
+        OR: [{ cmsDestination: "wordpress" }, { cmsDestination: null }],
+      },
+    }),
+    db.articleGeneration.count({
+      where: {
+        status: "completed",
+        createdAt: { gte: monthStart },
+        cmsDestination: "webflow",
       },
     }),
     db.topic.count({
@@ -105,6 +122,8 @@ export default async function DashboardPage() {
         createdAt: true,
         wpPostId: true,
         wpUrl: true,
+        cmsDestination: true,
+        cmsExternalId: true,
         estimatedCost: true,
         progressStage: true,
         error: true,
@@ -140,7 +159,11 @@ export default async function DashboardPage() {
 
       <DashboardKpiCards
         items={[
-          { label: "Brouillons créés ce mois", value: draftsThisMonth },
+          {
+            label: "Brouillons créés ce mois",
+            value: draftsThisMonth,
+            hint: `WordPress ${draftsWordpressThisMonth} · Webflow ${draftsWebflowThisMonth}`,
+          },
           { label: "File — en attente", value: pendingTopics },
           { label: "Générations en cours", value: runningGenerations },
           {

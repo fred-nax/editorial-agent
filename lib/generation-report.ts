@@ -39,6 +39,14 @@ export type GenerationReportModel = {
     url: string | null;
     statusAtCreation: string;
   };
+  /** Résultat CMS normalisé (WordPress ou Webflow). */
+  cms: {
+    destination: "wordpress" | "webflow";
+    externalId: string | null;
+    statusAtCreation: string;
+    /** URL uniquement pour WordPress — jamais fabriquée pour Webflow. */
+    url: string | null;
+  };
   statusNote: string;
   disclaimer: string;
 };
@@ -266,12 +274,28 @@ export function buildGenerationReport(input: {
   wpPostId?: number | null;
   wpUrl?: string | null;
   wpStatus?: string | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
 }): GenerationReportModel {
   const trace = parseGenerationTrace(input.trace);
+  const isWebflow = input.cmsDestination === "webflow";
+  const statusAtCreation = text(input.wpStatus) ?? "non enregistré";
   const wordpress = {
-    id: input.wpPostId ? `#${input.wpPostId}` : null,
-    url: httpUrl(input.wpUrl),
-    statusAtCreation: text(input.wpStatus) ?? "non enregistré",
+    id: !isWebflow && input.wpPostId ? `#${input.wpPostId}` : null,
+    url: !isWebflow ? httpUrl(input.wpUrl) : null,
+    statusAtCreation,
+  };
+  const cms = {
+    destination: (isWebflow ? "webflow" : "wordpress") as
+      | "wordpress"
+      | "webflow",
+    externalId: isWebflow
+      ? text(input.cmsExternalId)
+      : input.wpPostId
+        ? String(input.wpPostId)
+        : text(input.cmsExternalId),
+    statusAtCreation,
+    url: !isWebflow ? httpUrl(input.wpUrl) : null,
   };
   if (!trace) {
     const pending =
@@ -291,6 +315,7 @@ export function buildGenerationReport(input: {
       callIds: [],
       sessionId: null,
       wordpress,
+      cms,
       statusNote: STATUS_NOTE,
       disclaimer: REPORT_DISCLAIMER,
     };
@@ -322,6 +347,7 @@ export function buildGenerationReport(input: {
     callIds: trace.ids.webSearchCallIds,
     sessionId: trace.ids.sessionId,
     wordpress,
+    cms,
     statusNote: STATUS_NOTE,
     disclaimer: REPORT_DISCLAIMER,
   };

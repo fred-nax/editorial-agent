@@ -77,12 +77,16 @@ export function GenerationReport({
   wpPostId,
   wpUrl,
   wpStatus,
+  cmsDestination,
+  cmsExternalId,
 }: {
   trace: unknown;
   status: string;
   wpPostId: number | null;
   wpUrl: string | null;
   wpStatus: string | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
 }) {
   const report = buildGenerationReport({
     trace,
@@ -90,7 +94,10 @@ export function GenerationReport({
     wpPostId,
     wpUrl,
     wpStatus,
+    cmsDestination,
+    cmsExternalId,
   });
+  const isWebflow = report.cms.destination === "webflow";
 
   return (
     <div className="space-y-4">
@@ -162,20 +169,36 @@ export function GenerationReport({
         </section>
       )}
 
-      <Section title="Résultat WordPress">
+      <Section title={isWebflow ? "Résultat Webflow" : "Résultat WordPress"}>
         <dl className="grid gap-4 sm:grid-cols-3">
           <div>
-            <dt className="text-xs font-medium text-slate-500">Identifiant</dt>
-            <dd className="mt-1 text-sm text-slate-900">{report.wordpress.id ?? "—"}</dd>
+            <dt className="text-xs font-medium text-slate-500">
+              {isWebflow ? "Identifiant CMS" : "Identifiant"}
+            </dt>
+            <dd className="mt-1 text-sm break-all text-slate-900">
+              {isWebflow
+                ? report.cms.externalId ?? "—"
+                : report.wordpress.id ?? "—"}
+            </dd>
           </div>
           <div>
-            <dt className="text-xs font-medium text-slate-500">Statut à la création</dt>
-            <dd className="mt-1 text-sm text-slate-900">{report.wordpress.statusAtCreation}</dd>
+            <dt className="text-xs font-medium text-slate-500">
+              Statut à la création
+            </dt>
+            <dd className="mt-1 text-sm text-slate-900">
+              {report.cms.statusAtCreation}
+            </dd>
           </div>
           <div className="min-w-0">
-            <dt className="text-xs font-medium text-slate-500">Lien</dt>
+            <dt className="text-xs font-medium text-slate-500">
+              {isWebflow ? "Lien" : "Lien"}
+            </dt>
             <dd className="mt-1 text-sm break-all">
-              {report.wordpress.url ? (
+              {isWebflow ? (
+                <span className="text-slate-500">
+                  Aucun lien d’édition fabriqué
+                </span>
+              ) : report.wordpress.url ? (
                 <a
                   href={report.wordpress.url}
                   className="text-naxialis hover:text-naxialis-dark"

@@ -46,6 +46,8 @@ export async function GET(_request: Request, context: RouteContext) {
     slug: article.slug,
     wpPostId: article.wpPostId,
     wpUrl: article.wpUrl,
+    cmsDestination: article.cmsDestination,
+    cmsExternalId: article.cmsExternalId,
     categories: article.categories,
     metaTitle: article.metaTitle,
     metaDescription: article.metaDescription,

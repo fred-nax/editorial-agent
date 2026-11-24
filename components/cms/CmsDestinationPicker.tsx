@@ -10,30 +10,35 @@ export type CmsAgentStatusView = {
   destinationEnabled: boolean;
 };
 
+export type CmsDestinationOptionView = {
+  id: CmsDestinationId;
+  label: string;
+  description?: string;
+  selectable: boolean;
+  readinessReasons?: string[];
+};
+
 type Props = {
   value: CmsDestinationId;
   onChange: (value: CmsDestinationId) => void;
   disabled?: boolean;
   agents?: CmsAgentStatusView[];
+  destinations?: CmsDestinationOptionView[];
 };
 
-const OPTIONS: {
-  id: CmsDestinationId;
-  label: string;
-  hint: string;
-  enabled: boolean;
-}[] = [
+const FALLBACK_OPTIONS: CmsDestinationOptionView[] = [
   {
     id: "wordpress",
     label: "WordPress",
-    hint: "Brouillon créé via l’API REST (comportement actuel).",
-    enabled: true,
+    description: "Brouillon créé via l’API REST (comportement actuel).",
+    selectable: true,
   },
   {
     id: "webflow",
     label: "Webflow",
-    hint: "Connexion et mapping disponibles — génération d’items non activée.",
-    enabled: false,
+    description:
+      "Brouillon CMS Webflow — disponible lorsque la configuration est complète.",
+    selectable: false,
   },
 ];
 
@@ -42,7 +47,9 @@ export function CmsDestinationPicker({
   onChange,
   disabled,
   agents = [],
+  destinations,
 }: Props) {
+  const options = destinations?.length ? destinations : FALLBACK_OPTIONS;
   const agentForValue = agents.find((item) => item.cmsDestination === value);
 
   return (
@@ -55,13 +62,14 @@ export function CmsDestinationPicker({
         est sélectionné automatiquement côté serveur.
       </p>
       <div className="space-y-2">
-        {OPTIONS.map((option) => {
+        {options.map((option) => {
           const agent = agents.find((item) => item.cmsDestination === option.id);
+          const enabled = option.selectable;
           return (
             <label
               key={option.id}
               className={`flex items-start gap-3 rounded-md border px-3 py-2.5 ${
-                option.enabled
+                enabled
                   ? "cursor-pointer border-slate-200 hover:bg-slate-50"
                   : "cursor-not-allowed border-slate-100 bg-slate-50 opacity-70"
               }`}
@@ -72,9 +80,9 @@ export function CmsDestinationPicker({
                 className="mt-1"
                 value={option.id}
                 checked={value === option.id}
-                disabled={!option.enabled || disabled}
+                disabled={!enabled || disabled}
                 onChange={() => {
-                  if (option.enabled) {
+                  if (enabled) {
                     onChange(option.id);
                   }
                 }}
@@ -82,15 +90,23 @@ export function CmsDestinationPicker({
               <span>
                 <span className="flex items-center gap-2 text-sm font-medium text-slate-900">
                   {option.label}
-                  {!option.enabled ? (
+                  {!enabled ? (
                     <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                      Bientôt
+                      Indisponible
                     </span>
                   ) : null}
                 </span>
                 <span className="block text-xs text-slate-500">
-                  {option.hint}
+                  {option.description ??
+                    (option.id === "wordpress"
+                      ? "Brouillon WordPress."
+                      : "Brouillon Webflow.")}
                 </span>
+                {!enabled && option.readinessReasons?.length ? (
+                  <span className="mt-1 block text-xs text-amber-800">
+                    {option.readinessReasons[0]}
+                  </span>
+                ) : null}
                 {agent ? (
                   <span className="mt-1 block text-xs text-slate-600">
                     Agent : {agent.label}

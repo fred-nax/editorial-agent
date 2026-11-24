@@ -1,9 +1,17 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Image, LineChart } from "lucide-react";
 import {
   ARTICLE_DETAIL_TABS,
+  getArticleDetailTabs,
   moveArticleDetailTab,
   type ArticleDetailTabId,
 } from "@/lib/article-detail-tabs";
@@ -15,20 +23,42 @@ export function ArticleDetailTabs({
   featured,
   performances,
   initialTab = "report",
+  cmsDestination,
 }: {
   report: ReactNode;
   article: ReactNode;
   usage: ReactNode;
-  featured: ReactNode;
-  performances: ReactNode;
+  featured?: ReactNode;
+  performances?: ReactNode;
   initialTab?: ArticleDetailTabId;
+  cmsDestination?: string | null;
 }) {
-  const [active, setActive] = useState<ArticleDetailTabId>(initialTab);
+  const tabs = useMemo(
+    () => getArticleDetailTabs(cmsDestination),
+    [cmsDestination]
+  );
+  const panels: Partial<Record<ArticleDetailTabId, ReactNode>> = {
+    report,
+    article,
+    usage,
+    featured,
+    performances,
+  };
+
+  const resolvedInitial =
+    tabs.some((tab) => tab.id === initialTab) ? initialTab : tabs[0]!.id;
+
+  const [active, setActive] = useState<ArticleDetailTabId>(resolvedInitial);
   const tabRefs = useRef<Partial<Record<ArticleDetailTabId, HTMLButtonElement | null>>>({});
-  const panels = { report, article, usage, featured, performances };
+
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === active)) {
+      setActive(tabs[0]!.id);
+    }
+  }, [active, tabs]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const next = moveArticleDetailTab(active, event.key);
+    const next = moveArticleDetailTab(active, event.key, tabs);
     if (next === active) {
       return;
     }
@@ -45,7 +75,7 @@ export function ArticleDetailTabs({
         className="flex gap-1 overflow-x-auto border-b border-slate-200"
         onKeyDown={onKeyDown}
       >
-        {ARTICLE_DETAIL_TABS.map((tab) => {
+        {tabs.map((tab) => {
           const selected = active === tab.id;
           return (
             <button
@@ -77,7 +107,7 @@ export function ArticleDetailTabs({
           );
         })}
       </div>
-      {ARTICLE_DETAIL_TABS.map((tab) => (
+      {tabs.map((tab) => (
         <div
           key={tab.id}
           role="tabpanel"
@@ -89,6 +119,8 @@ export function ArticleDetailTabs({
           {panels[tab.id]}
         </div>
       ))}
+      {/* Conserve la référence catalogue pour les tests de non-régression WP. */}
+      <span className="sr-only" data-all-tabs={ARTICLE_DETAIL_TABS.length} />
     </div>
   );
 }

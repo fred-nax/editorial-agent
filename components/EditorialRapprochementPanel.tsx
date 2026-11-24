@@ -71,11 +71,14 @@ export function EditorialRapprochementPanel({
   angle,
   layout = "full",
   disabled = false,
+  /** false = destination non WordPress (ex. Webflow) : pas de check ni sync inventaire. */
+  enabled = true,
 }: {
   subject: string;
   angle?: string;
   layout?: "full" | "compact";
   disabled?: boolean;
+  enabled?: boolean;
 }) {
   const reactId = useId();
   const [phase, setPhase] = useState<"idle" | "checking" | "ready" | "error">(
@@ -90,7 +93,15 @@ export function EditorialRapprochementPanel({
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (disabled) {
+    if (!enabled || disabled) {
+      abortRef.current?.abort();
+      requestSeq.current += 1;
+      setPhase("idle");
+      setPayload(null);
+      setError(null);
+      setAiBusy(false);
+      setSyncBusy(false);
+      setCompactOpen(false);
       return;
     }
     const cleaned = subject.replace(/\s+/g, " ").trim();
@@ -152,7 +163,7 @@ export function EditorialRapprochementPanel({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [subject, angle, disabled]);
+  }, [subject, angle, disabled, enabled]);
 
   useEffect(() => {
     return () => {
@@ -161,6 +172,9 @@ export function EditorialRapprochementPanel({
   }, []);
 
   async function runAiAnalysis() {
+    if (!enabled) {
+      return;
+    }
     const cleaned = subject.replace(/\s+/g, " ").trim();
     if (!cleaned || aiBusy) {
       return;
@@ -195,7 +209,7 @@ export function EditorialRapprochementPanel({
   }
 
   async function refreshInventory() {
-    if (syncBusy) {
+    if (!enabled || syncBusy) {
       return;
     }
     setSyncBusy(true);
@@ -245,6 +259,20 @@ export function EditorialRapprochementPanel({
     } finally {
       setSyncBusy(false);
     }
+  }
+
+  if (!enabled) {
+    if (layout === "compact") {
+      return null;
+    }
+    return (
+      <section className="rounded-lg border border-[#E2E8F0] bg-slate-50/40 px-3 py-2.5">
+        <p className="text-sm text-slate-600">
+          Les rapprochements éditoriaux et la synchronisation de l’inventaire
+          WordPress sont désactivés pour Webflow.
+        </p>
+      </section>
+    );
   }
 
   const matches = payload?.matches ?? [];

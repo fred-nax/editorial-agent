@@ -40,6 +40,7 @@ describe("retrait du module AI Visibility Monitor", () => {
       "/opportunities",
       "/veille",
       "/settings",
+      "/settings/integrations",
     ]);
     assert.doesNotMatch(nav, /Visibilité IA/);
     assert.doesNotMatch(nav, /ai-visibility/);

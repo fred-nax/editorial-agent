@@ -14,6 +14,7 @@ import {
 import type OpenAI from "openai";
 import { createOpenAIClient } from "../openai";
 import {
+  resolveOpenAiConfig,
   resolveRuntimeConnections,
   resolveWordPressCategoryConfig,
 } from "../settings/app-settings";
@@ -24,8 +25,13 @@ import {
   sanitizeCategoryIdsForWordPress,
 } from "../wordpress-categories";
 import { getCmsConnector, normalizeCmsDestination } from "../cms";
+import type { CmsDestinationId } from "../cms/types";
 import { resolveEditorialAgentForDestination } from "./registry";
 import { CREATE_WORDPRESS_DRAFT_TOOL_NAME } from "./tools";
+import {
+  CREATE_WEBFLOW_DRAFT_TOOL_NAME,
+  parseWebflowDraftArgs,
+} from "./webflow-draft-tool";
 import { normalizeWpSeoPlugin } from "../wordpress-seo";
 import {
   type WordPressDraftInput,
@@ -44,6 +50,7 @@ import {
   type GenerationEventTrace,
 } from "../generation-trace";
 import { buildArticlePrompt } from "./prompt";
+import { getWebflowGenerationReadiness } from "../webflow/readiness";
 
 function siteHostFromWpUrl(wpUrl: string, fallbackHost: string): string {
   try {
@@ -71,10 +78,30 @@ export type RunAgentSessionOptions = {
   cmsDestination?: string | null;
 };
 
+export type RunAgentSessionCmsResult = {
+  destination: CmsDestinationId;
+  externalId: string;
+  status: string;
+  title: string;
+  /** Vide pour Webflow (pas d’URL d’édition inventée). */
+  link: string;
+  metaTitle: string;
+  metaDescription: string;
+  slug: string;
+  excerpt: string;
+};
+
 export type RunAgentSessionResult = {
   success: true;
   sessionId: string;
   subject: string;
+  cmsDestination: CmsDestinationId;
+  /** Résultat CMS normalisé (WordPress ou Webflow). */
+  cms: RunAgentSessionCmsResult;
+  /**
+   * Présent uniquement pour WordPress (rétrocompat génération + UI historiques).
+   * Null pour Webflow — ne jamais inventer de wpPostId.
+   */
   wordpress: {
     postId: number;
     status: string;
@@ -85,7 +112,7 @@ export type RunAgentSessionResult = {
     metaDescription: string;
     slug: string;
     excerpt: string;
-  };
+  } | null;
   detectedCategories: Array<{
     categoryId: number;
     name: string;
@@ -377,34 +404,58 @@ export async function runAgentSession(
   const cmsDestination = normalizeCmsDestination(options.cmsDestination);
   const editorialAgent =
     await resolveEditorialAgentForDestination(cmsDestination);
-  const connections = await resolveRuntimeConnections();
-  const openai = createOpenAIClient(connections.openai.apiKey);
-  const wordpressCredentials = connections.wordpress;
+
+  if (cmsDestination === "webflow") {
+    const readiness = await getWebflowGenerationReadiness();
+    if (!readiness.ok) {
+      throw new Error(
+        `Webflow non prêt pour la génération : ${readiness.reasons.join(" ")}`
+      );
+    }
+  }
+
+  const openaiConfig = await resolveOpenAiConfig();
+  if (!openaiConfig?.apiKey) {
+    throw new Error("Clé API OpenAI manquante.");
+  }
+  const openai = createOpenAIClient(openaiConfig.apiKey);
+
+  // WordPress credentials uniquement pour destination WordPress (pas de fallback).
+  const connections =
+    cmsDestination === "wordpress" ? await resolveRuntimeConnections() : null;
+  const wordpressCredentials = connections?.wordpress ?? null;
+
   const identity = resolveEditorialIdentity({
-    wpUrl: wordpressCredentials.url,
-    siteName: connections.siteName,
-    clientName: connections.clientName,
+    wpUrl: wordpressCredentials?.url ?? null,
+    siteName: connections?.siteName ?? null,
+    clientName: connections?.clientName ?? null,
   });
-  const categoryConfig = await resolveWordPressCategoryConfig();
-  const effectiveWpOrigin = normalizeWpOrigin(wordpressCredentials.url);
-  const dynamicCategoryMode = isDynamicCategoryMode(
-    categoryConfig,
-    effectiveWpOrigin
-  );
-  const detectedCategories = resolveCategoriesForSubject({
-    subject: trimmedSubject,
-    isNaxialisLegacy: identity.isNaxialisLegacy,
-    config: categoryConfig,
-    effectiveWpOrigin,
-  });
-  const categoryIds = sanitizeCategoryIdsForWordPress({
-    ids: detectedCategories.map((category) => category.categoryId),
-    allowedIds: categoryConfig?.allowedIds ?? [],
-    categories: categoryConfig?.categories ?? [],
-    categoriesOrigin: categoryConfig?.origin ?? null,
-    effectiveWpOrigin,
-    dynamicMode: dynamicCategoryMode,
-  });
+
+  let detectedCategories: Array<{ categoryId: number; name: string }> = [];
+  let categoryIds: number[] = [];
+
+  if (cmsDestination === "wordpress" && wordpressCredentials) {
+    const categoryConfig = await resolveWordPressCategoryConfig();
+    const effectiveWpOrigin = normalizeWpOrigin(wordpressCredentials.url);
+    const dynamicCategoryMode = isDynamicCategoryMode(
+      categoryConfig,
+      effectiveWpOrigin
+    );
+    detectedCategories = resolveCategoriesForSubject({
+      subject: trimmedSubject,
+      isNaxialisLegacy: identity.isNaxialisLegacy,
+      config: categoryConfig,
+      effectiveWpOrigin,
+    });
+    categoryIds = sanitizeCategoryIdsForWordPress({
+      ids: detectedCategories.map((category) => category.categoryId),
+      allowedIds: categoryConfig?.allowedIds ?? [],
+      categories: categoryConfig?.categories ?? [],
+      categoriesOrigin: categoryConfig?.origin ?? null,
+      effectiveWpOrigin,
+      dynamicMode: dynamicCategoryMode,
+    });
+  }
 
   await emitProgress(
     onProgress,
@@ -424,52 +475,70 @@ export async function runAgentSession(
     );
   }
 
-  log(onLog, "");
-  log(onLog, "Préparation du maillage interne…");
-
   let linkPlan: InternalLinkPlan;
-  try {
-    linkPlan = await buildInternalLinkPlan(trimmedSubject);
-  } catch (error) {
+  let allowedInternalUrls: string[] = [];
+  let wpHost = identity.siteHost;
+
+  if (cmsDestination === "wordpress" && wordpressCredentials) {
+    log(onLog, "");
+    log(onLog, "Préparation du maillage interne…");
+    try {
+      linkPlan = await buildInternalLinkPlan(trimmedSubject);
+    } catch (error) {
+      log(
+        onLog,
+        `Maillage : inventaire indisponible (${error instanceof Error ? error.message : "erreur"}) — aucun lien interne autorisé.`
+      );
+      linkPlan = {
+        subject: trimmedSubject,
+        themes: [],
+        catalogSize: 0,
+        catalogStale: true,
+        candidates: [],
+        selected: [],
+        rejected: [],
+        minScore: 0.28,
+        maxLinks: 4,
+      };
+    }
+
+    if (linkPlan.catalogStale) {
+      log(
+        onLog,
+        "Maillage : inventaire WordPress potentiellement périmé — lancer une sync SEO si besoin."
+      );
+    }
     log(
       onLog,
-      `Maillage : inventaire indisponible (${error instanceof Error ? error.message : "erreur"}) — aucun lien interne autorisé.`
+      `Maillage : ${linkPlan.selected.length} destination(s) autorisée(s) sur ${linkPlan.catalogSize} publiée(s).`
+    );
+    for (const item of linkPlan.selected) {
+      log(
+        onLog,
+        `  • ${item.title} (${Math.round(item.score * 100)} %) — ${item.url}`
+      );
+    }
+    allowedInternalUrls = linkPlan.selected.map((item) => item.url);
+    wpHost = siteHostFromWpUrl(wordpressCredentials.url, identity.siteHost);
+  } else {
+    // Webflow : pas d’inventaire WordPress pour le maillage.
+    log(onLog, "");
+    log(
+      onLog,
+      "Maillage interne WordPress désactivé pour la destination Webflow."
     );
     linkPlan = {
       subject: trimmedSubject,
       themes: [],
       catalogSize: 0,
-      catalogStale: true,
+      catalogStale: false,
       candidates: [],
       selected: [],
       rejected: [],
       minScore: 0.28,
-      maxLinks: 4,
+      maxLinks: 0,
     };
   }
-
-  if (linkPlan.catalogStale) {
-    log(
-      onLog,
-      "Maillage : inventaire WordPress potentiellement périmé — lancer une sync SEO si besoin."
-    );
-  }
-  log(
-    onLog,
-    `Maillage : ${linkPlan.selected.length} destination(s) autorisée(s) sur ${linkPlan.catalogSize} publiée(s).`
-  );
-  for (const item of linkPlan.selected) {
-    log(
-      onLog,
-      `  • ${item.title} (${Math.round(item.score * 100)} %) — ${item.url}`
-    );
-  }
-
-  const allowedInternalUrls = linkPlan.selected.map((item) => item.url);
-  const wpHost = siteHostFromWpUrl(
-    wordpressCredentials.url,
-    identity.siteHost
-  );
 
   log(onLog, "");
   log(
@@ -477,18 +546,29 @@ export async function runAgentSession(
     `Agent éditorial : ${editorialAgent.label} (${editorialAgent.agentIdSource})`
   );
   log(onLog, `Destination CMS : ${cmsDestination}`);
+  const sessionToolNames = editorialAgent.tools.map((tool) =>
+    tool.type === "function" ? tool.name : tool.type
+  );
+  log(onLog, `Outils session : ${sessionToolNames.join(", ")}`);
   log(onLog, "Création de la session...");
 
-  // Agent + outils résolus pour la destination — pas de repli silencieux.
-  if (editorialAgent.agentId !== connections.openai.agentId) {
-    // WordPress doit utiliser le même agent que RuntimeConnections.
-    // Webflow (futur) peut différer ; wordpress ne doit jamais diverger.
-    if (cmsDestination === "wordpress") {
-      throw new Error(
-        "Incohérence agent WordPress entre le registre éditorial et RuntimeConnections."
-      );
-    }
+  // WordPress : l’agent registre doit coincider avec RuntimeConnections.
+  if (
+    cmsDestination === "wordpress" &&
+    connections &&
+    editorialAgent.agentId !== connections.openai.agentId
+  ) {
+    throw new Error(
+      "Incohérence agent WordPress entre le registre éditorial et RuntimeConnections."
+    );
   }
+
+  const articlePrompt = buildArticlePrompt(
+    options.generationMessage?.trim() || trimmedSubject,
+    linkPlan,
+    identity,
+    cmsDestination
+  );
 
   const stream = await openai.beta.agents.sessions.create({
     agent_id: editorialAgent.agentId,
@@ -498,20 +578,19 @@ export async function runAgentSession(
     environment: {
       type: "none",
     },
-    input: buildArticlePrompt(
-      options.generationMessage?.trim() || trimmedSubject,
-      linkPlan,
-      identity
-    ),
+    input: articlePrompt,
     stream: true,
   });
 
   let sessionId: string | null = null;
   let wordpressResult: WordPressDraftResult | null = null;
+  let cmsResultNormalized: RunAgentSessionCmsResult | null = null;
   let draftMeta: Pick<WordPressDraftInput, "slug" | "excerpt"> = {
     slug: "",
     excerpt: "",
   };
+  /** Dernier texte assistant (diagnostic only — jamais utilisé pour créer un brouillon). */
+  let lastAssistantTextPreview = "";
 
   try {
     for await (const event of stream) {
@@ -572,6 +651,10 @@ export async function runAgentSession(
       }
 
       if (event.type === "agent.session.turn.output_text.done") {
+        const text = typeof event.text === "string" ? event.text : "";
+        if (text.trim()) {
+          lastAssistantTextPreview = text.trim().slice(0, 280);
+        }
         log(onLog, "");
         log(onLog, `Agent : ${event.text}`);
         log(onLog, "");
@@ -581,14 +664,22 @@ export async function runAgentSession(
         itemType === "function_call" &&
         "item" in event &&
         event.item &&
-        "name" in event.item &&
-        event.item.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME
+        "name" in event.item
       ) {
-        await emitProgress(
-          onProgress,
-          "creating_wordpress",
-          PROGRESS_MESSAGES.creatingWordpress
-        );
+        if (event.item.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME) {
+          await emitProgress(
+            onProgress,
+            "creating_wordpress",
+            PROGRESS_MESSAGES.creatingWordpress
+          );
+        }
+        if (event.item.name === CREATE_WEBFLOW_DRAFT_TOOL_NAME) {
+          await emitProgress(
+            onProgress,
+            "creating_webflow",
+            PROGRESS_MESSAGES.creatingWebflow
+          );
+        }
       }
 
       if (event.type === "agent.session.requires_action") {
@@ -602,10 +693,11 @@ export async function runAgentSession(
         const session = await openai.beta.agents.sessions.retrieve(sessionId);
 
         for (const action of session.required_actions ?? []) {
-          if (
-            action.type === "function_call" &&
-            action.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME
-          ) {
+          if (action.type !== "function_call") {
+            continue;
+          }
+
+          if (action.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME) {
             if (cmsDestination !== "wordpress") {
               throw new AgentSessionError(
                 `Outil ${CREATE_WORDPRESS_DRAFT_TOOL_NAME} refusé pour la destination « ${cmsDestination} ».`,
@@ -621,6 +713,9 @@ export async function runAgentSession(
                 "Outil WordPress non autorisé pour cet agent éditorial.",
                 "tool_not_allowed_for_agent"
               );
+            }
+            if (!wordpressCredentials) {
+              throw new Error("Identifiants WordPress manquants.");
             }
 
             await emitProgress(
@@ -712,6 +807,17 @@ export async function runAgentSession(
               slug: args.slug ?? "",
               excerpt: args.excerpt ?? "",
             };
+            cmsResultNormalized = {
+              destination: "wordpress",
+              externalId: String(result.post_id),
+              status: result.status,
+              title: result.title,
+              link: result.link,
+              metaTitle: result.meta_title,
+              metaDescription: result.meta_description,
+              slug: draftMeta.slug ?? "",
+              excerpt: draftMeta.excerpt ?? "",
+            };
 
             log(onLog, "");
             log(onLog, "✅ Brouillon WordPress créé");
@@ -747,13 +853,97 @@ export async function runAgentSession(
               PROGRESS_MESSAGES.finalizing
             );
           }
+
+          if (action.name === CREATE_WEBFLOW_DRAFT_TOOL_NAME) {
+            if (cmsDestination !== "webflow") {
+              throw new AgentSessionError(
+                `Outil ${CREATE_WEBFLOW_DRAFT_TOOL_NAME} refusé pour la destination « ${cmsDestination} ».`,
+                "tool_not_allowed_for_cms"
+              );
+            }
+            if (
+              !editorialAgent.allowedToolNames.includes(
+                CREATE_WEBFLOW_DRAFT_TOOL_NAME
+              )
+            ) {
+              throw new AgentSessionError(
+                "Outil Webflow non autorisé pour cet agent éditorial.",
+                "tool_not_allowed_for_agent"
+              );
+            }
+
+            await emitProgress(
+              onProgress,
+              "creating_webflow",
+              PROGRESS_MESSAGES.creatingWebflow
+            );
+
+            const args = parseWebflowDraftArgs(action.arguments);
+            log(onLog, "");
+            log(onLog, "→ Appel create_webflow_draft");
+            log(onLog, `Titre : ${args.title}`);
+            log(onLog, `Slug : ${args.slug}`);
+            log(onLog, `Meta title : ${args.meta_title}`);
+            log(onLog, `Meta description : ${args.meta_description}`);
+
+            const cmsResult = await getCmsConnector("webflow").createDraft(args);
+            if (!cmsResult.webflow) {
+              throw new Error("Réponse CMS Webflow incomplète.");
+            }
+
+            draftMeta = {
+              slug: cmsResult.webflow.slug,
+              excerpt: cmsResult.webflow.excerpt,
+            };
+            cmsResultNormalized = {
+              destination: "webflow",
+              externalId: cmsResult.externalId,
+              status: cmsResult.status,
+              title: cmsResult.title,
+              link: "",
+              metaTitle: cmsResult.webflow.meta_title,
+              metaDescription: cmsResult.webflow.meta_description,
+              slug: cmsResult.webflow.slug,
+              excerpt: cmsResult.webflow.excerpt,
+            };
+
+            log(onLog, "");
+            log(onLog, "✅ Brouillon Webflow créé");
+            log(onLog, `ID CMS : ${cmsResult.externalId}`);
+            log(onLog, `Statut : ${cmsResult.status}`);
+
+            await openai.beta.agents.sessions.events.create(sessionId, {
+              events: [
+                {
+                  type: "agent.session.input.tool_result",
+                  turn_id: action.turn_id,
+                  call_id: action.call_id,
+                  success: true,
+                  output: JSON.stringify({
+                    success: true,
+                    item_id: cmsResult.externalId,
+                    status: cmsResult.status,
+                    title: cmsResult.title,
+                    isDraft: true,
+                  }),
+                },
+              ],
+            });
+
+            log(onLog, "→ Résultat renvoyé à l'agent");
+            await emitProgress(
+              onProgress,
+              "finalizing",
+              PROGRESS_MESSAGES.finalizing
+            );
+          }
         }
       }
 
       if (event.type === "agent.session.turn.completed") {
         log(onLog, "");
         log(onLog, "✅ Tour terminé.");
-        if (wordpressResult) {
+        if (cmsResultNormalized) {
           await emitProgress(
             onProgress,
             "completed",
@@ -788,7 +978,7 @@ export async function runAgentSession(
     attachObservedEvents(
       error,
       eventTraceFromState(eventTrace, sessionId),
-      wordpressResult?.status ?? null,
+      wordpressResult?.status ?? cmsResultNormalized?.status ?? null,
       wordpressResult
         ? { postId: wordpressResult.post_id, link: wordpressResult.link }
         : undefined
@@ -813,9 +1003,23 @@ export async function runAgentSession(
     throw error;
   }
 
-  if (!wordpressResult) {
+  if (!cmsResultNormalized) {
+    const missingTool =
+      cmsDestination === "webflow"
+        ? "create_webflow_draft"
+        : "create_wordpress_draft";
+    const hint =
+      emittedWriting || lastAssistantTextPreview
+        ? " L'agent a produit du texte sans appeler l'outil de création de brouillon."
+        : "";
+    if (lastAssistantTextPreview) {
+      log(
+        onLog,
+        `Aperçu texte agent (non utilisé pour créer un brouillon) : ${lastAssistantTextPreview}`
+      );
+    }
     const error = new AgentSessionError(
-      "create_wordpress_draft n'a pas été appelé.",
+      `${missingTool} n'a pas été appelé.${hint}`,
       "no_draft",
       sessionId
     );
@@ -842,7 +1046,12 @@ export async function runAgentSession(
     success: true,
     sessionId,
     subject: trimmedSubject,
-    wordpress: toCallerResult(wordpressResult, draftMeta),
+    cmsDestination,
+    cms: cmsResultNormalized,
+    wordpress:
+      wordpressResult && cmsDestination === "wordpress"
+        ? toCallerResult(wordpressResult, draftMeta)
+        : null,
     detectedCategories: detectedCategories.map((category) => ({
       categoryId: category.categoryId,
       name: category.name,

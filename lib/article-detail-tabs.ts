@@ -8,24 +8,41 @@ export const ARTICLE_DETAIL_TABS = [
 
 export type ArticleDetailTabId = (typeof ARTICLE_DETAIL_TABS)[number]["id"];
 
+export type ArticleDetailTab = (typeof ARTICLE_DETAIL_TABS)[number];
+
+/** Onglets visibles selon la destination CMS (Webflow : pas d’image / perf SEO). */
+export function getArticleDetailTabs(
+  cmsDestination?: string | null
+): readonly ArticleDetailTab[] {
+  if (cmsDestination === "webflow") {
+    return ARTICLE_DETAIL_TABS.filter(
+      (tab) => tab.id !== "featured" && tab.id !== "performances"
+    );
+  }
+  return ARTICLE_DETAIL_TABS;
+}
+
 export function moveArticleDetailTab(
   current: ArticleDetailTabId,
-  key: string
+  key: string,
+  tabs: readonly ArticleDetailTab[] = ARTICLE_DETAIL_TABS
 ): ArticleDetailTabId {
-  const index = ARTICLE_DETAIL_TABS.findIndex((tab) => tab.id === current);
+  if (tabs.length === 0) {
+    return current;
+  }
+  const index = tabs.findIndex((tab) => tab.id === current);
+  const safeIndex = index < 0 ? 0 : index;
   if (key === "ArrowRight") {
-    return ARTICLE_DETAIL_TABS[(index + 1) % ARTICLE_DETAIL_TABS.length].id;
+    return tabs[(safeIndex + 1) % tabs.length]!.id;
   }
   if (key === "ArrowLeft") {
-    return ARTICLE_DETAIL_TABS[
-      (index - 1 + ARTICLE_DETAIL_TABS.length) % ARTICLE_DETAIL_TABS.length
-    ].id;
+    return tabs[(safeIndex - 1 + tabs.length) % tabs.length]!.id;
   }
   if (key === "Home") {
-    return ARTICLE_DETAIL_TABS[0].id;
+    return tabs[0]!.id;
   }
   if (key === "End") {
-    return ARTICLE_DETAIL_TABS[ARTICLE_DETAIL_TABS.length - 1].id;
+    return tabs[tabs.length - 1]!.id;
   }
   return current;
 }

@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  assertWebflowAllowedRequest,
   assertWebflowReadOnlyPath,
   createWebflowClient,
   mapWebflowHttpStatus,
@@ -17,7 +18,6 @@ import { listWebflowSites } from "../lib/webflow/sites";
 import { listWebflowCollections } from "../lib/webflow/collections";
 import { testWebflowConnection } from "../lib/webflow/connection-test";
 import {
-  assertWebflowDraftCreationDisabled,
   CREATE_WEBFLOW_DRAFT_REQUIRED_PARAMS,
   CREATE_WEBFLOW_DRAFT_TOOL_NAME,
   createWebflowDraftToolDefinition,
@@ -102,11 +102,28 @@ describe("V7.10.0 — Webflow Data API lecture seule", () => {
     assert.equal(mapWebflowHttpStatus(503, null).code, "server_error");
   });
 
-  it("refuse les chemins d’écriture / publication côté client", () => {
-    assert.throws(() => assertWebflowReadOnlyPath("/collections/x/items"), /écriture|publication/i);
-    assert.throws(() => assertWebflowReadOnlyPath("/sites/x/publish"), /écriture|publication/i);
+  it("refuse live/publish ; autorise GET et POST items brouillon", () => {
+    assert.throws(
+      () => assertWebflowAllowedRequest("POST", "/sites/x/publish"),
+      /live|publish|interdits|autorisés/i
+    );
+    assert.throws(
+      () => assertWebflowAllowedRequest("POST", "/collections/x/items/live"),
+      /live|publish|interdits/i
+    );
+    assert.throws(
+      () => assertWebflowAllowedRequest("POST", "/sites"),
+      /autorisés/i
+    );
+    assert.doesNotThrow(() => assertWebflowAllowedRequest("GET", "/sites"));
+    assert.doesNotThrow(() =>
+      assertWebflowAllowedRequest("GET", "/collections/abc")
+    );
+    assert.doesNotThrow(() =>
+      assertWebflowAllowedRequest("POST", "/collections/x/items")
+    );
+    // Alias lecture seule : GET toujours OK
     assert.doesNotThrow(() => assertWebflowReadOnlyPath("/sites"));
-    assert.doesNotThrow(() => assertWebflowReadOnlyPath("/collections/abc"));
   });
 
   it("authentifie et liste les sites via GET /sites", async () => {
@@ -248,7 +265,7 @@ describe("V7.10.0 — Webflow Data API lecture seule", () => {
     assert.equal(JSON.stringify(result).includes("super-secret-token-value"), false);
   });
 
-  it("create_webflow_draft est documenté mais non activé", () => {
+  it("create_webflow_draft est branché pour l’agent Webflow (V7.10.1)", () => {
     assert.equal(CREATE_WEBFLOW_DRAFT_TOOL_NAME, "create_webflow_draft");
     assert.deepEqual(
       [...CREATE_WEBFLOW_DRAFT_REQUIRED_PARAMS].sort(),
@@ -262,11 +279,10 @@ describe("V7.10.0 — Webflow Data API lecture seule", () => {
       ].sort()
     );
     assert.equal(createWebflowDraftToolDefinition.type, "function");
-    assert.throws(() => assertWebflowDraftCreationDisabled(), /non activée/i);
 
     const tools = getAgentToolsForDestination("webflow");
     assert.ok(
-      !tools.some(
+      tools.some(
         (tool) =>
           tool.type === "function" &&
           tool.name === CREATE_WEBFLOW_DRAFT_TOOL_NAME
@@ -274,12 +290,9 @@ describe("V7.10.0 — Webflow Data API lecture seule", () => {
     );
   });
 
-  it("refuse la génération Webflow tant que la destination est désactivée", () => {
+  it("accepte la destination Webflow au catalogue (readiness runtime séparée)", () => {
     const parsed = parseCmsDestinationInput("webflow");
-    assert.equal(parsed.ok, false);
-    if (!parsed.ok) {
-      assert.match(parsed.error, /pas encore disponible/i);
-    }
+    assert.equal(parsed.ok, true);
     const connector = getCmsConnector("webflow");
     assert.equal(connector.id, "webflow");
   });
@@ -358,13 +371,20 @@ describe("V7.10.0 — Webflow Data API lecture seule", () => {
     assert.doesNotMatch(tools, /create_webflow_draft/);
   });
 
-  it("client refuse toute méthode non GET", async () => {
+  it("client refuse POST hors création d’items brouillon", async () => {
     const client = createWebflowClient({ apiToken: "wf_test_token_ok" });
     await assert.rejects(
+      () => client.request({ method: "POST", path: "/sites" }),
+      /autorisés/i
+    );
+    await assert.rejects(
       () =>
-        // @ts-expect-error — garde runtime volontaire
-        client.request({ method: "POST", path: "/sites" }),
-      /GET|autorisées/i
+        client.request({
+          method: "POST",
+          path: "/collections/x/items/live",
+          body: { isDraft: true, isArchived: false, fieldData: {} },
+        }),
+      /live|publish|interdits/i
     );
   });
 });

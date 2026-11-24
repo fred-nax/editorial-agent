@@ -14,7 +14,7 @@ import type { WordPressConfig } from "@/lib/settings/app-settings";
 
 /**
  * Catalogue des destinations CMS.
- * Webflow : connexion + mapping en lecture seule (V7.10.0) — génération non activée.
+ * Webflow : génération de brouillons CMS (V7.10.1) si readiness runtime OK.
  */
 export const CMS_DESTINATION_CATALOG: readonly CmsDestinationDescriptor[] = [
   {
@@ -29,9 +29,11 @@ export const CMS_DESTINATION_CATALOG: readonly CmsDestinationDescriptor[] = [
     id: "webflow",
     label: "Webflow",
     description:
-      "Connexion Data API V2 et mapping CMS (lecture seule). Génération d’items non activée.",
-    status: "coming_soon",
-    enabled: false,
+      "Brouillons CMS via Data API V2 (agent OpenAI Webflow). Publication manuelle dans Webflow.",
+    status: "active",
+    // Sélectionnable côté catalogue ; la readiness runtime (token/mapping/agent)
+    // décide si l’UI et l’API autorisent réellement la génération.
+    enabled: true,
   },
 ] as const;
 
@@ -79,8 +81,7 @@ export function parseCmsDestinationInput(
 }
 
 /**
- * Retourne le connecteur actif.
- * Seul WordPress est implémenté — webflow lève une erreur explicite.
+ * Retourne le connecteur actif (WordPress ou Webflow brouillon).
  */
 export function getCmsConnector(
   destination: CmsDestinationId | string | null | undefined,

@@ -1,4 +1,5 @@
 export {
+  assertWebflowAllowedRequest,
   assertWebflowReadOnlyPath,
   createWebflowClient,
   type WebflowClient,
@@ -19,6 +20,24 @@ export {
   validateWebflowFieldMapping,
 } from "@/lib/webflow/mapping";
 export { testWebflowConnection } from "@/lib/webflow/connection-test";
+export {
+  buildWebflowFieldData,
+  createWebflowCollectionDraft,
+  findWebflowItemIdBySlug,
+  type WebflowDraftCreateInput,
+  type WebflowDraftCreateResult,
+} from "@/lib/webflow/drafts";
+export {
+  assertValidWebflowDraftPayload,
+  validateWebflowDraftPayload,
+  type WebflowContentValidationIssue,
+  type WebflowDraftPayload,
+} from "@/lib/webflow/content-validation";
+export { estimateReadingTimeMinutes } from "@/lib/webflow/reading-time";
+export {
+  getWebflowGenerationReadiness,
+  type WebflowGenerationReadiness,
+} from "@/lib/webflow/readiness";
 export {
   WEBFLOW_API_BASE,
   WEBFLOW_FIELD_TYPE_ALLOWLIST,

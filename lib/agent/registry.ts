@@ -16,7 +16,10 @@ import {
   agentSessionTools,
   CREATE_WORDPRESS_DRAFT_TOOL_NAME,
 } from "@/lib/agent/tools";
-import { CREATE_WEBFLOW_DRAFT_TOOL_NAME } from "@/lib/agent/webflow-draft-tool";
+import {
+  CREATE_WEBFLOW_DRAFT_TOOL_NAME,
+  createWebflowDraftToolDefinition,
+} from "@/lib/agent/webflow-draft-tool";
 
 export type EditorialAgentSource = "database" | "env";
 
@@ -39,7 +42,7 @@ export type ResolvedEditorialAgent = {
   allowedToolNames: readonly string[];
 };
 
-/** Profils déclaratifs — Webflow préparé mais non activé côté CMS. */
+/** Profils déclaratifs — WordPress et Webflow (outils isolés). */
 export const EDITORIAL_AGENT_PROFILES: readonly EditorialAgentProfile[] = [
   {
     cmsDestination: "wordpress",
@@ -53,9 +56,8 @@ export const EDITORIAL_AGENT_PROFILES: readonly EditorialAgentProfile[] = [
     cmsDestination: "webflow",
     label: "Agent éditorial Webflow",
     description:
-      "Agent dédié (OPENAI_WEBFLOW_AGENT_ID / AppSettings). create_webflow_draft préparé mais non branché (génération désactivée).",
+      "Agent dédié (OPENAI_WEBFLOW_AGENT_ID / AppSettings). Outils : web_search + create_webflow_draft.",
     agentEnvKey: "OPENAI_WEBFLOW_AGENT_ID",
-    // create_webflow_draft listé pour documentation ; non inclus dans les tools de session.
     allowedToolNames: ["web_search", CREATE_WEBFLOW_DRAFT_TOOL_NAME],
   },
 ] as const;
@@ -74,8 +76,8 @@ export function getEditorialAgentProfile(
 
 /**
  * Outils OpenAI autorisés pour une destination.
- * WordPress : outils historiques inchangés.
- * Webflow : web_search uniquement tant que create_webflow_draft n’est pas activé.
+ * WordPress : outils historiques inchangés (web_search + create_wordpress_draft).
+ * Webflow : web_search + create_webflow_draft — jamais create_wordpress_draft.
  */
 export function getAgentToolsForDestination(
   destination: CmsDestinationId
@@ -102,17 +104,34 @@ export function getAgentToolsForDestination(
     return tools;
   }
 
-  // Webflow : pas de create_wordpress_draft ; create_webflow_draft non branché.
-  return agentSessionTools.filter(
-    (tool) => tool.type === "web_search" && allowed.has("web_search")
-  );
+  const tools: AgentToolParam[] = [];
+  if (allowed.has("web_search")) {
+    const webSearch = agentSessionTools.find((tool) => tool.type === "web_search");
+    if (webSearch) {
+      tools.push(webSearch);
+    }
+  }
+  if (allowed.has(CREATE_WEBFLOW_DRAFT_TOOL_NAME)) {
+    tools.push(createWebflowDraftToolDefinition);
+  }
+  if (
+    tools.some(
+      (tool) =>
+        tool.type === "function" &&
+        tool.name === CREATE_WORDPRESS_DRAFT_TOOL_NAME
+    )
+  ) {
+    throw new Error(
+      "Isolation Webflow : create_wordpress_draft ne doit jamais être exposé."
+    );
+  }
+  return tools;
 }
 
 /**
  * Résout l’agent OpenAI pour une destination CMS.
  * - WordPress : AppSettings.openaiAgentId puis OPENAI_AGENT_ID (comportement historique).
  * - Webflow : AppSettings.openaiWebflowAgentId puis OPENAI_WEBFLOW_AGENT_ID — jamais de repli WP.
- * La destination Webflow reste désactivée (génération refusée) en V7.10.0.
  */
 export async function resolveEditorialAgentForDestination(
   destinationInput: CmsDestinationId | string | null | undefined
@@ -125,9 +144,7 @@ export async function resolveEditorialAgentForDestination(
 
   if (!isCmsDestinationEnabled(destination)) {
     throw new Error(
-      destination === "webflow"
-        ? "Webflow n’est pas encore disponible pour la génération. Validez la connexion et le mapping, puis utilisez WordPress."
-        : `La destination CMS « ${destination} » n’est pas activée.`
+      `La destination CMS « ${destination} » n’est pas activée.`
     );
   }
 
