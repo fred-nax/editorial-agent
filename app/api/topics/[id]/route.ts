@@ -2,9 +2,22 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
 import { decideTopicDeletion } from "@/lib/topics/delete";
+import {
+  assertModuleAllowedForWorkspace,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+  workspaceWhere,
+} from "@/lib/workspace";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function workspaceErrorResponse(error: WorkspaceContextError) {
+  return NextResponse.json(
+    { error: error.message, code: error.code },
+    { status: error.status }
+  );
 }
 
 const MAX_SUBJECT_LENGTH = 500;
@@ -48,8 +61,12 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
+    const workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "topics");
     const { id } = await context.params;
-    const existing = await db.topic.findUnique({ where: { id } });
+    const existing = await db.topic.findFirst({
+      where: { id, ...workspaceWhere(workspace.id) },
+    });
 
     if (!existing) {
       return NextResponse.json({ error: "Sujet introuvable." }, { status: 404 });
@@ -150,12 +167,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const topic = await db.topic.update({
-      where: { id },
+      where: { id, workspaceId: workspace.id },
       data,
     });
 
     return NextResponse.json({ topic });
   } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
     const message =
       error instanceof Error ? error.message : "Impossible de mettre à jour le sujet.";
     return NextResponse.json({ error: message }, { status: 400 });
@@ -167,15 +187,28 @@ export async function DELETE(_request: Request, context: RouteContext) {
     return unauthorized();
   }
 
+  let workspace: Awaited<ReturnType<typeof resolveActiveWorkspace>>;
+  try {
+    workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "topics");
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
+    throw error;
+  }
+
   const { id } = await context.params;
-  const existing = await db.topic.findUnique({ where: { id } });
+  const existing = await db.topic.findFirst({
+    where: { id, ...workspaceWhere(workspace.id) },
+  });
 
   if (!existing) {
     return NextResponse.json({ error: "Sujet introuvable." }, { status: 404 });
   }
 
   const linkedGenerationCount = await db.articleGeneration.count({
-    where: { topicId: id },
+    where: { topicId: id, ...workspaceWhere(workspace.id) },
   });
 
   const decision = decideTopicDeletion({
@@ -191,6 +224,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
 
   // Suppression du sujet uniquement — aucune cascade vers ArticleGeneration / WordPress.
-  await db.topic.delete({ where: { id } });
+  await db.topic.delete({ where: { id, workspaceId: workspace.id } });
   return NextResponse.json({ success: true });
 }

@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { WORKSPACE_IDS } from "../workspace/constants";
 import { compareEditorialSimilarity } from "./editorial-similarity";
 import { compareTitleSimilarity } from "./similarity";
 import type { SimilarPostMatch, SimilarTopicMatch } from "./types";
@@ -11,7 +12,7 @@ export async function findSimilarContent(input: {
   subject: string;
   angle?: string | null;
   searchIntent?: string | null;
-}): Promise<{
+}, workspaceId: string = WORKSPACE_IDS.wordpress): Promise<{
   similarPosts: SimilarPostMatch[];
   similarTopics: SimilarTopicMatch[];
   duplicateRisk: "none" | "low" | "medium" | "high";
@@ -24,6 +25,7 @@ export async function findSimilarContent(input: {
   const [posts, topics] = await Promise.all([
     inventoryUsable
       ? db.wordPressPost.findMany({
+          where: { workspaceId },
           select: {
             wpPostId: true,
             title: true,
@@ -35,7 +37,10 @@ export async function findSimilarContent(input: {
         })
       : Promise.resolve([]),
     db.topic.findMany({
-      where: { status: { in: ["pending", "generating", "completed"] } },
+      where: {
+        workspaceId,
+        status: { in: ["pending", "generating", "completed"] },
+      },
       select: { id: true, subject: true, angle: true },
       take: 1000,
     }),

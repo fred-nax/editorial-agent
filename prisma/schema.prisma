@@ -66,8 +66,93 @@ enum ResearchGoal {
   commercial
 }
 
+/// Espace éditorial isolé (V7.11) — pas de multi-tenant SaaS.
+model EditorialWorkspace {
+  id              String   @id
+  slug            String   @unique
+  name            String
+  cmsProvider     String
+  siteUrl         String?
+  siteLabel       String?
+  defaultLanguage String   @default("fr")
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cmsSettings       WorkspaceCmsSettings?
+  generations       ArticleGeneration[]
+  featuredImages    ArticleFeaturedImage[]
+  topics            Topic[]
+  watchSearches     EditorialWatchSearch[]
+  wordpressPosts    WordPressPost[]
+  wordpressSyncRuns WordPressSyncRun[]
+  customThemes      CustomTheme[]
+  researchConfigs   ResearchConfig[]
+  opportunityRuns   OpportunitySearchRun[]
+  opportunities     SeoOpportunity[]
+  googleSelection   GooglePropertySelection?
+  googleSyncRuns    GoogleSyncRun[]
+  gscPropertyStats  GscPropertyDailyStat[]
+  gscPageStats      GscPageDailyStat[]
+  gscQueryStats     GscQueryDailyStat[]
+  ga4PageStats      Ga4PageDailyStat[]
+  ga4SourceStats    Ga4PageSourceDailyStat[]
+  migrationIssues   WorkspaceMigrationIssue[]
+
+  @@index([cmsProvider, enabled])
+}
+
+/// Connexion CMS + agent + paramètres SEO propres à un espace.
+/// Secrets chiffrés AES-256-GCM (même crypto que AppSettings).
+model WorkspaceCmsSettings {
+  id                       String   @id @default(cuid())
+  workspaceId              String   @unique
+  workspace                EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// Agent OpenAI de l’espace (WP ou Webflow selon cmsProvider).
+  openaiAgentId            String?
+  /// WordPress
+  wpUrl                    String?
+  wpUsername               String?
+  wpAppPasswordEncrypted   String?
+  inventoryWpOrigin        String?
+  inventoryValid           Boolean  @default(true)
+  wpCategoriesJson         String?
+  wpAllowedCategoryIds     String?
+  wpDefaultCategoryId      Int?
+  wpCategoriesSyncedAt     DateTime?
+  wpCategoriesOrigin       String?
+  wpSeoPlugin              String?
+  /// Webflow
+  webflowApiTokenEncrypted String?
+  webflowSiteId            String?
+  webflowCollectionId      String?
+  webflowFieldMappingJson  String?
+  /// Langue éditoriale (copie du workspace, surcharge éventuelle).
+  defaultLanguage          String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+/// Ambiguïtés de rattachement détectées pendant la migration V7.11 (pas d’assignation silencieuse).
+model WorkspaceMigrationIssue {
+  id           String   @id @default(cuid())
+  workspaceId  String?
+  workspace    EditorialWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  entityType   String
+  entityId     String
+  reason       String
+  details      Json?
+  resolved     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([resolved])
+}
+
 model ArticleGeneration {
   id              String             @id @default(cuid())
+  workspaceId     String
+  workspace       EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   subject         String
   title           String?
   excerpt         String?
@@ -105,11 +190,17 @@ model ArticleGeneration {
   updatedAt         DateTime           @updatedAt
 
   featuredImages ArticleFeaturedImage[]
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, status])
+  @@index([workspaceId, cmsDestination])
 }
 
 /// Image à la une (manuelle V7.0 ou demandée avec l’article V7.1).
 model ArticleFeaturedImage {
   id           String   @id @default(cuid())
+  workspaceId  String
+  workspace    EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   generationId String
   generation   ArticleGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
   /// Chemin relatif sous le répertoire de stockage (jamais un path absolu client).
@@ -136,12 +227,15 @@ model ArticleFeaturedImage {
   updatedAt    DateTime @updatedAt
 
   @@index([generationId, createdAt])
+  @@index([workspaceId, status])
   @@index([status])
   @@index([status, updatedAt])
 }
 
 model Topic {
   id        String      @id @default(cuid())
+  workspaceId String
+  workspace EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   subject   String
   status    TopicStatus @default(pending)
   priority  Int         @default(0)
@@ -158,13 +252,16 @@ model Topic {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
-  @@unique([sourceUrl, subject])
+  @@unique([workspaceId, sourceUrl, subject])
+  @@index([workspaceId, status])
   @@index([sourceUrl])
 }
 
 /// Recherche de veille réussie. Le JSON contient les publications validées, jamais la réponse OpenAI brute.
 model EditorialWatchSearch {
   id           String   @id @default(cuid())
+  workspaceId  String
+  workspace    EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   theme        String
   periodDays   Int
   country      String
@@ -173,13 +270,16 @@ model EditorialWatchSearch {
   results      Json
   status       String   @default("completed")
 
+  @@index([workspaceId, searchedAt])
   @@index([searchedAt])
 }
 
 /// Inventaire éditorial WordPress (lecture seule, upsert, jamais de suppression).
 model WordPressPost {
   id          String    @id @default(cuid())
-  wpPostId    Int       @unique
+  workspaceId String
+  workspace   EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  wpPostId    Int
   title       String
   slug        String
   url         String
@@ -195,6 +295,8 @@ model WordPressPost {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  @@unique([workspaceId, wpPostId])
+  @@index([workspaceId, slug])
   @@index([slug])
   @@index([status])
   @@index([contentType])
@@ -203,6 +305,8 @@ model WordPressPost {
 
 model WordPressSyncRun {
   id              String    @id @default(cuid())
+  workspaceId     String
+  workspace       EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   status          String
   mode            String
   fetchedCount    Int       @default(0)
@@ -216,16 +320,20 @@ model WordPressSyncRun {
   error           String?
   startedAt       DateTime  @default(now())
   finishedAt      DateTime?
+
+  @@index([workspaceId, startedAt])
 }
 
 /// Catalogue unifié des thématiques SEO (V7.5) — administrable manuellement.
 model CustomTheme {
   id          String   @id @default(cuid())
+  workspaceId String
+  workspace   EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   name        String
   description String?
   active      Boolean  @default(true)
   /// Clé logique historique (ex. ai_agents) — seed V7.5, unique si présente.
-  legacyKey   String?  @unique
+  legacyKey   String?
   /// Angles éditoriaux (JSON string[]).
   explorationAngles Json?
   /// Quota par défaut pour une recherche multi-thématiques.
@@ -241,6 +349,8 @@ model CustomTheme {
   runs          OpportunitySearchRun[]
   opportunities SeoOpportunity[]
 
+  @@unique([workspaceId, legacyKey])
+  @@index([workspaceId, active])
   @@index([active])
   @@index([name])
   @@index([sortOrder])
@@ -249,6 +359,8 @@ model CustomTheme {
 /// Configuration de recherche enregistrée (ne mute pas l’historique).
 model ResearchConfig {
   id                   String       @id @default(cuid())
+  workspaceId          String
+  workspace            EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   name                 String
   mode                 ResearchMode
   researchGoal         ResearchGoal @default(seo)
@@ -263,12 +375,15 @@ model ResearchConfig {
   customTheme CustomTheme?           @relation(fields: [customThemeId], references: [id], onDelete: SetNull)
   runs        OpportunitySearchRun[]
 
+  @@index([workspaceId, mode])
   @@index([mode])
   @@index([customThemeId])
 }
 
 model OpportunitySearchRun {
   id                   String        @id @default(cuid())
+  workspaceId          String
+  workspace            EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   status               String
   themes               Json?
   mode                 ResearchMode?
@@ -290,6 +405,7 @@ model OpportunitySearchRun {
   config      ResearchConfig? @relation(fields: [configId], references: [id], onDelete: SetNull)
   customTheme CustomTheme?    @relation(fields: [customThemeId], references: [id], onDelete: SetNull)
 
+  @@index([workspaceId, status])
   @@index([status])
   @@index([mode])
   @@index([configId])
@@ -299,6 +415,8 @@ model OpportunitySearchRun {
 
 model SeoOpportunity {
   id               String                 @id @default(cuid())
+  workspaceId      String
+  workspace        EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   title            String
   subject          String
   angle            String?
@@ -312,7 +430,7 @@ model SeoOpportunity {
   sources          Json?
   naxialisService  String?
   status           OpportunityStatus      @default(new)
-  fingerprint      String?                @unique
+  fingerprint      String?
   scoreTotal       Int
   scoreRelevance   Int
   scoreCommercial  Int
@@ -339,6 +457,8 @@ model SeoOpportunity {
 
   themeRef CustomTheme? @relation(fields: [themeId], references: [id], onDelete: SetNull)
 
+  @@unique([workspaceId, fingerprint])
+  @@index([workspaceId, status])
   @@index([status])
   @@index([theme])
   @@index([themeId])
@@ -351,6 +471,7 @@ model SeoOpportunity {
 
 /// Configuration installation (mono-site). Secrets chiffrés AES-256-GCM.
 /// Priorité : valeurs DB > variables d'environnement. Jamais de secret en clair.
+/// V7.11 : secrets globaux (clé OpenAI, identité) ; CMS migré vers WorkspaceCmsSettings (dual-read legacy).
 model AppSettings {
   id                     String   @id @default("default")
   clientName             String?
@@ -403,14 +524,16 @@ model GoogleConnection {
   connectedAt           DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  selection GooglePropertySelection?
-  syncRuns  GoogleSyncRun[]
+  selections GooglePropertySelection[]
+  syncRuns   GoogleSyncRun[]
 }
 
-/// Propriétés GSC + GA4 sélectionnées pour cette installation.
+/// Propriétés GSC + GA4 sélectionnées pour un espace éditorial.
 model GooglePropertySelection {
-  id                 String   @id @default("default")
-  connectionId       String   @unique
+  id                 String   @id @default(cuid())
+  workspaceId        String   @unique
+  workspace          EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  connectionId       String
   gscPropertyUrl     String?
   gscPropertyType    String?
   gscPermissionLevel String?
@@ -420,10 +543,14 @@ model GooglePropertySelection {
   updatedAt          DateTime @updatedAt
 
   connection GoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
 }
 
 model GoogleSyncRun {
   id           String    @id @default(cuid())
+  workspaceId  String?
+  workspace    EditorialWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   connectionId String    @default("default")
   status       String
   mode         String
@@ -437,6 +564,7 @@ model GoogleSyncRun {
 
   connection GoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
+  @@index([workspaceId, startedAt])
   @@index([status])
   @@index([startedAt])
 }
@@ -444,6 +572,8 @@ model GoogleSyncRun {
 /// Totaux Search Console quotidiens au niveau propriété (pas une somme de pages).
 model GscPropertyDailyStat {
   id          String   @id @default(cuid())
+  workspaceId String?
+  workspace   EditorialWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   propertyUrl String
   date        DateTime @db.Date
   clicks      Float    @default(0)
@@ -454,12 +584,15 @@ model GscPropertyDailyStat {
   syncedAt    DateTime @default(now())
 
   @@unique([propertyUrl, date])
+  @@index([workspaceId, propertyUrl, date])
   @@index([propertyUrl, date])
 }
 
 /// Stats Search Console quotidiennes par URL (upsert).
 model GscPageDailyStat {
   id          String   @id @default(cuid())
+  workspaceId String?
+  workspace   EditorialWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   propertyUrl String
   pageUrl     String
   pageUrlNorm String
@@ -473,6 +606,7 @@ model GscPageDailyStat {
   syncedAt    DateTime @default(now())
 
   @@unique([propertyUrl, pageUrlNorm, date])
+  @@index([workspaceId, propertyUrl, date])
   @@index([propertyUrl, date])
   @@index([pageUrlNorm])
   @@index([wpPostId])
@@ -481,6 +615,8 @@ model GscPageDailyStat {
 /// Requêtes GSC quotidiennes (top) par page.
 model GscQueryDailyStat {
   id          String   @id @default(cuid())
+  workspaceId String?
+  workspace   EditorialWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   propertyUrl String
   pageUrlNorm String
   query       String
@@ -492,12 +628,15 @@ model GscQueryDailyStat {
   syncedAt    DateTime @default(now())
 
   @@unique([propertyUrl, pageUrlNorm, query, date])
+  @@index([workspaceId, propertyUrl, pageUrlNorm, date])
   @@index([propertyUrl, pageUrlNorm, date])
 }
 
 /// Stats GA4 quotidiennes par page.
 model Ga4PageDailyStat {
   id              String   @id @default(cuid())
+  workspaceId     String?
+  workspace       EditorialWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   propertyId      String
   pagePath        String
   pageUrlNorm     String
@@ -510,6 +649,7 @@ model Ga4PageDailyStat {
   syncedAt        DateTime @default(now())
 
   @@unique([propertyId, pageUrlNorm, date])
+  @@index([workspaceId, propertyId, date])
   @@index([propertyId, date])
   @@index([pageUrlNorm])
   @@index([wpPostId])
@@ -518,6 +658,8 @@ model Ga4PageDailyStat {
 /// Répartition des sessions GA4 par source classifiée (quotidien).
 model Ga4PageSourceDailyStat {
   id          String   @id @default(cuid())
+  workspaceId String?
+  workspace   EditorialWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   propertyId  String
   pageUrlNorm String
   date        DateTime @db.Date
@@ -526,5 +668,6 @@ model Ga4PageSourceDailyStat {
   syncedAt    DateTime @default(now())
 
   @@unique([propertyId, pageUrlNorm, date, sourceKey])
+  @@index([workspaceId, propertyId, pageUrlNorm, date], map: "Ga4PageSource_ws_prop_path_date_idx")
   @@index([propertyId, pageUrlNorm, date])
 }

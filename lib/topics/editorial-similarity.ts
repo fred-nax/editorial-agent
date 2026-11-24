@@ -450,20 +450,24 @@ export function findEditorialRapprochements(
   return kept;
 }
 
-export async function loadPublishedInventory(): Promise<{
+export async function loadPublishedInventory(
+  workspaceId?: string
+): Promise<{
   posts: PublishedPostRecord[];
   meta: EditorialInventoryMeta;
 }> {
+  const { WORKSPACE_IDS } = await import("@/lib/workspace/constants");
+  const resolvedWorkspaceId = workspaceId ?? WORKSPACE_IDS.wordpress;
   const { isWordPressInventoryUsable } = await import(
     "@/lib/settings/inventory-guard"
   );
   const inventoryUsable = await isWordPressInventoryUsable();
 
   const [diagnostic, posts] = await Promise.all([
-    getWordPressInventoryDiagnostic(),
+    getWordPressInventoryDiagnostic(resolvedWorkspaceId),
     inventoryUsable
       ? db.wordPressPost.findMany({
-          where: { status: "publish" },
+          where: { workspaceId: resolvedWorkspaceId, status: "publish" },
           select: {
             wpPostId: true,
             title: true,
@@ -528,8 +532,9 @@ export async function loadPublishedInventory(): Promise<{
 export async function checkEditorialRapprochement(input: {
   subject: string;
   angle?: string | null;
+  workspaceId?: string;
 }): Promise<EditorialRapprochementResult> {
-  const { posts, meta } = await loadPublishedInventory();
+  const { posts, meta } = await loadPublishedInventory(input.workspaceId);
   const matches =
     meta.publishedCount === 0
       ? []

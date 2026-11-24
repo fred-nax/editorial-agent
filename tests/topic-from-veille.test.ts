@@ -225,7 +225,11 @@ describe("sujet issu de la veille", () => {
             },
             async create(data) {
               const created = await tx.topic.create({
-                data: { ...data, status: "pending" },
+                data: {
+                  ...data,
+                  workspaceId: "ws_wordpress_naxialis",
+                  status: "pending",
+                },
               });
               storedId = created.id;
               return {

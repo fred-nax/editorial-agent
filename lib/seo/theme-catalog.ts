@@ -1,5 +1,6 @@
 import type { CustomTheme } from "@prisma/client";
 import { db } from "../db";
+import { WORKSPACE_IDS } from "../workspace/constants";
 import { EDITORIAL_DOMAINS, type EditorialDomain } from "./domains";
 import {
   customThemeToDomain,
@@ -15,20 +16,26 @@ export type ThemeCatalogRecord = CustomTheme;
 
 export async function listThemeCatalog(options?: {
   activeOnly?: boolean;
+  /** Défaut transitoire V7.11.1 : espace WordPress. */
+  workspaceId?: string;
 }): Promise<CustomTheme[]> {
+  const workspaceId = options?.workspaceId ?? WORKSPACE_IDS.wordpress;
   return db.customTheme.findMany({
-    where: options?.activeOnly ? { active: true } : undefined,
+    where: {
+      workspaceId,
+      ...(options?.activeOnly ? { active: true } : {}),
+    },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 }
 
-export async function listActiveEditorialDomains() {
-  const themes = await listThemeCatalog({ activeOnly: true });
+export async function listActiveEditorialDomains(workspaceId?: string) {
+  const themes = await listThemeCatalog({ activeOnly: true, workspaceId });
   return themes.map(customThemeToDomain);
 }
 
-export async function listAllEditorialDomains() {
-  const themes = await listThemeCatalog();
+export async function listAllEditorialDomains(workspaceId?: string) {
+  const themes = await listThemeCatalog({ workspaceId });
   return themes.map(customThemeToDomain);
 }
 
@@ -40,21 +47,23 @@ export async function listAllEditorialDomains() {
  */
 export async function loadEditorialCatalogForSearch(options?: {
   ensureIfEmpty?: boolean;
+  workspaceId?: string;
 }): Promise<{ all: EditorialDomain[]; active: EditorialDomain[] }> {
   const ensureIfEmpty = options?.ensureIfEmpty !== false;
-  let all = await listAllEditorialDomains();
+  const workspaceId = options?.workspaceId ?? WORKSPACE_IDS.wordpress;
+  let all = await listAllEditorialDomains(workspaceId);
   if (
     all.length === 0 &&
     ensureIfEmpty &&
-    (await shouldSeedHistoricalEditorialThemes())
+    (await shouldSeedHistoricalEditorialThemes(workspaceId))
   ) {
-    await ensureHistoricalEditorialThemes();
-    all = await listAllEditorialDomains();
+    await ensureHistoricalEditorialThemes(workspaceId);
+    all = await listAllEditorialDomains(workspaceId);
   }
   if (all.length === 0) {
     throw new Error(SEO_CATALOG_UNINITIALIZED_ERROR);
   }
-  const active = await listActiveEditorialDomains();
+  const active = await listActiveEditorialDomains(workspaceId);
   return { all, active };
 }
 
@@ -67,14 +76,21 @@ export async function loadEditorialCatalogForSearch(options?: {
  *    uniquement, sans modifier name/description/angles/quota/active/sortOrder.
  * 3. Sinon → création avec les valeurs historiques.
  */
-export async function ensureHistoricalEditorialThemes(): Promise<EnsureHistoricalThemesResult> {
+export async function ensureHistoricalEditorialThemes(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<EnsureHistoricalThemesResult> {
   const result: EnsureHistoricalThemesResult = {
     created: [],
     linked: [],
     skipped: [],
   };
 
-  const existing = await db.customTheme.findMany();
+  // Seed historique Naxialis : réservé à l’espace WordPress (jamais Webflow).
+  if (workspaceId !== WORKSPACE_IDS.wordpress) {
+    return result;
+  }
+
+  const existing = await db.customTheme.findMany({ where: { workspaceId } });
   const byLegacy = new Map(
     existing
       .filter((theme) => theme.legacyKey)
@@ -111,6 +127,7 @@ export async function ensureHistoricalEditorialThemes(): Promise<EnsureHistorica
 
     const created = await db.customTheme.create({
       data: {
+        workspaceId,
         name: domain.label,
         description: null,
         active: true,
@@ -135,8 +152,10 @@ export async function ensureHistoricalEditorialThemes(): Promise<EnsureHistorica
  * Rattache `themeId` aux opportunités historiques dont le label correspond,
  * sans modifier le champ `theme`.
  */
-export async function backfillOpportunityThemeIds(): Promise<number> {
-  const themes = await db.customTheme.findMany();
+export async function backfillOpportunityThemeIds(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<number> {
+  const themes = await db.customTheme.findMany({ where: { workspaceId } });
   let updated = 0;
   for (const theme of themes) {
     const labels = new Set<string>([theme.name]);
@@ -150,6 +169,7 @@ export async function backfillOpportunityThemeIds(): Promise<number> {
     for (const label of labels) {
       const result = await db.seoOpportunity.updateMany({
         where: {
+          workspaceId,
           themeId: null,
           theme: label,
         },
@@ -162,15 +182,23 @@ export async function backfillOpportunityThemeIds(): Promise<number> {
 }
 
 export async function getThemeDependencies(
-  themeId: string
+  themeId: string,
+  workspaceId: string = WORKSPACE_IDS.wordpress
 ): Promise<ThemeDependencies> {
-  const theme = await db.customTheme.findUnique({ where: { id: themeId } });
+  const theme = await db.customTheme.findFirst({
+    where: { id: themeId, workspaceId },
+  });
   const [researchConfigs, searchRuns, opportunities, configsWithDomains] =
     await Promise.all([
-      db.researchConfig.count({ where: { customThemeId: themeId } }),
-      db.opportunitySearchRun.count({ where: { customThemeId: themeId } }),
-      db.seoOpportunity.count({ where: { themeId } }),
+      db.researchConfig.count({
+        where: { workspaceId, customThemeId: themeId },
+      }),
+      db.opportunitySearchRun.count({
+        where: { workspaceId, customThemeId: themeId },
+      }),
+      db.seoOpportunity.count({ where: { workspaceId, themeId } }),
       db.researchConfig.findMany({
+        where: { workspaceId },
         select: { id: true, domains: true },
       }),
     ]);
@@ -208,13 +236,17 @@ export async function getThemeDependencies(
   };
 }
 
-export async function reorderThemes(orderedIds: string[]): Promise<CustomTheme[]> {
+export async function reorderThemes(
+  orderedIds: string[],
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<CustomTheme[]> {
   const unique = [...new Set(orderedIds.filter((id) => typeof id === "string"))];
   if (unique.length === 0) {
     throw new Error("Liste d’ordre vide.");
   }
 
   const existing = await db.customTheme.findMany({
+    where: { workspaceId },
     select: { id: true },
   });
   const existingIds = new Set(existing.map((item) => item.id));
@@ -233,15 +265,16 @@ export async function reorderThemes(orderedIds: string[]): Promise<CustomTheme[]
     )
   );
 
-  return listThemeCatalog();
+  return listThemeCatalog({ workspaceId });
 }
 
 export async function syncOpportunityThemeLabel(
   themeId: string,
-  name: string
+  name: string,
+  workspaceId: string = WORKSPACE_IDS.wordpress
 ): Promise<number> {
   const result = await db.seoOpportunity.updateMany({
-    where: { themeId },
+    where: { workspaceId, themeId },
     data: { theme: name },
   });
   return result.count;

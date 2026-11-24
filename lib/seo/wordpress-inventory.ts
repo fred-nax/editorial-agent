@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import { logError, logInfo } from "../logger";
+import { WORKSPACE_IDS } from "../workspace/constants";
 import {
   assertInventorySyncAllowed,
   markInventorySyncedForSite,
@@ -300,8 +301,14 @@ async function upsertPosts(
     statusBreakdown[status] = (statusBreakdown[status] ?? 0) + 1;
 
     await db.wordPressPost.upsert({
-      where: { wpPostId: post.id },
+      where: {
+        workspaceId_wpPostId: {
+          workspaceId: WORKSPACE_IDS.wordpress,
+          wpPostId: post.id,
+        },
+      },
       create: {
+        workspaceId: WORKSPACE_IDS.wordpress,
         wpPostId: post.id,
         title,
         slug: post.slug ?? String(post.id),
@@ -434,7 +441,7 @@ export async function processWordPressInventorySync(options: {
     if (mode === "incremental") {
       for (const contentType of ["post", "page"] as const) {
         const latest = await db.wordPressPost.findFirst({
-          where: { contentType },
+          where: { workspaceId: WORKSPACE_IDS.wordpress, contentType },
           orderBy: { modifiedAt: "desc" },
           select: { modifiedAt: true },
         });
@@ -530,7 +537,7 @@ export async function processWordPressInventorySync(options: {
       `Inventaire : ${byType.post.length} article(s), ${byType.page.length} page(s).`
     );
 
-    const storedCount = await db.wordPressPost.count();
+    const storedCount = await db.wordPressPost.count({ where: { workspaceId: WORKSPACE_IDS.wordpress } });
     maxTotalPages = pagesFetched;
 
     if (mode === "full" && expectedTotal > fetchedCount) {
@@ -603,7 +610,7 @@ export async function processWordPressInventorySync(options: {
       usedFallback: persist.usedFallback,
     });
   } catch (error) {
-    const storedCount = await db.wordPressPost.count().catch(() => 0);
+    const storedCount = await db.wordPressPost.count({ where: { workspaceId: WORKSPACE_IDS.wordpress } }).catch(() => 0);
     const message =
       error instanceof Error
         ? error.message.slice(0, 500)
@@ -645,7 +652,7 @@ export function enqueueWordPressInventorySync(
       fetchedCount: 0,
       upsertedCount: 0,
       expectedTotal: null,
-      storedCount: await db.wordPressPost.count().catch(() => 0),
+      storedCount: await db.wordPressPost.count({ where: { workspaceId: WORKSPACE_IDS.wordpress } }).catch(() => 0),
       pagesFetched: 0,
       totalPages: null,
       statusBreakdown: {},
@@ -656,23 +663,27 @@ export function enqueueWordPressInventorySync(
 }
 
 /** Diagnostic lecture seule pour l’UI. */
-export async function getWordPressInventoryDiagnostic(): Promise<{
+export async function getWordPressInventoryDiagnostic(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<{
   count: number;
   byStatus: Record<string, number>;
   lastSync: Awaited<ReturnType<typeof db.wordPressSyncRun.findFirst>>;
   running: Awaited<ReturnType<typeof db.wordPressSyncRun.findFirst>>;
 }> {
   const [count, posts, lastSync, running] = await Promise.all([
-    db.wordPressPost.count(),
+    db.wordPressPost.count({ where: { workspaceId } }),
     db.wordPressPost.groupBy({
       by: ["status"],
+      where: { workspaceId },
       _count: { _all: true },
     }),
     db.wordPressSyncRun.findFirst({
+      where: { workspaceId },
       orderBy: { startedAt: "desc" },
     }),
     db.wordPressSyncRun.findFirst({
-      where: { status: "running" },
+      where: { workspaceId, status: "running" },
       orderBy: { startedAt: "desc" },
     }),
   ]);

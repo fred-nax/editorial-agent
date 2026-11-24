@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { ArticleForm } from "@/components/ArticleForm";
-import { db } from "@/lib/db";
+import { loadTopicInActiveWorkspace } from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "Nouvel article",
 };
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type SearchParams = Promise<{
   topicId?: string | string[];
@@ -40,7 +41,8 @@ export default async function NewArticlePage({
     | undefined;
 
   if (topicId) {
-    const topic = await db.topic.findUnique({ where: { id: topicId } });
+    // Hors espace : on ignore le topicId (pas de bascule, pas de fuite).
+    const { topic } = await loadTopicInActiveWorkspace(topicId);
     if (topic && topic.status === "pending") {
       initial = {
         topicId: topic.id,

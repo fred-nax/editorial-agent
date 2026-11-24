@@ -6,14 +6,34 @@ import {
   type GoogleTokenResponse,
 } from "@/lib/google/oauth";
 import { logError } from "@/lib/logger";
+import { WORKSPACE_IDS } from "@/lib/workspace";
 
 const CONNECTION_ID = "default";
 
-export async function getGoogleConnection() {
-  return db.googleConnection.findUnique({
+/**
+ * Connexion OAuth globale + sélection de propriétés pour un espace.
+ * V7.11.1 : défaut WordPress (historique). Webflow → empty tant que non configuré.
+ */
+export async function getGoogleConnection(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+) {
+  const connection = await db.googleConnection.findUnique({
     where: { id: CONNECTION_ID },
-    include: { selection: true },
+    include: {
+      selections: {
+        where: { workspaceId },
+        take: 1,
+      },
+    },
   });
+  if (!connection) {
+    return null;
+  }
+  const { selections, ...rest } = connection;
+  return {
+    ...rest,
+    selection: selections[0] ?? null,
+  };
 }
 
 export async function upsertGoogleTokens(input: {
@@ -60,8 +80,12 @@ export async function upsertGoogleTokens(input: {
   });
 
   await db.googlePropertySelection.upsert({
-    where: { id: CONNECTION_ID },
-    create: { id: CONNECTION_ID, connectionId: CONNECTION_ID },
+    where: { workspaceId: WORKSPACE_IDS.wordpress },
+    create: {
+      id: CONNECTION_ID,
+      workspaceId: WORKSPACE_IDS.wordpress,
+      connectionId: CONNECTION_ID,
+    },
     update: {},
   });
 }
@@ -145,6 +169,7 @@ export async function getValidAccessToken(): Promise<string> {
 }
 
 export async function savePropertySelection(input: {
+  workspaceId?: string;
   gscPropertyUrl?: string | null;
   gscPropertyType?: string | null;
   gscPermissionLevel?: string | null;
@@ -152,10 +177,11 @@ export async function savePropertySelection(input: {
   ga4PropertyId?: string | null;
   ga4PropertyName?: string | null;
 }): Promise<void> {
+  const workspaceId = input.workspaceId?.trim() || WORKSPACE_IDS.wordpress;
   await db.googlePropertySelection.upsert({
-    where: { id: CONNECTION_ID },
+    where: { workspaceId },
     create: {
-      id: CONNECTION_ID,
+      workspaceId,
       connectionId: CONNECTION_ID,
       gscPropertyUrl: input.gscPropertyUrl ?? null,
       gscPropertyType: input.gscPropertyType ?? null,

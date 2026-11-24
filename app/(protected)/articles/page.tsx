@@ -6,6 +6,7 @@ import {
 } from "@/components/articles/ArticleHistoryFilters";
 import { db } from "@/lib/db";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
+import { resolveActiveWorkspace, workspaceWhere } from "@/lib/workspace";
 import type { Prisma } from "@prisma/client";
 
 export const metadata: Metadata = {
@@ -13,6 +14,7 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type SearchParams = Promise<{ cms?: string | string[] }>;
 
@@ -31,8 +33,9 @@ export default async function ArticlesPage({
   await recoverStaleGenerations();
   const params = await searchParams;
   const cmsFilter = parseHistoryCmsFilter(firstParam(params.cms));
+  const workspace = await resolveActiveWorkspace();
 
-  const where: Prisma.ArticleGenerationWhereInput =
+  const cmsWhere: Prisma.ArticleGenerationWhereInput =
     cmsFilter === "webflow"
       ? { cmsDestination: "webflow" }
       : cmsFilter === "wordpress"
@@ -43,6 +46,10 @@ export default async function ArticlesPage({
             ],
           }
         : {};
+
+  const where: Prisma.ArticleGenerationWhereInput = {
+    AND: [workspaceWhere(workspace.id), cmsWhere],
+  };
 
   const articles = await db.articleGeneration.findMany({
     where,

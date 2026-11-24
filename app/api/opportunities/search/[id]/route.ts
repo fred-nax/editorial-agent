@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
+import {
+  assertModuleAllowedForWorkspace,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+  workspaceWhere,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,10 +24,25 @@ export async function GET(_request: Request, context: RouteContext) {
     return unauthorized();
   }
 
-  const { id } = await context.params;
-  const run = await db.opportunitySearchRun.findUnique({ where: { id } });
-  if (!run) {
-    return NextResponse.json({ error: "Recherche introuvable." }, { status: 404 });
+  try {
+    const workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "opportunities");
+
+    const { id } = await context.params;
+    const run = await db.opportunitySearchRun.findFirst({
+      where: { id, ...workspaceWhere(workspace.id) },
+    });
+    if (!run) {
+      return NextResponse.json({ error: "Recherche introuvable." }, { status: 404 });
+    }
+    return NextResponse.json({ run });
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
-  return NextResponse.json({ run });
 }

@@ -11,14 +11,20 @@ import {
   parsePositiveInt,
   parseSortDir,
 } from "@/lib/analytics/params";
+import { getGoogleConnection } from "@/lib/google/connection";
 import {
   getAnalyticsAiTraffic,
   getAnalyticsArticles,
   getAnalyticsOverview,
   getAnalyticsSeo,
 } from "@/lib/google/analytics-metrics";
+import {
+  resolveActiveWorkspace,
+  webflowEmptyState,
+} from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type SearchParams = Promise<{
   tab?: string;
@@ -35,6 +41,30 @@ export default async function AnalyticsPage({
 }: {
   searchParams: SearchParams;
 }) {
+  const workspace = await resolveActiveWorkspace();
+  const google = await getGoogleConnection(workspace.id);
+  const hasDedicatedGoogle =
+    Boolean(google?.selection?.gscPropertyUrl) ||
+    Boolean(google?.selection?.ga4PropertyId);
+
+  // Webflow : empty state tant qu’aucune propriété Google dédiée (pas de données WP).
+  if (workspace.cmsProvider === "webflow" && !hasDedicatedGoogle) {
+    const empty = webflowEmptyState("analytics");
+    return (
+      <div className="mx-auto min-w-0 max-w-6xl space-y-5">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Performances SEO Search Console et trafic IA identifiable (GA4).
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-700">
+          {empty.reason}
+        </div>
+      </div>
+    );
+  }
+
   const params = await searchParams;
   const tab = parseAnalyticsTab(params.tab);
   const period = parseAnalyticsPeriod(params.period);

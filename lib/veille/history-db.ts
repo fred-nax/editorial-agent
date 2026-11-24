@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { WORKSPACE_IDS } from "@/lib/workspace/constants";
 import {
   isVeilleCountry,
   isVeillePeriod,
@@ -56,11 +57,14 @@ function toRecord(row: WatchRow): WatchSearchRecord | null {
   };
 }
 
-export function prismaWatchHistoryStore(): WatchHistoryStore {
+export function prismaWatchHistoryStore(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): WatchHistoryStore {
   return {
     async save(input) {
       const row = await db.editorialWatchSearch.create({
         data: {
+          workspaceId,
           theme: input.theme,
           periodDays: input.periodDays,
           country: input.country,
@@ -79,6 +83,7 @@ export function prismaWatchHistoryStore(): WatchHistoryStore {
     async list(page, pageSize) {
       const [rows, total] = await Promise.all([
         db.editorialWatchSearch.findMany({
+          where: { workspaceId },
           orderBy: { searchedAt: "desc" },
           skip: (page - 1) * pageSize,
           take: pageSize,
@@ -92,7 +97,7 @@ export function prismaWatchHistoryStore(): WatchHistoryStore {
             status: true,
           },
         }),
-        db.editorialWatchSearch.count(),
+        db.editorialWatchSearch.count({ where: { workspaceId } }),
       ]);
       return {
         items: rows.flatMap((row) => {
@@ -103,7 +108,9 @@ export function prismaWatchHistoryStore(): WatchHistoryStore {
       };
     },
     async read(id) {
-      const row = await db.editorialWatchSearch.findUnique({ where: { id } });
+      const row = await db.editorialWatchSearch.findFirst({
+        where: { id, workspaceId },
+      });
       if (!row) {
         return null;
       }
@@ -114,7 +121,10 @@ export function prismaWatchHistoryStore(): WatchHistoryStore {
       return record;
     },
     async delete(id) {
-      const existing = await db.editorialWatchSearch.findUnique({ where: { id } });
+      const existing = await db.editorialWatchSearch.findFirst({
+        where: { id, workspaceId },
+        select: { id: true },
+      });
       if (!existing) {
         return false;
       }

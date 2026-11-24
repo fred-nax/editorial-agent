@@ -1,11 +1,13 @@
 import "dotenv/config";
 import { db } from "../lib/db.js";
 import { processArticleGeneration } from "../lib/generation.js";
+import { WORKSPACE_IDS } from "../lib/workspace/constants.js";
 
 const subject = "Test local d’échec volontaire";
 
 const generation = await db.articleGeneration.create({
   data: {
+    workspaceId: WORKSPACE_IDS.wordpress,
     subject,
     status: "queued",
   },

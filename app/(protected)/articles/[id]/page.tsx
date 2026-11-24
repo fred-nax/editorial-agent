@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { ArticleDetailTabs } from "@/components/ArticleDetailTabs";
 import { ArticleSeoPanel } from "@/components/ArticleSeoPanel";
 import { ArticleStatus } from "@/components/ArticleStatus";
@@ -33,6 +32,10 @@ import {
   getArticleDetailTabs,
   type ArticleDetailTabId,
 } from "@/lib/article-detail-tabs";
+import {
+  loadGenerationMetaInActiveWorkspace,
+  requireGenerationInActiveWorkspace,
+} from "@/lib/workspace";
 
 type ArticleDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -40,18 +43,19 @@ type ArticleDetailPageProps = {
 };
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function generateMetadata({
   params,
 }: ArticleDetailPageProps): Promise<Metadata> {
   const { id } = await params;
-  const article = await db.articleGeneration.findUnique({
-    where: { id },
-    select: { title: true, subject: true },
-  });
-
+  // Hors espace : titre générique (aucune fuite subject/title).
+  const article = await loadGenerationMetaInActiveWorkspace(id);
+  if (!article) {
+    return { title: "Génération introuvable" };
+  }
   return {
-    title: article?.title ?? article?.subject ?? "Génération introuvable",
+    title: article.title ?? article.subject,
   };
 }
 
@@ -62,13 +66,7 @@ export default async function ArticleDetailPage({
   const { id } = await params;
   const { tab } = await searchParams;
   await recoverStaleGenerations();
-  const article = await db.articleGeneration.findUnique({
-    where: { id },
-  });
-
-  if (!article) {
-    notFound();
-  }
+  const { generation: article } = await requireGenerationInActiveWorkspace(id);
 
   const cmsDestination = article.cmsDestination ?? "wordpress";
   const isWebflow = cmsDestination === "webflow";
@@ -80,7 +78,10 @@ export default async function ArticleDetailPage({
 
   const latestFeaturedImage = canManageFeaturedImage
     ? await db.articleFeaturedImage.findFirst({
-        where: { generationId: article.id },
+        where: {
+          generationId: article.id,
+          workspaceId: article.workspaceId,
+        },
         orderBy: { createdAt: "desc" },
       })
     : null;

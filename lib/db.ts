@@ -11,7 +11,8 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /** Change quand le schéma Prisma change, pour ne pas réutiliser un client généré avant. */
-const PRISMA_CLIENT_TOKEN = "app-settings-inventory-valid-v7-7-0-20261116b";
+const PRISMA_CLIENT_TOKEN =
+  "app-settings-inventory-valid-v7-7-0-20261116b-editorial-workspaces-v7111";
 
 type PrismaModule = {
   PrismaClient: typeof PrismaClient;
@@ -95,6 +96,16 @@ function appSettingsReady(prisma: typeof Prisma): boolean {
   );
 }
 
+/** V7.11.1 — espaces éditoriaux (workspaceId requis sur Topic, etc.). */
+function editorialWorkspacesReady(prisma: typeof Prisma): boolean {
+  const names = new Set(prisma.dmmf.datamodel.models.map((model) => model.name));
+  const topic = prisma.dmmf.datamodel.models.find((model) => model.name === "Topic");
+  return (
+    names.has("EditorialWorkspace") &&
+    (topic?.fields.some((field) => field.name === "workspaceId") ?? false)
+  );
+}
+
 function clientMatchesSchema(prisma: typeof Prisma): boolean {
   return (
     topicHasOrigin(prisma) &&
@@ -104,7 +115,8 @@ function clientMatchesSchema(prisma: typeof Prisma): boolean {
     seoThemeCatalogV75Ready(prisma) &&
     googleIntegrationsReady(prisma) &&
     wordpressContentTypeReady(prisma) &&
-    appSettingsReady(prisma)
+    appSettingsReady(prisma) &&
+    editorialWorkspacesReady(prisma)
   );
 }
 

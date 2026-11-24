@@ -1,15 +1,26 @@
 import type { Metadata } from "next";
 import { TopicQueue, type TopicListItem } from "@/components/TopicQueue";
 import { db } from "@/lib/db";
+import {
+  assertModuleAllowedForWorkspace,
+  resolveActiveWorkspace,
+  workspaceWhere,
+} from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "File éditoriale",
 };
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function TopicsPage() {
+  const workspace = await resolveActiveWorkspace();
+  assertModuleAllowedForWorkspace(workspace, "topics");
+  const scope = workspaceWhere(workspace.id);
+
   const topicsRaw = await db.topic.findMany({
+    where: scope,
     orderBy: { createdAt: "desc" },
   });
 
@@ -29,7 +40,7 @@ export default async function TopicsPage() {
     topicIds.length === 0
       ? []
       : await db.articleGeneration.findMany({
-          where: { topicId: { in: topicIds } },
+          where: { ...scope, topicId: { in: topicIds } },
           select: {
             id: true,
             topicId: true,

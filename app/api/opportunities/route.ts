@@ -21,6 +21,12 @@ import {
 } from "@/lib/seo/theme-catalog";
 import { requireActiveThemesForDomainsSearch } from "@/lib/seo/theme-catalog-shared";
 import {
+  assertModuleAllowedForWorkspace,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+  workspaceWhere,
+} from "@/lib/workspace";
+import {
   isEditorialUrgency,
   isTrendType,
 } from "@/lib/seo/trend-signals";
@@ -31,6 +37,13 @@ export const maxDuration = 300;
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function workspaceErrorResponse(error: WorkspaceContextError) {
+  return NextResponse.json(
+    { error: error.message, code: error.code },
+    { status: error.status }
+  );
 }
 
 /** Tailles de page autorisées pour GET /api/opportunities. */
@@ -61,6 +74,10 @@ export async function GET(request: Request) {
   }
 
   try {
+    const workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "opportunities");
+    const workspaceId = workspace.id;
+
     const { searchParams } = new URL(request.url);
     const theme = searchParams.get("theme")?.trim() || undefined;
     const status = searchParams.get("status")?.trim() || undefined;
@@ -71,11 +88,14 @@ export async function GET(request: Request) {
     const pageSize = parsePageSize(searchParams.get("pageSize"));
     let page = parsePage(searchParams.get("page"));
 
-    const where: Prisma.SeoOpportunityWhereInput = {};
+    const where: Prisma.SeoOpportunityWhereInput = {
+      ...workspaceWhere(workspaceId),
+    };
 
     if (theme) {
       const catalogTheme = await db.customTheme.findFirst({
         where: {
+          ...workspaceWhere(workspaceId),
           OR: [{ id: theme }, { name: theme }, { legacyKey: theme }],
         },
       });
@@ -134,26 +154,33 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       db.seoOpportunity.count({ where }),
       db.opportunitySearchRun.findFirst({
+        where: workspaceWhere(workspaceId),
         orderBy: { startedAt: "desc" },
       }),
       db.opportunitySearchRun.findFirst({
-        where: { status: "running" },
+        where: { ...workspaceWhere(workspaceId), status: "running" },
         orderBy: { startedAt: "desc" },
       }),
-      db.wordPressPost.count(),
+      db.wordPressPost.count({ where: workspaceWhere(workspaceId) }),
       db.opportunitySearchRun.findMany({
+        where: workspaceWhere(workspaceId),
         orderBy: { startedAt: "desc" },
         take: 20,
       }),
-      listThemeCatalog(),
+      listThemeCatalog({ workspaceId }),
       db.researchConfig.findMany({
+        where: workspaceWhere(workspaceId),
         orderBy: { updatedAt: "desc" },
         take: 50,
       }),
-      // Cards globales : hors filtres table.
-      db.seoOpportunity.count(),
-      db.seoOpportunity.count({ where: { editorialUrgency: "high" } }),
-      db.seoOpportunity.count({ where: { status: "new" } }),
+      // Cards globales : hors filtres table (scopées à l’espace actif).
+      db.seoOpportunity.count({ where: workspaceWhere(workspaceId) }),
+      db.seoOpportunity.count({
+        where: { ...workspaceWhere(workspaceId), editorialUrgency: "high" },
+      }),
+      db.seoOpportunity.count({
+        where: { ...workspaceWhere(workspaceId), status: "new" },
+      }),
     ]);
 
     const pageCount = Math.max(1, Math.ceil(total / pageSize) || 1);
@@ -200,6 +227,9 @@ export async function GET(request: Request) {
       headers: { "content-type": "application/json; charset=utf-8" },
     });
   } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
     const message =
       error instanceof Error
         ? error.message.slice(0, 300)
@@ -225,8 +255,20 @@ export async function POST(request: Request) {
     return unauthorized();
   }
 
+  let workspaceId: string;
+  try {
+    const workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "opportunities");
+    workspaceId = workspace.id;
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
+    throw error;
+  }
+
   const existing = await db.opportunitySearchRun.findFirst({
-    where: { status: "running" },
+    where: { ...workspaceWhere(workspaceId), status: "running" },
   });
   if (existing) {
     return NextResponse.json(
@@ -235,7 +277,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const inventoryCount = await db.wordPressPost.count();
+  const inventoryCount = await db.wordPressPost.count({
+    where: workspaceWhere(workspaceId),
+  });
   if (inventoryCount === 0) {
     return NextResponse.json(
       {
@@ -289,6 +333,7 @@ export async function POST(request: Request) {
     try {
       const loaded = await loadEditorialCatalogForSearch({
         ensureIfEmpty: true,
+        workspaceId,
       });
       catalogForValidation = requireActiveThemesForDomainsSearch(
         loaded.active
@@ -329,6 +374,7 @@ export async function POST(request: Request) {
 
   const run = await db.opportunitySearchRun.create({
     data: {
+      workspaceId,
       status: "running",
       themes: snapshot,
       mode: config.mode,

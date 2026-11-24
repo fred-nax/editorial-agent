@@ -121,11 +121,18 @@ function cleanOptionalText(value: unknown, max: number): string | null {
   return cleaned;
 }
 
-async function loadEligibleGeneration(generationId: string) {
+async function loadEligibleGeneration(
+  generationId: string,
+  workspaceId?: string
+) {
   const generation = await db.articleGeneration.findUnique({
     where: { id: generationId },
   });
   if (!generation) {
+    throw new FeaturedImageServiceError("Génération introuvable.", 404);
+  }
+  // Isolation espace : une génération d’un autre espace est introuvable.
+  if (workspaceId !== undefined && generation.workspaceId !== workspaceId) {
     throw new FeaturedImageServiceError("Génération introuvable.", 404);
   }
   if (generation.status !== "completed") {
@@ -148,9 +155,10 @@ async function loadEligibleGeneration(generationId: string) {
 }
 
 export async function getLatestFeaturedImage(
-  generationId: string
+  generationId: string,
+  workspaceId?: string
 ): Promise<FeaturedImagePublic | null> {
-  await loadEligibleGeneration(generationId);
+  await loadEligibleGeneration(generationId, workspaceId);
   const row = await db.articleFeaturedImage.findFirst({
     where: { generationId },
     orderBy: { createdAt: "desc" },
@@ -165,6 +173,7 @@ async function runImageGenerationCore(input: {
   aspectRatio: FeaturedImageAspectId;
   visualInstructions: string | null;
   origin: "manual" | "auto";
+  workspaceId?: string;
 }): Promise<FeaturedImagePublic> {
   const lockKey = `generate:${input.generationId}`;
   if (!tryAcquireFeaturedImageLock(lockKey)) {
@@ -185,7 +194,10 @@ async function runImageGenerationCore(input: {
   }
 
   try {
-    const generation = await loadEligibleGeneration(input.generationId);
+    const generation = await loadEligibleGeneration(
+      input.generationId,
+      input.workspaceId
+    );
     const editorial = parseStoredEditorialContext(generation.editorialContext);
     const size = sizeForAspect(input.aspectRatio);
     let identity;
@@ -217,6 +229,7 @@ async function runImageGenerationCore(input: {
     if (!imageId) {
       const created = await db.articleFeaturedImage.create({
         data: {
+          workspaceId: generation.workspaceId,
           generationId: generation.id,
           relativePath: "pending",
           mimeType: generated.mimeType,
@@ -293,6 +306,7 @@ export async function generateFeaturedImageForArticle(input: {
   style: string;
   aspectRatio: string;
   visualInstructions?: unknown;
+  workspaceId?: string;
 }): Promise<FeaturedImagePublic> {
   if (!isFeaturedImageStyleId(input.style)) {
     throw new FeaturedImageServiceError("Style visuel invalide.");
@@ -300,6 +314,9 @@ export async function generateFeaturedImageForArticle(input: {
   if (!isFeaturedImageAspectId(input.aspectRatio)) {
     throw new FeaturedImageServiceError("Format d’image invalide.");
   }
+
+  // Vérifie l’appartenance à l’espace avant toute lecture liée.
+  await loadEligibleGeneration(input.generationId, input.workspaceId);
 
   const active = await db.articleFeaturedImage.findFirst({
     where: {
@@ -325,6 +342,7 @@ export async function generateFeaturedImageForArticle(input: {
       MAX_VISUAL_INSTRUCTIONS_LENGTH
     ),
     origin: "manual",
+    workspaceId: input.workspaceId,
   });
 }
 
@@ -361,6 +379,7 @@ export async function fulfillPendingFeaturedImage(
     aspectRatio: row.aspectRatio,
     visualInstructions: row.visualInstructions,
     origin: row.origin === "auto" ? "auto" : "manual",
+    workspaceId: row.workspaceId,
   });
 }
 
@@ -368,8 +387,9 @@ export async function updateFeaturedImageAltText(input: {
   generationId: string;
   imageId: string;
   altText: unknown;
+  workspaceId?: string;
 }): Promise<FeaturedImagePublic> {
-  await loadEligibleGeneration(input.generationId);
+  await loadEligibleGeneration(input.generationId, input.workspaceId);
   const altText = cleanOptionalText(input.altText, MAX_ALT_TEXT_LENGTH);
 
   const row = await db.articleFeaturedImage.findFirst({
@@ -391,6 +411,7 @@ export async function uploadFeaturedImageToWordPress(input: {
   imageId: string;
   altText?: unknown;
   confirmReplace?: boolean;
+  workspaceId?: string;
 }): Promise<{
   image: FeaturedImagePublic;
   wordpress: { postId: number; status: string; link: string; mediaId: number };
@@ -405,7 +426,10 @@ export async function uploadFeaturedImageToWordPress(input: {
   }
 
   try {
-    const generation = await loadEligibleGeneration(input.generationId);
+    const generation = await loadEligibleGeneration(
+      input.generationId,
+      input.workspaceId
+    );
     await assertFeaturedImageTargetsCurrentWordPress(generation);
 
     const row = await db.articleFeaturedImage.findFirst({
@@ -581,8 +605,9 @@ export async function uploadFeaturedImageToWordPress(input: {
 export async function readFeaturedImageBytesForArticle(input: {
   generationId: string;
   imageId: string;
+  workspaceId?: string;
 }): Promise<{ bytes: Buffer; mimeType: string }> {
-  await loadEligibleGeneration(input.generationId);
+  await loadEligibleGeneration(input.generationId, input.workspaceId);
   const row = await db.articleFeaturedImage.findFirst({
     where: { id: input.imageId, generationId: input.generationId },
   });

@@ -18,7 +18,8 @@ export const FEATURED_IMAGE_INTERRUPTED_ERROR =
  */
 export async function createPendingFeaturedImageRequest(
   generationId: string,
-  request: FeaturedImageRequest
+  request: FeaturedImageRequest,
+  workspaceId?: string
 ): Promise<string> {
   const existing = await db.articleFeaturedImage.findFirst({
     where: {
@@ -31,8 +32,23 @@ export async function createPendingFeaturedImageRequest(
     return existing.id;
   }
 
+  let resolvedWorkspaceId = workspaceId?.trim() || "";
+  if (!resolvedWorkspaceId) {
+    const generation = await db.articleGeneration.findUnique({
+      where: { id: generationId },
+      select: { workspaceId: true },
+    });
+    if (!generation?.workspaceId) {
+      throw new Error(
+        "workspaceId introuvable pour la demande d’image à la une."
+      );
+    }
+    resolvedWorkspaceId = generation.workspaceId;
+  }
+
   const created = await db.articleFeaturedImage.create({
     data: {
+      workspaceId: resolvedWorkspaceId,
       generationId,
       relativePath: "pending",
       prompt: "",

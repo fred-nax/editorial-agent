@@ -4,7 +4,12 @@ import {
   generateFeaturedImageForArticle,
 } from "@/lib/images/service";
 import { FEATURED_IMAGE_MODEL } from "@/lib/images/config";
+import {
+  resolveFeaturedImageWorkspace,
+  workspaceContextErrorResponse,
+} from "@/lib/images/route-workspace";
 import { requireAuth } from "@/lib/require-auth";
+import { WorkspaceContextError } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +30,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
+    const workspace = await resolveFeaturedImageWorkspace();
     const { id } = await context.params;
     const body = (await request.json()) as Record<string, unknown>;
     const style =
@@ -37,6 +43,7 @@ export async function POST(request: Request, context: RouteContext) {
       style,
       aspectRatio,
       visualInstructions: body.visualInstructions,
+      workspaceId: workspace.id,
     });
 
     return NextResponse.json({
@@ -44,6 +51,9 @@ export async function POST(request: Request, context: RouteContext) {
       model: FEATURED_IMAGE_MODEL,
     });
   } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceContextErrorResponse(error);
+    }
     if (error instanceof FeaturedImageServiceError) {
       return NextResponse.json(
         {

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { normalizePublicUrl } from "@/lib/google/url-normalize";
+import { WORKSPACE_IDS } from "@/lib/workspace/constants";
 
 /** Map URL normalisée → wpPostId pour les articles publiés inventoriés. */
 export async function buildPublishedUrlMap(): Promise<Map<string, number>> {
@@ -11,7 +12,7 @@ export async function buildPublishedUrlMap(): Promise<Map<string, number>> {
   }
 
   const posts = await db.wordPressPost.findMany({
-    where: { status: "publish" },
+    where: { workspaceId: WORKSPACE_IDS.wordpress, status: "publish" },
     select: { wpPostId: true, url: true },
   });
   const map = new Map<string, number>();
@@ -30,7 +31,12 @@ export async function resolvePublishedUrlForGeneration(input: {
 }): Promise<{ pageUrl: string; pageUrlNorm: string; wpPostId: number } | null> {
   if (typeof input.wpPostId === "number" && input.wpPostId > 0) {
     const post = await db.wordPressPost.findUnique({
-      where: { wpPostId: input.wpPostId },
+      where: {
+        workspaceId_wpPostId: {
+          workspaceId: WORKSPACE_IDS.wordpress,
+          wpPostId: input.wpPostId,
+        },
+      },
       select: { url: true, status: true, wpPostId: true },
     });
     if (post?.status === "publish") {

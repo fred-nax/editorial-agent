@@ -17,8 +17,8 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
   }
 
   if (opportunity.status === "added_to_queue" && opportunity.topicId) {
-    const existing = await db.topic.findUnique({
-      where: { id: opportunity.topicId },
+    const existing = await db.topic.findFirst({
+      where: { id: opportunity.topicId, workspaceId: opportunity.workspaceId },
     });
     if (existing) {
       return { topic: existing, opportunity, alreadyAdded: true as const };
@@ -27,6 +27,7 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
 
   const duplicateTopic = await db.topic.findFirst({
     where: {
+      workspaceId: opportunity.workspaceId,
       status: { in: ["pending", "generating"] },
       subject: opportunity.subject,
     },
@@ -60,6 +61,7 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
 
   const topic = await db.topic.create({
     data: {
+      workspaceId: opportunity.workspaceId,
       subject: opportunity.subject,
       status: "pending",
       priority: scoreToTopicPriority(opportunity.scoreTotal),

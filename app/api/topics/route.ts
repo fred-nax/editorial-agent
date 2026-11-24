@@ -11,6 +11,12 @@ import {
   type StoredTopic,
   type TopicStore,
 } from "@/lib/topics/create";
+import {
+  assertModuleAllowedForWorkspace,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+  workspaceWhere,
+} from "@/lib/workspace";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -47,11 +53,12 @@ function toStored(topic: {
   };
 }
 
-function topicStore(): TopicStore {
+function topicStore(workspaceId: string): TopicStore {
   return {
     async findExactSource(sourceUrl, subject) {
       const found = await db.topic.findFirst({
         where: {
+          ...workspaceWhere(workspaceId),
           sourceUrl,
           subject: { equals: subject, mode: "insensitive" },
         },
@@ -62,6 +69,7 @@ function topicStore(): TopicStore {
       const topic = await db.topic.create({
         data: {
           ...data,
+          workspaceId,
           status: "pending",
         },
       });
@@ -75,28 +83,52 @@ export async function GET() {
     return unauthorized();
   }
 
-  const topics = await db.topic.findMany({
-    orderBy: [{ createdAt: "desc" }],
-  });
-
-  return NextResponse.json({ topics });
+  try {
+    const workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "topics");
+    const topics = await db.topic.findMany({
+      where: workspaceWhere(workspace.id),
+      orderBy: [{ createdAt: "desc" }],
+    });
+    return NextResponse.json({ topics, workspaceId: workspace.id });
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
+  }
 }
 
 export async function POST(request: Request) {
   const session = await requireAuth();
-  const result = await handleCreateTopic(request, {
-    authenticated: Boolean(session?.user),
-    store: topicStore(),
-    assess: async (input) => {
-      const assessment = await assessVeilleProposal(input);
-      return {
-        queueExact: queueHasExact(assessment.result),
-        similar: hasSimilar(assessment.result),
-        matches: assessment.result.matches,
-        coverage: assessment.coverage,
-        coverageNote: assessment.coverageNote,
-      };
-    },
-  });
-  return NextResponse.json(result.body, { status: result.status });
+  try {
+    const workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "topics");
+    const result = await handleCreateTopic(request, {
+      authenticated: Boolean(session?.user),
+      store: topicStore(workspace.id),
+      assess: async (input) => {
+        const assessment = await assessVeilleProposal(input, workspace.id);
+        return {
+          queueExact: queueHasExact(assessment.result),
+          similar: hasSimilar(assessment.result),
+          matches: assessment.result.matches,
+          coverage: assessment.coverage,
+          coverageNote: assessment.coverageNote,
+        };
+      },
+    });
+    return NextResponse.json(result.body, { status: result.status });
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
+  }
 }

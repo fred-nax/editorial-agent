@@ -104,10 +104,12 @@ export async function updateGenerationProgress(
 
 export async function createQueuedGeneration(input: {
   subject: string;
+  /** Espace figé à la création — jamais relu depuis le cookie UI ensuite. */
+  workspaceId: string;
   topicId?: string;
   editorialContext?: EditorialContext | null;
   featuredImageRequest?: FeaturedImageRequest | null;
-  /** Destination CMS — wordpress par défaut. Webflow refusé en amont. */
+  /** Destination CMS — doit correspondre à workspace.cmsProvider. */
   cmsDestination?: string | null;
 }) {
   const editorial =
@@ -115,10 +117,28 @@ export async function createQueuedGeneration(input: {
       ? input.editorialContext
       : null;
 
+  const workspaceId = input.workspaceId.trim();
+  if (!workspaceId) {
+    throw new Error("workspaceId obligatoire pour créer une génération.");
+  }
+
   const cmsDestination = input.cmsDestination?.trim() || "wordpress";
+
+  if (input.topicId) {
+    const topic = await db.topic.findFirst({
+      where: { id: input.topicId, workspaceId },
+      select: { id: true },
+    });
+    if (!topic) {
+      throw new Error(
+        "Sujet introuvable dans cet espace éditorial (relation croisée interdite)."
+      );
+    }
+  }
 
   const generation = await db.articleGeneration.create({
     data: {
+      workspaceId,
       subject: input.subject,
       status: "queued",
       topicId: input.topicId,
@@ -135,16 +155,21 @@ export async function createQueuedGeneration(input: {
   if (input.featuredImageRequest?.enabled) {
     await createPendingFeaturedImageRequest(
       generation.id,
-      input.featuredImageRequest
+      input.featuredImageRequest,
+      workspaceId
     );
   }
 
-  logInfo("generation", "queued", { generationId: generation.id });
+  logInfo("generation", "queued", {
+    generationId: generation.id,
+    workspaceId,
+  });
   return generation;
 }
 
 async function syncTopicStatus(
   topicId: string | null | undefined,
+  workspaceId: string,
   status: "completed" | "pending"
 ): Promise<void> {
   if (!topicId) {
@@ -152,7 +177,7 @@ async function syncTopicStatus(
   }
 
   await db.topic.updateMany({
-    where: { id: topicId, status: "generating" },
+    where: { id: topicId, workspaceId, status: "generating" },
     data: { status },
   });
 }
@@ -177,9 +202,14 @@ export async function processArticleGeneration(
     return;
   }
 
+  // Contexte figé à la création : workspaceId de l'enregistrement, jamais le cookie UI.
+  const workspaceId = generation.workspaceId;
+
   const startedAt = Date.now();
   const topic = generation.topicId
-    ? await db.topic.findUnique({ where: { id: generation.topicId } })
+    ? await db.topic.findFirst({
+        where: { id: generation.topicId, workspaceId },
+      })
     : null;
   const storedEditorial = parseStoredEditorialContext(generation.editorialContext);
   const contextInput = {
@@ -262,10 +292,11 @@ export async function processArticleGeneration(
       },
     });
 
-    await syncTopicStatus(generation.topicId, "completed");
+    await syncTopicStatus(generation.topicId, workspaceId, "completed");
 
     logInfo("generation", "completed", {
       generationId: id,
+      workspaceId,
       sessionId: result.sessionId,
       cmsDestination: destination,
       cmsExternalId: result.cms.externalId,
@@ -324,11 +355,12 @@ export async function processArticleGeneration(
       },
     });
 
-    await syncTopicStatus(generation.topicId, "pending");
+    await syncTopicStatus(generation.topicId, workspaceId, "pending");
     await cancelPendingFeaturedImagesForFailedArticle(id);
 
     logError("generation", "failed", {
       generationId: id,
+      workspaceId,
       sessionId,
       durationMs,
       message: toStoredError(error),

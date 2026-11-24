@@ -3,6 +3,7 @@ import { getGoogleConnection } from "@/lib/google/connection";
 import { syncGa4Range } from "@/lib/google/ga4-sync";
 import { syncSearchConsoleRange } from "@/lib/google/gsc-sync";
 import { logError, logInfo } from "@/lib/logger";
+import { WORKSPACE_IDS } from "@/lib/workspace/constants";
 
 export type GoogleSyncMode = "initial" | "daily" | "manual";
 
@@ -63,6 +64,8 @@ export async function startGoogleSync(mode: GoogleSyncMode): Promise<{
   const { start, end } = resolveSyncRange(mode);
   const run = await db.googleSyncRun.create({
     data: {
+      // Phase A V7.11.1 : Google reste rattaché à l’espace WordPress.
+      workspaceId: WORKSPACE_IDS.wordpress,
       connectionId: "default",
       status: "running",
       mode,

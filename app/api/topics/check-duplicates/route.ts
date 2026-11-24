@@ -13,6 +13,11 @@ import {
   releaseSimilarityCheckSlot,
   tryAcquireSimilarityCheckSlot,
 } from "@/lib/topics/editorial-similarity-locks";
+import {
+  assertWordPressOnlyModule,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +35,21 @@ export async function POST(request: Request) {
   const session = await requireAuth();
   if (!session?.user) {
     return unauthorized();
+  }
+
+  let workspace;
+  try {
+    workspace = await resolveActiveWorkspace();
+    // Rapprochements / inventaire WP uniquement (pas de compensation Webflow).
+    assertWordPressOnlyModule(workspace.cmsProvider);
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
 
   let payload: unknown;
@@ -82,6 +102,7 @@ export async function POST(request: Request) {
       const result = await checkEditorialRapprochement({
         subject: parsed.subject,
         angle: parsed.angle,
+        workspaceId: workspace.id,
       });
       return NextResponse.json({
         ...result,
@@ -117,7 +138,7 @@ export async function POST(request: Request) {
     }),
     {
       authenticated: true,
-      load: loadEditorialCorpus,
+      load: () => loadEditorialCorpus(workspace.id),
     }
   );
   if (result.status >= 500) {

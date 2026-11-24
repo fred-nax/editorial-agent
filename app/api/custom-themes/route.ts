@@ -8,12 +8,24 @@ import {
   validateThemeAngles,
   validateThemeQuota,
 } from "@/lib/seo/theme-catalog";
+import {
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+  workspaceWhere,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+function workspaceErrorResponse(error: WorkspaceContextError) {
+  return NextResponse.json(
+    { error: error.message, code: error.code },
+    { status: error.status }
+  );
 }
 
 export async function GET(request: Request) {
@@ -23,8 +35,19 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const activeOnly = searchParams.get("active") === "1";
-  const themes = await listThemeCatalog({ activeOnly });
-  return NextResponse.json({ themes });
+  try {
+    const workspace = await resolveActiveWorkspace();
+    const themes = await listThemeCatalog({
+      activeOnly,
+      workspaceId: workspace.id,
+    });
+    return NextResponse.json({ themes });
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
+    throw error;
+  }
 }
 
 export async function POST(request: Request) {
@@ -60,8 +83,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: quota.error }, { status: 400 });
   }
 
+  let workspaceId: string;
+  try {
+    workspaceId = (await resolveActiveWorkspace()).id;
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
+    throw error;
+  }
+
   const existing = await db.customTheme.findFirst({
-    where: { name: { equals: name, mode: "insensitive" } },
+    where: {
+      ...workspaceWhere(workspaceId),
+      name: { equals: name, mode: "insensitive" },
+    },
   });
   if (existing) {
     if (body.reactivate === false) {
@@ -86,6 +122,7 @@ export async function POST(request: Request) {
   }
 
   const maxOrder = await db.customTheme.aggregate({
+    where: workspaceWhere(workspaceId),
     _max: { sortOrder: true },
   });
   const sortOrder =
@@ -95,6 +132,7 @@ export async function POST(request: Request) {
 
   const theme = await db.customTheme.create({
     data: {
+      workspaceId,
       name,
       description,
       active: body.active === false ? false : true,

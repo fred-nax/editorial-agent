@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { formatEstimatedCost } from "@/lib/format";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
 import { parseWatchSnapshot } from "@/lib/veille/history";
+import { resolveActiveWorkspace, workspaceWhere } from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -62,6 +63,8 @@ function recentWatchPublications(
 export default async function DashboardPage() {
   await recoverStaleGenerations();
   const monthStart = startOfCurrentMonth();
+  const workspace = await resolveActiveWorkspace();
+  const scope = workspaceWhere(workspace.id);
 
   const [
     draftsThisMonth,
@@ -77,12 +80,14 @@ export default async function DashboardPage() {
     // Total brouillons réussis (WP historique null + wordpress + webflow).
     db.articleGeneration.count({
       where: {
+        ...scope,
         status: "completed",
         createdAt: { gte: monthStart },
       },
     }),
     db.articleGeneration.count({
       where: {
+        ...scope,
         status: "completed",
         createdAt: { gte: monthStart },
         OR: [{ cmsDestination: "wordpress" }, { cmsDestination: null }],
@@ -90,21 +95,24 @@ export default async function DashboardPage() {
     }),
     db.articleGeneration.count({
       where: {
+        ...scope,
         status: "completed",
         createdAt: { gte: monthStart },
         cmsDestination: "webflow",
       },
     }),
     db.topic.count({
-      where: { status: "pending" },
+      where: { ...scope, status: "pending" },
     }),
     db.articleGeneration.count({
       where: {
+        ...scope,
         status: { in: ["queued", "running"] },
       },
     }),
     db.articleGeneration.aggregate({
       where: {
+        ...scope,
         status: "completed",
         createdAt: { gte: monthStart },
         estimatedCost: { not: null },
@@ -112,6 +120,7 @@ export default async function DashboardPage() {
       _sum: { estimatedCost: true },
     }),
     db.articleGeneration.findMany({
+      where: scope,
       orderBy: { createdAt: "desc" },
       take: 8,
       select: {
@@ -130,6 +139,7 @@ export default async function DashboardPage() {
       },
     }),
     db.topic.findMany({
+      where: scope,
       orderBy: { createdAt: "desc" },
       take: 3,
       select: {
@@ -141,7 +151,7 @@ export default async function DashboardPage() {
       },
     }),
     db.editorialWatchSearch.findMany({
-      where: { status: "completed" },
+      where: { ...scope, status: "completed" },
       orderBy: { searchedAt: "desc" },
       take: 8,
       select: {
@@ -174,7 +184,8 @@ export default async function DashboardPage() {
         ]}
       />
 
-      <DashboardSeoTrafficStrip />
+      {/* Google/GSC/GA4 : phase A rattaché à WordPress — pas de données de substitution pour Webflow. */}
+      {workspace.cmsProvider === "wordpress" ? <DashboardSeoTrafficStrip /> : null}
 
       <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 lg:gap-5">
         <DashboardTopicPreview topics={recentTopics} />

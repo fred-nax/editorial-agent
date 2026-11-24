@@ -4,7 +4,12 @@ import {
   getLatestFeaturedImage,
   updateFeaturedImageAltText,
 } from "@/lib/images/service";
+import {
+  resolveFeaturedImageWorkspace,
+  workspaceContextErrorResponse,
+} from "@/lib/images/route-workspace";
 import { requireAuth } from "@/lib/require-auth";
+import { WorkspaceContextError } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +23,9 @@ function unauthorized() {
 }
 
 function toErrorResponse(error: unknown) {
+  if (error instanceof WorkspaceContextError) {
+    return workspaceContextErrorResponse(error);
+  }
   if (error instanceof FeaturedImageServiceError) {
     return NextResponse.json(
       {
@@ -40,8 +48,9 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   try {
+    const workspace = await resolveFeaturedImageWorkspace();
     const { id } = await context.params;
-    const image = await getLatestFeaturedImage(id);
+    const image = await getLatestFeaturedImage(id, workspace.id);
     return NextResponse.json({ image });
   } catch (error) {
     return toErrorResponse(error);
@@ -54,6 +63,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
+    const workspace = await resolveFeaturedImageWorkspace();
     const { id } = await context.params;
     const body = (await request.json()) as Record<string, unknown>;
     if (typeof body.imageId !== "string" || !body.imageId) {
@@ -66,6 +76,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       generationId: id,
       imageId: body.imageId,
       altText: body.altText,
+      workspaceId: workspace.id,
     });
     return NextResponse.json({ image });
   } catch (error) {

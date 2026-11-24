@@ -16,6 +16,12 @@ import { resolveEditorialAgentForDestination } from "@/lib/agent/registry";
 import { parseCmsDestinationInput } from "@/lib/cms";
 import { getWebflowGenerationReadiness } from "@/lib/webflow/readiness";
 import { requireAuth } from "@/lib/require-auth";
+import {
+  assertGenerationWorkspaceConsistency,
+  assertModuleAllowedForWorkspace,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,19 +47,29 @@ export async function POST(request: Request) {
   await recoverFeaturedImageJobs();
 
   try {
+    const workspace = await resolveActiveWorkspace();
+    assertModuleAllowedForWorkspace(workspace, "generation");
+
     const body = parseJsonBody(await request.json());
     const topicId =
       typeof body.topicId === "string" && body.topicId.trim()
         ? body.topicId.trim()
         : undefined;
     const featuredImageRequest = parseFeaturedImageRequest(body);
-    const destinationParsed = parseCmsDestinationInput(body.cmsDestination);
+
+    // Destination imposée par l’espace actif (pas de choix libre croisé).
+    const destinationParsed = parseCmsDestinationInput(workspace.cmsProvider);
     if (!destinationParsed.ok) {
       return NextResponse.json(
         { error: destinationParsed.error },
         { status: 400 }
       );
     }
+
+    assertGenerationWorkspaceConsistency({
+      workspaceCmsProvider: workspace.cmsProvider,
+      cmsDestination: destinationParsed.destination,
+    });
 
     if (destinationParsed.destination === "webflow") {
       const readiness = await getWebflowGenerationReadiness();
@@ -98,7 +114,11 @@ export async function POST(request: Request) {
 
     if (topicId) {
       const claimed = await db.topic.updateMany({
-        where: { id: topicId, status: "pending" },
+        where: {
+          id: topicId,
+          workspaceId: workspace.id,
+          status: "pending",
+        },
         data: { status: "generating" },
       });
 
@@ -109,7 +129,9 @@ export async function POST(request: Request) {
         );
       }
 
-      const topic = await db.topic.findUnique({ where: { id: topicId } });
+      const topic = await db.topic.findFirst({
+        where: { id: topicId, workspaceId: workspace.id },
+      });
       if (!topic) {
         return NextResponse.json({ error: "Sujet introuvable." }, { status: 404 });
       }
@@ -126,6 +148,7 @@ export async function POST(request: Request) {
 
     const generation = await createQueuedGeneration({
       subject,
+      workspaceId: workspace.id,
       topicId: resolvedTopicId,
       editorialContext,
       featuredImageRequest,
@@ -147,6 +170,12 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
     const message =
       error instanceof Error ? error.message : "Impossible de lancer la génération.";
     const status =
@@ -158,7 +187,8 @@ export async function POST(request: Request) {
       message.includes("image") ||
       message.includes("style") ||
       message.includes("format") ||
-      message.includes("instructions")
+      message.includes("instructions") ||
+      message.includes("espace")
         ? 400
         : 500;
     return NextResponse.json({ error: message }, { status });

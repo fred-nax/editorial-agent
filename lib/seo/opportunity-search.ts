@@ -393,6 +393,16 @@ export async function processOpportunitySearch(
     | Partial<Record<string, number>>
     | null
 ): Promise<void> {
+  const searchRun = await db.opportunitySearchRun.findUnique({
+    where: { id: runId },
+    select: { workspaceId: true },
+  });
+  if (!searchRun) {
+    logError("seo", "opportunity search run not found", { runId });
+    return;
+  }
+  const workspaceId = searchRun.workspaceId;
+
   const previewMode = isValidatedResearchConfiguration(configOrQuotas)
     ? configOrQuotas.mode
     : "domains";
@@ -403,6 +413,7 @@ export async function processOpportunitySearch(
   try {
     const { all, active } = await loadEditorialCatalogForSearch({
       ensureIfEmpty: true,
+      workspaceId,
     });
     catalogForScoring = all;
     if (previewMode === "domains") {
@@ -546,7 +557,7 @@ export async function processOpportunitySearch(
         candidate.subject
       );
       const existing = await db.seoOpportunity.findUnique({
-        where: { fingerprint },
+        where: { workspaceId_fingerprint: { workspaceId, fingerprint } },
       });
       if (existing) {
         skippedExisting += 1;
@@ -579,12 +590,15 @@ export async function processOpportunitySearch(
       }
 
       const { similarPosts, similarTopics, duplicateRisk } =
-        await findSimilarContent({
-          title: candidate.title,
-          subject: candidate.subject,
-          angle: candidate.angle,
-          searchIntent: candidate.searchIntent,
-        });
+        await findSimilarContent(
+          {
+            title: candidate.title,
+            subject: candidate.subject,
+            angle: candidate.angle,
+            searchIntent: candidate.searchIntent,
+          },
+          workspaceId
+        );
 
       // Rejeter les quasi-doublons blog trop forts plutôt que forcer un quota
       if (duplicateRisk === "high") {
@@ -618,6 +632,7 @@ export async function processOpportunitySearch(
 
       await db.seoOpportunity.create({
         data: {
+          workspaceId,
           title: candidate.title,
           subject: candidate.subject,
           angle: candidate.angle,

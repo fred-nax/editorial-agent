@@ -3,7 +3,12 @@ import {
   FeaturedImageServiceError,
   uploadFeaturedImageToWordPress,
 } from "@/lib/images/service";
+import {
+  resolveFeaturedImageWorkspace,
+  workspaceContextErrorResponse,
+} from "@/lib/images/route-workspace";
 import { requireAuth } from "@/lib/require-auth";
+import { WorkspaceContextError } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +28,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
+    const workspace = await resolveFeaturedImageWorkspace();
     const { id } = await context.params;
     const body = (await request.json()) as Record<string, unknown>;
     if (typeof body.imageId !== "string" || !body.imageId) {
@@ -37,10 +43,14 @@ export async function POST(request: Request, context: RouteContext) {
       imageId: body.imageId,
       altText: body.altText,
       confirmReplace: body.confirmReplace === true,
+      workspaceId: workspace.id,
     });
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceContextErrorResponse(error);
+    }
     if (error instanceof FeaturedImageServiceError) {
       return NextResponse.json(
         {

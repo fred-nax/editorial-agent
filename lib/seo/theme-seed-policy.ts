@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { WORKSPACE_IDS } from "@/lib/workspace/constants";
 import { isNaxialisWpHost, siteHostFromUrl } from "@/lib/editorial/identity";
 import { APP_SETTINGS_ID } from "@/lib/settings/app-settings-id";
 
@@ -10,10 +11,16 @@ import { APP_SETTINGS_ID } from "@/lib/settings/app-settings-id";
  * - Nouvelle installation client (pas de legacy, WP ≠ naxialis) → non.
  * - Ne réactive jamais une thématique désactivée (ensure ne touche pas `active`).
  */
-export async function shouldSeedHistoricalEditorialThemes(): Promise<boolean> {
+export async function shouldSeedHistoricalEditorialThemes(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<boolean> {
+  // Le seed historique Naxialis n’existe que pour l’espace WordPress.
+  if (workspaceId !== WORKSPACE_IDS.wordpress) {
+    return false;
+  }
   try {
     const legacyCount = await db.customTheme.count({
-      where: { legacyKey: { not: null } },
+      where: { workspaceId, legacyKey: { not: null } },
     });
     if (legacyCount > 0) {
       return true;

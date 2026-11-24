@@ -4,6 +4,9 @@ import type { RunAgentSessionResult } from "../lib/agent/run-session.js";
 import { processArticleGeneration } from "../lib/generation.js";
 import { recoverStaleGenerations } from "../lib/generation-recovery.js";
 import { INTERRUPTED_ERROR } from "../lib/generation-errors.js";
+import { WORKSPACE_IDS } from "../lib/workspace/constants.js";
+
+const WS = WORKSPACE_IDS.wordpress;
 
 function mockResult(subject: string): RunAgentSessionResult {
   return {
@@ -58,7 +61,7 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 const queued = await db.articleGeneration.create({
-  data: { subject: "Test claim queued", status: "queued" },
+  data: { workspaceId: WS, subject: "Test claim queued", status: "queued" },
 });
 
 const first = processArticleGeneration(queued.id, {
@@ -98,7 +101,7 @@ assert(
 
 for (const status of ["running", "failed"] as const) {
   const row = await db.articleGeneration.create({
-    data: { subject: `Test claim ${status}`, status },
+    data: { workspaceId: WS, subject: `Test claim ${status}`, status },
   });
   await processArticleGeneration(row.id, {
     run: async () => {
@@ -110,10 +113,11 @@ for (const status of ["running", "failed"] as const) {
 }
 
 const successTopic = await db.topic.create({
-  data: { subject: "Topic mock succès", status: "generating" },
+  data: { workspaceId: WS, subject: "Topic mock succès", status: "generating" },
 });
 const successGeneration = await db.articleGeneration.create({
   data: {
+    workspaceId: WS,
     subject: successTopic.subject,
     status: "queued",
     topicId: successTopic.id,
@@ -128,10 +132,11 @@ const completedTopic = await db.topic.findUnique({
 assert(completedTopic?.status === "completed", "Le Topic n’est pas passé à completed.");
 
 const failTopic = await db.topic.create({
-  data: { subject: "Topic mock échec", status: "generating" },
+  data: { workspaceId: WS, subject: "Topic mock échec", status: "generating" },
 });
 const failGeneration = await db.articleGeneration.create({
   data: {
+    workspaceId: WS,
     subject: failTopic.subject,
     status: "queued",
     topicId: failTopic.id,
@@ -152,7 +157,7 @@ assert(failedGeneration.error, "L’erreur Topic n’a pas été enregistrée.")
 assert(failedGeneration.durationMs !== null, "durationMs manquant sur l’échec Topic.");
 
 const stale = await db.articleGeneration.create({
-  data: { subject: "Génération stale", status: "running" },
+  data: { workspaceId: WS, subject: "Génération stale", status: "running" },
 });
 await db.$executeRaw`
   UPDATE "ArticleGeneration"

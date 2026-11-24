@@ -9,6 +9,12 @@ import {
   validateThemeAngles,
   validateThemeQuota,
 } from "@/lib/seo/theme-catalog";
+import {
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+  workspaceWhere,
+  type EditorialWorkspaceRecord,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,17 +27,47 @@ function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+function workspaceErrorResponse(error: WorkspaceContextError) {
+  return NextResponse.json(
+    { error: error.message, code: error.code },
+    { status: error.status }
+  );
+}
+
+type WorkspaceResolution =
+  | { ok: true; workspace: EditorialWorkspaceRecord }
+  | { ok: false; response: NextResponse };
+
+async function getWorkspaceOrResponse(): Promise<WorkspaceResolution> {
+  try {
+    return { ok: true, workspace: await resolveActiveWorkspace() };
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return { ok: false, response: workspaceErrorResponse(error) };
+    }
+    throw error;
+  }
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   if (!(await requireAuth())) {
     return unauthorized();
   }
 
+  const resolved = await getWorkspaceOrResponse();
+  if (!resolved.ok) {
+    return resolved.response;
+  }
+  const { workspace } = resolved;
+
   const { id } = await context.params;
-  const theme = await db.customTheme.findUnique({ where: { id } });
+  const theme = await db.customTheme.findFirst({
+    where: { id, ...workspaceWhere(workspace.id) },
+  });
   if (!theme) {
     return NextResponse.json({ error: "Thématique introuvable." }, { status: 404 });
   }
-  const dependencies = await getThemeDependencies(id);
+  const dependencies = await getThemeDependencies(id, workspace.id);
   return NextResponse.json({ theme, dependencies });
 }
 
@@ -39,6 +75,12 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!(await requireAuth())) {
     return unauthorized();
   }
+
+  const resolved = await getWorkspaceOrResponse();
+  if (!resolved.ok) {
+    return resolved.response;
+  }
+  const { workspace } = resolved;
 
   const { id } = await context.params;
   let body: Record<string, unknown>;
@@ -48,7 +90,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "JSON invalide." }, { status: 400 });
   }
 
-  const existing = await db.customTheme.findUnique({ where: { id } });
+  const existing = await db.customTheme.findFirst({
+    where: { id, ...workspaceWhere(workspace.id) },
+  });
   if (!existing) {
     return NextResponse.json({ error: "Thématique introuvable." }, { status: 404 });
   }
@@ -70,6 +114,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     const conflict = await db.customTheme.findFirst({
       where: {
+        ...workspaceWhere(workspace.id),
         id: { not: id },
         name: { equals: name, mode: "insensitive" },
       },
@@ -136,7 +181,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   });
 
   if (data.name && data.name !== existing.name) {
-    await syncOpportunityThemeLabel(id, data.name);
+    await syncOpportunityThemeLabel(id, data.name, workspace.id);
   }
 
   return NextResponse.json({ theme });
@@ -151,15 +196,23 @@ export async function DELETE(request: Request, context: RouteContext) {
     return unauthorized();
   }
 
+  const resolved = await getWorkspaceOrResponse();
+  if (!resolved.ok) {
+    return resolved.response;
+  }
+  const { workspace } = resolved;
+
   const { id } = await context.params;
-  const existing = await db.customTheme.findUnique({ where: { id } });
+  const existing = await db.customTheme.findFirst({
+    where: { id, ...workspaceWhere(workspace.id) },
+  });
   if (!existing) {
     return NextResponse.json({ error: "Thématique introuvable." }, { status: 404 });
   }
 
   const { searchParams } = new URL(request.url);
   const forceDeactivate = searchParams.get("force") === "deactivate";
-  const dependencies = await getThemeDependencies(id);
+  const dependencies = await getThemeDependencies(id, workspace.id);
 
   if (!dependencies.canDelete || forceDeactivate) {
     const theme = await db.customTheme.update({

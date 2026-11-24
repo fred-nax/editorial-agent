@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { WORKSPACE_IDS } from "../workspace/constants";
 import { getWordPressInventoryDiagnostic } from "../seo/wordpress-inventory";
 import {
   checkProposals,
@@ -22,7 +23,9 @@ function httpUrl(value: string | null | undefined): string | null {
   return value;
 }
 
-export async function loadEditorialCorpus(): Promise<EditorialCorpus> {
+export async function loadEditorialCorpus(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<EditorialCorpus> {
   const { isWordPressInventoryUsable } = await import(
     "@/lib/settings/inventory-guard"
   );
@@ -30,19 +33,19 @@ export async function loadEditorialCorpus(): Promise<EditorialCorpus> {
 
   const [diagnostic, postCount, topicCount, generationCount, posts, topics, generations] =
     await Promise.all([
-      getWordPressInventoryDiagnostic(),
+      getWordPressInventoryDiagnostic(workspaceId),
       inventoryUsable
         ? db.wordPressPost.count({
-            where: { status: { in: KNOWN_POST_STATUSES } },
+            where: { workspaceId, status: { in: KNOWN_POST_STATUSES } },
           })
         : Promise.resolve(0),
-      db.topic.count({ where: { status: { not: "archived" } } }),
+      db.topic.count({ where: { workspaceId, status: { not: "archived" } } }),
       db.articleGeneration.count({
-        where: { status: { in: ["completed", "failed"] } },
+        where: { workspaceId, status: { in: ["completed", "failed"] } },
       }),
       inventoryUsable
         ? db.wordPressPost.findMany({
-            where: { status: { in: KNOWN_POST_STATUSES } },
+            where: { workspaceId, status: { in: KNOWN_POST_STATUSES } },
             select: {
               wpPostId: true,
               title: true,
@@ -55,12 +58,12 @@ export async function loadEditorialCorpus(): Promise<EditorialCorpus> {
           })
         : Promise.resolve([]),
       db.topic.findMany({
-        where: { status: { not: "archived" } },
+        where: { workspaceId, status: { not: "archived" } },
         select: { id: true, subject: true, angle: true, status: true },
         take: TOPIC_LIMIT,
       }),
       db.articleGeneration.findMany({
-        where: { status: { in: ["completed", "failed"] } },
+        where: { workspaceId, status: { in: ["completed", "failed"] } },
         select: {
           id: true,
           subject: true,
@@ -134,13 +137,16 @@ export async function loadEditorialCorpus(): Promise<EditorialCorpus> {
   return { records, ...coverage };
 }
 
-export async function assessVeilleProposal(input: ProposalInput): Promise<{
+export async function assessVeilleProposal(
+  input: ProposalInput,
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<{
   result: ProposalDuplicateResult;
   coverage: InventoryCoverage;
   coverageNote: string;
   verified: boolean;
 }> {
-  const corpus = await loadEditorialCorpus();
+  const corpus = await loadEditorialCorpus(workspaceId);
   const [result] = checkProposals([input], corpus);
   return {
     result,

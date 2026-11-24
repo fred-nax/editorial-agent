@@ -5,6 +5,12 @@ import {
   getWordPressInventoryDiagnostic,
 } from "@/lib/seo/wordpress-inventory";
 import { db } from "@/lib/db";
+import {
+  assertWordPressOnlyModule,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+  workspaceWhere,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,12 +20,35 @@ function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+function workspaceErrorResponse(error: WorkspaceContextError) {
+  return NextResponse.json(
+    { error: error.message, code: error.code },
+    { status: error.status }
+  );
+}
+
+async function resolveWordPressWorkspace() {
+  const workspace = await resolveActiveWorkspace();
+  assertWordPressOnlyModule(workspace.cmsProvider);
+  return workspace;
+}
+
 export async function GET() {
   if (!(await requireAuth())) {
     return unauthorized();
   }
 
-  const diagnostic = await getWordPressInventoryDiagnostic();
+  let workspace: Awaited<ReturnType<typeof resolveWordPressWorkspace>>;
+  try {
+    workspace = await resolveWordPressWorkspace();
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
+    throw error;
+  }
+
+  const diagnostic = await getWordPressInventoryDiagnostic(workspace.id);
 
   return NextResponse.json({
     count: diagnostic.count,
@@ -49,8 +78,18 @@ export async function POST(request: Request) {
     return unauthorized();
   }
 
+  let workspace: Awaited<ReturnType<typeof resolveWordPressWorkspace>>;
+  try {
+    workspace = await resolveWordPressWorkspace();
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return workspaceErrorResponse(error);
+    }
+    throw error;
+  }
+
   const existing = await db.wordPressSyncRun.findFirst({
-    where: { status: "running" },
+    where: { ...workspaceWhere(workspace.id), status: "running" },
   });
   if (existing) {
     return NextResponse.json(
@@ -71,6 +110,7 @@ export async function POST(request: Request) {
 
   const run = await db.wordPressSyncRun.create({
     data: {
+      workspaceId: workspace.id,
       status: "running",
       mode,
     },
