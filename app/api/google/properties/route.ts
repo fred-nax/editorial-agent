@@ -29,15 +29,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const gsc = await listSearchConsoleSites();
-    const ga4 =
-      workspace.cmsProvider === "wordpress"
-        ? await listGa4Properties()
-        : [];
+    const [gsc, ga4] = await Promise.all([
+      listSearchConsoleSites(),
+      listGa4Properties(),
+    ]);
     return NextResponse.json({
       gsc,
       ga4,
-      ga4Supported: workspace.cmsProvider === "wordpress",
+      ga4Supported: true,
+      cmsProvider: workspace.cmsProvider,
     });
   } catch (error) {
     return NextResponse.json(

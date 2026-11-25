@@ -20,7 +20,7 @@ function read(path: string): string {
 }
 
 describe("V7.14.0 — Search Console Webflow (source)", () => {
-  it("active analytics Webflow sans GA4 dans le sync", () => {
+  it("active analytics Webflow (GSC V7.14.0 ; GA4 mutualisé V7.14.1)", () => {
     assert.equal(isWebflowModuleEnabled("analytics"), true);
     const wf = {
       id: WORKSPACE_IDS.webflow,
@@ -36,9 +36,9 @@ describe("V7.14.0 — Search Console Webflow (source)", () => {
       assertModuleAllowedForWorkspace(wf, "analytics")
     );
     const sync = read("lib/google/sync.ts");
-    assert.match(sync, /isWebflow/);
-    assert.match(sync, /Search Console uniquement|pas GA4/i);
     assert.match(sync, /workspaceId/);
+    assert.match(sync, /syncGa4Range/);
+    assert.doesNotMatch(sync, /pas GA4|Search Console uniquement/i);
   });
 
   it("empty state analytics Webflow sans fallback WordPress", () => {

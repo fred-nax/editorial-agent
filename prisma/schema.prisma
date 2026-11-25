@@ -828,6 +828,8 @@ model Ga4PageDailyStat {
   engagedSessions Int      @default(0)
   aiSessions      Int      @default(0)
   wpPostId        Int?
+  /// Identifiant CMS générique (Webflow item) — parallèle à wpPostId.
+  cmsExternalId   String?
   syncedAt        DateTime @default(now())
 
   @@unique([propertyId, pageUrlNorm, date])
@@ -835,6 +837,7 @@ model Ga4PageDailyStat {
   @@index([propertyId, date])
   @@index([pageUrlNorm])
   @@index([wpPostId])
+  @@index([cmsExternalId])
 }
 
 /// Répartition des sessions GA4 par source classifiée (quotidien).

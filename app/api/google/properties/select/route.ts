@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { savePropertySelection } from "@/lib/google/connection";
+import {
+  assertGa4PropertyMatchesSite,
+  listGa4WebStreams,
+} from "@/lib/google/ga4-streams";
 import { assertGscPropertyMatchesSite } from "@/lib/google/url-normalize";
 import { resolveWorkspacePublicSiteUrl } from "@/lib/google/site-url";
 import { requireGoogleAnalyticsWorkspace } from "@/lib/google/workspace-guard";
@@ -94,8 +98,28 @@ export async function POST(request: Request) {
     }
   }
 
-  // Webflow : ignorer toute sélection GA4 (hors périmètre).
-  const ga4Allowed = workspace.cmsProvider === "wordpress";
+  const ga4Id =
+    body.ga4PropertyId === undefined
+      ? undefined
+      : body.ga4PropertyId?.trim() || null;
+
+  if (ga4Id) {
+    const siteUrl = await resolveWorkspacePublicSiteUrl(workspace.id);
+    try {
+      const streams = await listGa4WebStreams(ga4Id);
+      assertGa4PropertyMatchesSite({ siteUrl, streams });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Propriété Google Analytics incompatible.",
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   try {
     await savePropertySelection({
@@ -103,9 +127,9 @@ export async function POST(request: Request) {
       gscPropertyUrl: gscUrl,
       gscPropertyType: body.gscPropertyType ?? null,
       gscPermissionLevel: body.gscPermissionLevel ?? null,
-      ga4AccountId: ga4Allowed ? body.ga4AccountId ?? null : null,
-      ga4PropertyId: ga4Allowed ? body.ga4PropertyId ?? null : null,
-      ga4PropertyName: ga4Allowed ? body.ga4PropertyName ?? null : null,
+      ga4AccountId: body.ga4AccountId ?? null,
+      ga4PropertyId: ga4Id,
+      ga4PropertyName: body.ga4PropertyName ?? null,
     });
   } catch (error) {
     return NextResponse.json(

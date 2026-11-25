@@ -88,8 +88,8 @@ export function SettingsPageClient({
         <div>
           <h2 className="text-base font-semibold text-slate-900">Google</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Search Console par espace éditorial (V7.14.0). GA4 reste WordPress
-            uniquement.
+            Search Console et Google Analytics 4 par espace éditorial
+            (V7.14.1).
           </p>
         </div>
         <GoogleIntegrationsSettings />

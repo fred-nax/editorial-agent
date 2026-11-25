@@ -60,7 +60,6 @@ export async function getPagePerformance(input: {
   const connection = await getGoogleConnection(input.workspaceId);
   const selection = connection?.selection;
   const gscProperty = selection?.gscPropertyUrl ?? null;
-  // GA4 Webflow hors V7.14.0 — uniquement si sélection WP.
   const ga4Property = selection?.ga4PropertyId ?? null;
 
   const latestGsc =

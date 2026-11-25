@@ -29,7 +29,7 @@ function authorizeCron(request: Request): boolean {
 
 /**
  * Endpoint cron VPS sécurisé (Bearer GOOGLE_SYNC_CRON_SECRET).
- * Synchronise chaque espace disposant d’une propriété GSC (et/ou GA4 WP).
+ * Synchronise chaque espace disposant d’une propriété GSC et/ou GA4.
  */
 export async function POST(request: Request) {
   if (!authorizeCron(request)) {

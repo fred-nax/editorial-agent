@@ -183,6 +183,11 @@ export async function savePropertySelection(input: {
       ? undefined
       : input.gscPropertyUrl?.trim() || null;
 
+  const ga4Id =
+    input.ga4PropertyId === undefined
+      ? undefined
+      : input.ga4PropertyId?.trim() || null;
+
   // Une propriété ne peut pas être partagée silencieusement entre espaces.
   if (gscUrl) {
     const conflict = await db.googlePropertySelection.findFirst({
@@ -195,6 +200,20 @@ export async function savePropertySelection(input: {
     if (conflict) {
       throw new Error(
         "Cette propriété Search Console est déjà associée à un autre espace éditorial. Choisissez une autre propriété."
+      );
+    }
+  }
+  if (ga4Id) {
+    const conflict = await db.googlePropertySelection.findFirst({
+      where: {
+        ga4PropertyId: ga4Id,
+        NOT: { workspaceId },
+      },
+      select: { workspaceId: true },
+    });
+    if (conflict) {
+      throw new Error(
+        "Cette propriété Google Analytics est déjà associée à un autre espace éditorial. Choisissez une autre propriété."
       );
     }
   }

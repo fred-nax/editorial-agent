@@ -23,6 +23,15 @@ function dateOnly(d: Date): Date {
   return new Date(`${formatDateUTC(d)}T00:00:00.000Z`);
 }
 
+/** Évite NaN/Infinity qui font échouer Prisma Float (Invalid upsert). */
+function safeMetric(value: unknown, fallback = 0): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) {
+    return fallback;
+  }
+  return n;
+}
+
 function addDaysUTC(d: Date, days: number): Date {
   const next = dateOnly(d);
   next.setUTCDate(next.getUTCDate() + days);
@@ -101,8 +110,12 @@ export async function syncSearchConsolePropertyRange(input: {
       if (!day) {
         continue;
       }
-      const clicks = Number(row.clicks ?? 0);
-      const impressions = Number(row.impressions ?? 0);
+      const clicks = safeMetric(row.clicks);
+      const impressions = safeMetric(row.impressions);
+      const ctr = safeMetric(
+        row.ctr ?? (impressions > 0 ? clicks / impressions : 0)
+      );
+      const position = safeMetric(row.position);
       await db.gscPropertyDailyStat.upsert({
         where: {
           propertyUrl_date: {
@@ -116,16 +129,16 @@ export async function syncSearchConsolePropertyRange(input: {
           date: dateOnly(new Date(`${day}T00:00:00.000Z`)),
           clicks,
           impressions,
-          ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
-          position: Number(row.position ?? 0),
+          ctr,
+          position,
           hasData: true,
         },
         update: {
           ...(workspaceId ? { workspaceId } : {}),
           clicks,
           impressions,
-          ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
-          position: Number(row.position ?? 0),
+          ctr,
+          position,
           hasData: true,
           syncedAt: new Date(),
         },
@@ -192,8 +205,13 @@ export async function syncSearchConsoleRange(input: {
       if (!norm || !day) {
         continue;
       }
-      const clicks = Number(row.clicks ?? 0);
-      const impressions = Number(row.impressions ?? 0);
+      const clicks = safeMetric(row.clicks);
+      const impressions = safeMetric(row.impressions);
+      const ctr = safeMetric(
+        row.ctr ?? (impressions > 0 ? clicks / impressions : 0)
+      );
+      const position = safeMetric(row.position);
+      const match = urlMap.get(norm);
       await db.gscPageDailyStat.upsert({
         where: {
           propertyUrl_pageUrlNorm_date: {
@@ -210,22 +228,22 @@ export async function syncSearchConsoleRange(input: {
           date: dateOnly(new Date(`${day}T00:00:00.000Z`)),
           clicks,
           impressions,
-          ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
-          position: Number(row.position ?? 0),
+          ctr,
+          position,
           hasData: true,
-          wpPostId: urlMap.get(norm)?.wpPostId ?? null,
-          cmsExternalId: urlMap.get(norm)?.cmsExternalId ?? null,
+          wpPostId: match?.wpPostId ?? null,
+          cmsExternalId: match?.cmsExternalId ?? null,
         },
         update: {
           workspaceId,
           pageUrl,
           clicks,
           impressions,
-          ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
-          position: Number(row.position ?? 0),
+          ctr,
+          position,
           hasData: true,
-          wpPostId: urlMap.get(norm)?.wpPostId ?? null,
-          cmsExternalId: urlMap.get(norm)?.cmsExternalId ?? null,
+          wpPostId: match?.wpPostId ?? null,
+          cmsExternalId: match?.cmsExternalId ?? null,
           syncedAt: new Date(),
         },
       });
@@ -260,8 +278,12 @@ export async function syncSearchConsoleRange(input: {
       if (!norm || !query || !day) {
         continue;
       }
-      const clicks = Number(row.clicks ?? 0);
-      const impressions = Number(row.impressions ?? 0);
+      const clicks = safeMetric(row.clicks);
+      const impressions = safeMetric(row.impressions);
+      const ctr = safeMetric(
+        row.ctr ?? (impressions > 0 ? clicks / impressions : 0)
+      );
+      const position = safeMetric(row.position);
       await db.gscQueryDailyStat.upsert({
         where: {
           propertyUrl_pageUrlNorm_query_date: {
@@ -279,15 +301,15 @@ export async function syncSearchConsoleRange(input: {
           date: dateOnly(new Date(`${day}T00:00:00.000Z`)),
           clicks,
           impressions,
-          ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
-          position: Number(row.position ?? 0),
+          ctr,
+          position,
         },
         update: {
           workspaceId,
           clicks,
           impressions,
-          ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
-          position: Number(row.position ?? 0),
+          ctr,
+          position,
           syncedAt: new Date(),
         },
       });

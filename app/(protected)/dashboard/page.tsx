@@ -175,7 +175,7 @@ export default async function DashboardPage() {
         ]}
       />
 
-      {/* V7.14.0 : GSC par espace (Webflow sans GA4). Jamais de données d’un autre espace. */}
+      {/* V7.14.1 : GSC + GA4 par espace. Jamais de données d’un autre espace. */}
       <DashboardSeoTrafficStrip workspaceId={workspace.id} />
 
       <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 lg:gap-5">

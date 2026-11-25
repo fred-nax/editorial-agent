@@ -2,11 +2,9 @@ import { db } from "@/lib/db";
 import { getGoogleConnection } from "@/lib/google/connection";
 import { syncGa4Range } from "@/lib/google/ga4-sync";
 import { syncSearchConsoleRange } from "@/lib/google/gsc-sync";
+import { toPublicGoogleError } from "@/lib/google/public-errors";
 import { logError, logInfo } from "@/lib/logger";
-import {
-  getWorkspaceByIdOrSlug,
-  WORKSPACE_IDS,
-} from "@/lib/workspace";
+import { WORKSPACE_IDS } from "@/lib/workspace";
 
 export type GoogleSyncMode = "initial" | "daily" | "manual";
 
@@ -69,18 +67,11 @@ export async function startGoogleSync(
     throw new Error("Connectez Google avant de synchroniser.");
   }
   const selection = connection.selection;
-  const workspace = await getWorkspaceByIdOrSlug(wsId);
-  const isWebflow = workspace?.cmsProvider === "webflow";
-
-  // Webflow V7.14.0 : Search Console uniquement (pas GA4).
-  if (isWebflow) {
-    if (!selection?.gscPropertyUrl) {
-      throw new Error(
-        "Sélectionnez une propriété Search Console pour cet espace Webflow."
-      );
-    }
-  } else if (!selection?.gscPropertyUrl && !selection?.ga4PropertyId) {
-    throw new Error("Sélectionnez au moins une propriété GSC ou GA4.");
+  // V7.14.1 : GSC et/ou GA4 par espace (WordPress et Webflow).
+  if (!selection?.gscPropertyUrl && !selection?.ga4PropertyId) {
+    throw new Error(
+      "Sélectionnez au moins une propriété Search Console ou Google Analytics pour cet espace."
+    );
   }
 
   const { start, end } = resolveSyncRange(mode);
@@ -118,8 +109,6 @@ export async function processGoogleSync(runId: string): Promise<void> {
     return;
   }
 
-  const workspace = await getWorkspaceByIdOrSlug(workspaceId);
-  const isWebflow = workspace?.cmsProvider === "webflow";
   const frozenProperty = selection.gscPropertyUrl?.trim() || null;
   const frozenGa4 = selection.ga4PropertyId?.trim() || null;
 
@@ -138,12 +127,12 @@ export async function processGoogleSync(runId: string): Promise<void> {
         workspaceId,
       });
     }
-    // GA4 : WordPress uniquement dans cette version.
-    if (!isWebflow && frozenGa4) {
+    if (frozenGa4) {
       ga4Upserted = await syncGa4Range({
         propertyId: frozenGa4,
         start,
         end,
+        workspaceId,
       });
     }
     await db.googleSyncRun.update({
@@ -163,16 +152,33 @@ export async function processGoogleSync(runId: string): Promise<void> {
       ga4Upserted,
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message.slice(0, 500) : "Erreur sync Google.";
-    logError("google-sync", "failed", { runId, workspaceId, message });
+    const technical =
+      error instanceof Error ? error.message : "Erreur sync Google.";
+    const kind =
+      technical.toLowerCase().includes("analytics") ||
+      technical.toLowerCase().includes("ga4")
+        ? "ga4_sync"
+        : technical.toLowerCase().includes("gsc") ||
+            technical.toLowerCase().includes("search console") ||
+            technical.toLowerCase().includes("webmaster") ||
+            technical.toLowerCase().includes("gscpagedailystat")
+          ? "gsc_sync"
+          : "google_sync";
+    const publicMessage = toPublicGoogleError(error, kind);
+    logError("google-sync", "failed", {
+      runId,
+      workspaceId,
+      publicMessage,
+      technical: technical.slice(0, 4000),
+    });
     await db.googleSyncRun.update({
       where: { id: runId },
       data: {
         status: "failed",
         gscUpserted,
         ga4Upserted,
-        error: message,
+        // UI / API : message public uniquement (détail technique dans les logs).
+        error: publicMessage.slice(0, 500),
         finishedAt: new Date(),
       },
     });
@@ -181,12 +187,21 @@ export async function processGoogleSync(runId: string): Promise<void> {
 
 export function enqueueGoogleSync(runId: string): void {
   void processGoogleSync(runId).catch(async (error) => {
-    const message =
-      error instanceof Error ? error.message.slice(0, 500) : "Erreur inattendue.";
+    const publicMessage = toPublicGoogleError(error, "google_sync");
+    logError("google-sync", "enqueue failed", {
+      runId,
+      publicMessage,
+      technical:
+        error instanceof Error ? error.message.slice(0, 4000) : String(error),
+    });
     await db.googleSyncRun
       .update({
         where: { id: runId },
-        data: { status: "failed", error: message, finishedAt: new Date() },
+        data: {
+          status: "failed",
+          error: publicMessage.slice(0, 500),
+          finishedAt: new Date(),
+        },
       })
       .catch(() => undefined);
   });
@@ -196,10 +211,14 @@ export async function getGoogleSyncStatus(
   workspaceId: string = WORKSPACE_IDS.wordpress
 ) {
   const wsId = workspaceId.trim() || WORKSPACE_IDS.wordpress;
-  const [last, running, connection] = await Promise.all([
+  const [last, lastSuccess, running, connection] = await Promise.all([
     db.googleSyncRun.findFirst({
       where: { workspaceId: wsId },
       orderBy: { startedAt: "desc" },
+    }),
+    db.googleSyncRun.findFirst({
+      where: { workspaceId: wsId, status: "completed" },
+      orderBy: { finishedAt: "desc" },
     }),
     db.googleSyncRun.findFirst({
       where: { status: "running", workspaceId: wsId },
@@ -207,7 +226,7 @@ export async function getGoogleSyncStatus(
     }),
     getGoogleConnection(wsId),
   ]);
-  return { last, running, connection };
+  return { last, lastSuccess, running, connection };
 }
 
 /** Reprise soft des runs coincés (ex. redémarrage process). */

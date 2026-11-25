@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { isGoogleOAuthConfigured } from "@/lib/google/oauth";
+import {
+  sanitizeStoredGoogleError,
+  toPublicGoogleError,
+} from "@/lib/google/public-errors";
 import { propertyLooksCompatibleWithSite } from "@/lib/google/url-normalize";
 import { resolveWorkspacePublicSiteUrl } from "@/lib/google/site-url";
 import { getGoogleSyncStatus } from "@/lib/google/sync";
@@ -28,7 +32,9 @@ export async function GET(request: Request) {
     throw error;
   }
 
-  const { last, running, connection } = await getGoogleSyncStatus(workspace.id);
+  const { last, lastSuccess, running, connection } = await getGoogleSyncStatus(
+    workspace.id
+  );
   const selection = connection?.selection ?? null;
   const siteUrl = await resolveWorkspacePublicSiteUrl(workspace.id);
   const gscConfigured = Boolean(selection?.gscPropertyUrl);
@@ -36,36 +42,30 @@ export async function GET(request: Request) {
     selection?.gscPropertyUrl,
     siteUrl
   );
+  const syncError = sanitizeStoredGoogleError(last?.error, "google_sync");
+  const connectionError = connection?.lastError
+    ? toPublicGoogleError(connection.lastError, "google_auth")
+    : null;
 
   return NextResponse.json({
     oauthConfigured: isGoogleOAuthConfigured(),
     connected: Boolean(connection && connection.status === "connected"),
     status: connection?.status ?? "disconnected",
     accountEmail: connection?.googleAccountEmail ?? null,
-    lastError: connection?.lastError ?? null,
+    lastError: connectionError,
     connectedAt: connection?.connectedAt?.toISOString() ?? null,
     cmsProvider: workspace.cmsProvider,
     workspaceId: workspace.id,
     publicSiteUrl: siteUrl,
-    /** Webflow : GA4 hors périmètre V7.14.0. */
-    ga4Supported: workspace.cmsProvider === "wordpress",
+    ga4Supported: true,
     selection: selection
       ? {
           gscPropertyUrl: selection.gscPropertyUrl,
           gscPropertyType: selection.gscPropertyType,
           gscPermissionLevel: selection.gscPermissionLevel,
-          ga4AccountId:
-            workspace.cmsProvider === "wordpress"
-              ? selection.ga4AccountId
-              : null,
-          ga4PropertyId:
-            workspace.cmsProvider === "wordpress"
-              ? selection.ga4PropertyId
-              : null,
-          ga4PropertyName:
-            workspace.cmsProvider === "wordpress"
-              ? selection.ga4PropertyName
-              : null,
+          ga4AccountId: selection.ga4AccountId,
+          ga4PropertyId: selection.ga4PropertyId,
+          ga4PropertyName: selection.ga4PropertyName,
           gscCompatibleWithSite: gscCompatible,
           /** Alias rétrocompat UI WordPress. */
           gscCompatibleWithWp: gscCompatible,
@@ -75,14 +75,19 @@ export async function GET(request: Request) {
       gscConfigured,
       gscCompatible,
       syncRunning: Boolean(running),
-      hasPreviousData: Boolean(last && last.status === "completed"),
+      hasPreviousData: Boolean(lastSuccess),
+      lastAttemptFailed: last?.status === "failed",
     },
     sync: {
       running: Boolean(running),
       lastStatus: last?.status ?? null,
+      /** Dernière tentative (succès ou échec). */
       lastFinishedAt: last?.finishedAt?.toISOString() ?? null,
-      lastError: last?.error ?? null,
+      lastError: syncError,
       lastMode: last?.mode ?? null,
+      /** Dernière synchronisation réussie (distincte de la dernière tentative). */
+      lastSuccessAt: lastSuccess?.finishedAt?.toISOString() ?? null,
+      lastSuccessMode: lastSuccess?.mode ?? null,
     },
   });
 }

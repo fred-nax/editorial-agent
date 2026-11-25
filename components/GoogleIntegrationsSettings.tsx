@@ -36,6 +36,7 @@ type StatusPayload = {
     gscCompatible: boolean;
     syncRunning: boolean;
     hasPreviousData: boolean;
+    lastAttemptFailed?: boolean;
   };
   sync: {
     running: boolean;
@@ -43,6 +44,8 @@ type StatusPayload = {
     lastFinishedAt: string | null;
     lastError: string | null;
     lastMode: string | null;
+    lastSuccessAt?: string | null;
+    lastSuccessMode?: string | null;
   };
 };
 
@@ -76,7 +79,7 @@ export function GoogleIntegrationsSettings() {
   const [editing, setEditing] = useState(false);
 
   const isWebflow = status?.cmsProvider === "webflow";
-  const ga4Supported = status?.ga4Supported !== false && !isWebflow;
+  const ga4Supported = status?.ga4Supported !== false;
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/google/status", { credentials: "same-origin" });
@@ -278,13 +281,11 @@ export function GoogleIntegrationsSettings() {
     <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0 dark:border-slate-700 dark:bg-slate-950">
       <CardHeader className="gap-1 border-b border-[#E2E8F0] p-5 dark:border-slate-700">
         <CardTitle className="text-base font-semibold text-slate-900 dark:text-slate-100">
-          {isWebflow
-            ? "Google Search Console"
-            : "Google Search Console & Analytics"}
+          Google Search Console & Analytics
         </CardTitle>
         <CardDescription className="text-sm text-slate-600 dark:text-slate-400">
           {isWebflow
-            ? "Search Console par espace Webflow — identité Google mutualisable, propriété dédiée obligatoire. GA4 hors périmètre de cette version."
+            ? "Search Console et GA4 par espace Webflow — identité Google mutualisable, propriétés dédiées obligatoires. Aucune donnée WordPress."
             : "Connexion OAuth en lecture seule. Les jetons restent côté serveur et sont chiffrés."}
         </CardDescription>
       </CardHeader>
@@ -353,23 +354,34 @@ export function GoogleIntegrationsSettings() {
             </p>
           ) : null}
           <p className="text-slate-600 dark:text-slate-400">
-            Dernière sync :{" "}
+            Dernière tentative :{" "}
             {status?.sync.lastFinishedAt
               ? new Date(status.sync.lastFinishedAt).toLocaleString("fr-FR")
               : "jamais"}
+            {status?.sync.lastStatus === "failed" ? " · échec" : null}
+            {status?.sync.lastStatus === "completed" ? " · succès" : null}
             {status?.sync.running ? " · en cours…" : null}
-            {status?.sync.lastError ? ` · ${status.sync.lastError}` : null}
           </p>
-          {status?.sync.lastStatus === "failed" &&
+          {status?.sync.lastSuccessAt ? (
+            <p className="text-slate-600 dark:text-slate-400">
+              Dernière sync réussie :{" "}
+              {new Date(status.sync.lastSuccessAt).toLocaleString("fr-FR")}
+            </p>
+          ) : null}
+          {status?.sync.lastError ? (
+            <p role="alert" className="text-sm text-amber-800">
+              {status.sync.lastError}
+            </p>
+          ) : null}
+          {status?.states?.lastAttemptFailed &&
           status.states?.hasPreviousData ? (
             <p className="text-sm text-amber-800">
-              Dernière synchronisation en erreur — les données précédemment
-              synchronisées restent disponibles.
+              Les données précédemment synchronisées restent disponibles.
             </p>
           ) : null}
           <p className="text-[11px] leading-relaxed text-slate-500">
             {isWebflow
-              ? "Les statistiques Search Console sont isolées par espace et par propriété. Aucune donnée WordPress n’est affichée ici."
+              ? "GSC et GA4 sont isolés par espace et par propriété. Le trafic assistants IA repose uniquement sur les sources GA4 identifiables — jamais le trafic direct."
               : "Les impressions AI Overviews / AI Mode de Search Console ne sont pas disponibles via l’API publique. Le trafic assistants IA repose sur les sources GA4 identifiables."}
           </p>
         </div>
@@ -414,7 +426,8 @@ export function GoogleIntegrationsSettings() {
                 disabled={
                   busy ||
                   status.sync.running ||
-                  !status.selection?.gscPropertyUrl
+                  (!status.selection?.gscPropertyUrl &&
+                    !status.selection?.ga4PropertyId)
                 }
                 onClick={() => void syncNow("manual")}
               >
@@ -427,7 +440,8 @@ export function GoogleIntegrationsSettings() {
                 disabled={
                   busy ||
                   status.sync.running ||
-                  !status.selection?.gscPropertyUrl
+                  (!status.selection?.gscPropertyUrl &&
+                    !status.selection?.ga4PropertyId)
                 }
                 onClick={() => void syncNow("initial")}
               >
@@ -491,18 +505,18 @@ export function GoogleIntegrationsSettings() {
                   <option value="">— Aucune —</option>
                   {properties.ga4.map((item) => (
                     <option key={item.propertyId} value={item.propertyId}>
-                      {item.propertyName} ({item.accountName} ·{" "}
+                      {item.propertyName} ({item.accountName} · ID{" "}
                       {item.propertyId})
                     </option>
                   ))}
                 </select>
+                <p className="text-[11px] text-slate-500">
+                  Utilisez l’identifiant numérique de propriété (pas le
+                  Measurement ID G-…). La propriété doit correspondre au domaine
+                  public de cet espace.
+                </p>
               </div>
-            ) : (
-              <p className="text-xs text-slate-500">
-                Google Analytics 4 n’est pas proposé pour Webflow dans cette
-                version.
-              </p>
-            )}
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"

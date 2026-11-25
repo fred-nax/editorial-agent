@@ -55,8 +55,8 @@ export default async function AnalyticsPage({
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Performances SEO Search Console pour cet espace Webflow (GA4 hors
-            périmètre).
+            Search Console et Google Analytics 4 pour cet espace Webflow —
+            aucune donnée WordPress.
           </p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-700">
@@ -91,9 +91,8 @@ export default async function AnalyticsPage({
           workspaceId: workspace.id,
         })
       : null;
-  // GA4 hors périmètre Webflow V7.14.0.
   const aiData =
-    tab === "ai" && workspace.cmsProvider === "wordpress"
+    tab === "ai"
       ? await getAnalyticsAiTraffic(period, workspace.id)
       : null;
   const articlesData =
@@ -128,7 +127,7 @@ export default async function AnalyticsPage({
           <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
           <p className="mt-1 text-sm text-slate-600">
             {workspace.cmsProvider === "webflow"
-              ? "Performances SEO Search Console pour cet espace Webflow (GA4 hors périmètre)."
+              ? "Search Console et trafic IA identifiable (GA4) pour cet espace Webflow."
               : "Performances SEO Search Console et trafic IA identifiable (GA4)."}
           </p>
         </div>

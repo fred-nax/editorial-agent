@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  sanitizeStoredGoogleError,
+  toPublicGoogleError,
+} from "@/lib/google/public-errors";
 import { requireGoogleAnalyticsWorkspace } from "@/lib/google/workspace-guard";
 import {
   enqueueGoogleSync,
@@ -33,7 +37,15 @@ export async function GET(request: Request) {
   }
   await recoverStaleGoogleSyncs(undefined, workspace.id);
   const status = await getGoogleSyncStatus(workspace.id);
-  return NextResponse.json(status);
+  return NextResponse.json({
+    ...status,
+    last: status.last
+      ? {
+          ...status.last,
+          error: sanitizeStoredGoogleError(status.last.error, "google_sync"),
+        }
+      : null,
+  });
 }
 
 export async function POST(request: Request) {
@@ -77,10 +89,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ runId, status: "running" }, { status: 202 });
   } catch (error) {
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Synchronisation impossible.",
-      },
+      { error: toPublicGoogleError(error, "google_sync") },
       { status: 400 }
     );
   }

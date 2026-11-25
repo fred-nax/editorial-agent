@@ -79,7 +79,7 @@ export function webflowEmptyState(module: WebflowModuleCapability): {
     veille:
       "Veille éditoriale Webflow sans corpus WordPress — configurations et historique isolés par espace.",
     analytics:
-      "Search Console non configurée pour cet espace Webflow. Sélectionnez une propriété Google dédiée dans les paramètres — les statistiques WordPress ne sont jamais affichées ici.",
+      "Search Console / Google Analytics non configurés pour cet espace Webflow. Sélectionnez une propriété Google dédiée dans les paramètres — les statistiques WordPress ne sont jamais affichées ici.",
     topics: "File éditoriale Webflow vide.",
   };
   return {
