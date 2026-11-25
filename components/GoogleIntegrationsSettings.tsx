@@ -17,6 +17,10 @@ type StatusPayload = {
   status: string;
   accountEmail: string | null;
   lastError: string | null;
+  cmsProvider?: string;
+  workspaceId?: string;
+  publicSiteUrl?: string | null;
+  ga4Supported?: boolean;
   selection: {
     gscPropertyUrl: string | null;
     gscPropertyType: string | null;
@@ -24,8 +28,15 @@ type StatusPayload = {
     ga4AccountId: string | null;
     ga4PropertyId: string | null;
     ga4PropertyName: string | null;
+    gscCompatibleWithSite?: boolean;
     gscCompatibleWithWp: boolean;
   } | null;
+  states?: {
+    gscConfigured: boolean;
+    gscCompatible: boolean;
+    syncRunning: boolean;
+    hasPreviousData: boolean;
+  };
   sync: {
     running: boolean;
     lastStatus: string | null;
@@ -57,11 +68,15 @@ export function GoogleIntegrationsSettings() {
   const [properties, setProperties] = useState<PropertiesPayload | null>(null);
   const [gscUrl, setGscUrl] = useState("");
   const [ga4Id, setGa4Id] = useState("");
+  const [publicSiteUrl, setPublicSiteUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+
+  const isWebflow = status?.cmsProvider === "webflow";
+  const ga4Supported = status?.ga4Supported !== false && !isWebflow;
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/google/status", { credentials: "same-origin" });
@@ -72,6 +87,7 @@ export function GoogleIntegrationsSettings() {
     setStatus(payload);
     setGscUrl(payload.selection?.gscPropertyUrl ?? "");
     setGa4Id(payload.selection?.ga4PropertyId ?? "");
+    setPublicSiteUrl(payload.publicSiteUrl ?? "");
     return payload;
   }, []);
 
@@ -142,16 +158,17 @@ export function GoogleIntegrationsSettings() {
           gscPropertyUrl: gscUrl || null,
           gscPropertyType: gsc?.propertyType ?? null,
           gscPermissionLevel: gsc?.permissionLevel ?? null,
-          ga4AccountId: ga4?.accountId ?? null,
-          ga4PropertyId: ga4Id || null,
-          ga4PropertyName: ga4?.propertyName ?? null,
+          ga4AccountId: ga4Supported ? (ga4?.accountId ?? null) : null,
+          ga4PropertyId: ga4Supported ? (ga4Id || null) : null,
+          ga4PropertyName: ga4Supported ? (ga4?.propertyName ?? null) : null,
+          publicSiteUrl: publicSiteUrl.trim() || null,
         }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
         throw new Error(payload.error ?? "Enregistrement impossible.");
       }
-      setMessage("Propriétés enregistrées.");
+      setMessage("Propriétés enregistrées pour cet espace.");
       setEditing(false);
       await refresh();
     } catch (err) {
@@ -189,6 +206,33 @@ export function GoogleIntegrationsSettings() {
     }
   }
 
+  async function testConnection() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/google/properties", {
+        credentials: "same-origin",
+      });
+      const payload = (await response.json()) as PropertiesPayload & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Test de connexion impossible.");
+      }
+      const count = payload.gsc?.length ?? 0;
+      setMessage(
+        count > 0
+          ? `Connexion OK — ${count} propriété(s) Search Console accessible(s).`
+          : "Connexion OK — aucune propriété Search Console visible pour ce compte."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Échec du test.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function disconnect() {
     if (!window.confirm("Déconnecter Google et supprimer les jetons locaux ?")) {
       return;
@@ -217,7 +261,7 @@ export function GoogleIntegrationsSettings() {
 
   if (loading) {
     return (
-      <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0">
+      <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0 dark:border-slate-700 dark:bg-slate-950">
         <CardContent className="p-5 text-sm text-slate-600">
           Chargement de l’intégration Google…
         </CardContent>
@@ -225,15 +269,23 @@ export function GoogleIntegrationsSettings() {
     );
   }
 
+  const gscCompatible =
+    status?.selection?.gscCompatibleWithSite ??
+    status?.selection?.gscCompatibleWithWp ??
+    true;
+
   return (
-    <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0">
-      <CardHeader className="gap-1 border-b border-[#E2E8F0] p-5">
-        <CardTitle className="text-base font-semibold text-slate-900">
-          Google Search Console & Analytics
+    <Card className="border border-[#E2E8F0] bg-white shadow-none ring-0 dark:border-slate-700 dark:bg-slate-950">
+      <CardHeader className="gap-1 border-b border-[#E2E8F0] p-5 dark:border-slate-700">
+        <CardTitle className="text-base font-semibold text-slate-900 dark:text-slate-100">
+          {isWebflow
+            ? "Google Search Console"
+            : "Google Search Console & Analytics"}
         </CardTitle>
-        <CardDescription className="text-sm text-slate-600">
-          Connexion OAuth en lecture seule, indépendante de l’authentification
-          administrateur. Les jetons restent côté serveur et sont chiffrés.
+        <CardDescription className="text-sm text-slate-600 dark:text-slate-400">
+          {isWebflow
+            ? "Search Console par espace Webflow — identité Google mutualisable, propriété dédiée obligatoire. GA4 hors périmètre de cette version."
+            : "Connexion OAuth en lecture seule. Les jetons restent côté serveur et sont chiffrés."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-5">
@@ -253,7 +305,9 @@ export function GoogleIntegrationsSettings() {
 
         <div className="grid gap-2 text-sm">
           <p>
-            <span className="font-medium text-slate-700">État : </span>
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              État :{" "}
+            </span>
             {status?.connected ? (
               <span className="text-emerald-700">Connecté</span>
             ) : (
@@ -261,25 +315,44 @@ export function GoogleIntegrationsSettings() {
             )}
             {status?.accountEmail ? ` · ${status.accountEmail}` : null}
           </p>
-          {status?.selection?.gscPropertyUrl ? (
-            <p className="break-all text-slate-700">
+          {!status?.selection?.gscPropertyUrl ? (
+            <p className="text-slate-600 dark:text-slate-400">
+              Search Console non configurée pour cet espace
+              {isWebflow
+                ? " — aucune propriété WordPress n’est réutilisée automatiquement."
+                : "."}
+            </p>
+          ) : (
+            <p className="break-all text-slate-700 dark:text-slate-300">
               <span className="font-medium">Search Console : </span>
               {status.selection.gscPropertyUrl}
+              {status.selection.gscPropertyType
+                ? ` (${status.selection.gscPropertyType})`
+                : ""}
+            </p>
+          )}
+          {status?.publicSiteUrl ? (
+            <p className="break-all text-slate-700 dark:text-slate-300">
+              <span className="font-medium">Domaine public : </span>
+              {status.publicSiteUrl}
             </p>
           ) : null}
-          {status?.selection?.ga4PropertyName || status?.selection?.ga4PropertyId ? (
-            <p className="text-slate-700">
+          {ga4Supported &&
+          (status?.selection?.ga4PropertyName ||
+            status?.selection?.ga4PropertyId) ? (
+            <p className="text-slate-700 dark:text-slate-300">
               <span className="font-medium">GA4 : </span>
-              {status.selection.ga4PropertyName ?? status.selection.ga4PropertyId}
+              {status.selection.ga4PropertyName ??
+                status.selection.ga4PropertyId}
             </p>
           ) : null}
-          {status?.selection && !status.selection.gscCompatibleWithWp ? (
+          {status?.selection?.gscPropertyUrl && !gscCompatible ? (
             <p className="text-sm text-amber-800">
               La propriété Search Console semble incompatible avec le domaine
-              WordPress configuré (WP_URL). Vérifiez la sélection.
+              public de cet espace. Vérifiez la sélection.
             </p>
           ) : null}
-          <p className="text-slate-600">
+          <p className="text-slate-600 dark:text-slate-400">
             Dernière sync :{" "}
             {status?.sync.lastFinishedAt
               ? new Date(status.sync.lastFinishedAt).toLocaleString("fr-FR")
@@ -287,11 +360,17 @@ export function GoogleIntegrationsSettings() {
             {status?.sync.running ? " · en cours…" : null}
             {status?.sync.lastError ? ` · ${status.sync.lastError}` : null}
           </p>
+          {status?.sync.lastStatus === "failed" &&
+          status.states?.hasPreviousData ? (
+            <p className="text-sm text-amber-800">
+              Dernière synchronisation en erreur — les données précédemment
+              synchronisées restent disponibles.
+            </p>
+          ) : null}
           <p className="text-[11px] leading-relaxed text-slate-500">
-            Les impressions AI Overviews / AI Mode de Search Console ne sont pas
-            disponibles via l’API publique ; elles ne sont pas inventées ici. Le
-            trafic assistants IA repose sur les sources/référents GA4
-            identifiables.
+            {isWebflow
+              ? "Les statistiques Search Console sont isolées par espace et par propriété. Aucune donnée WordPress n’est affichée ici."
+              : "Les impressions AI Overviews / AI Mode de Search Console ne sont pas disponibles via l’API publique. Le trafic assistants IA repose sur les sources GA4 identifiables."}
           </p>
         </div>
 
@@ -316,21 +395,40 @@ export function GoogleIntegrationsSettings() {
                 disabled={busy || status.sync.running}
                 onClick={() => void loadProperties()}
               >
-                Changer les propriétés
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy || status.sync.running}
-                onClick={() => void syncNow("manual")}
-              >
-                Synchroniser maintenant
+                {status.selection?.gscPropertyUrl
+                  ? "Changer les propriétés"
+                  : "Configurer Search Console"}
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={busy || status.sync.running}
+                disabled={busy}
+                onClick={() => void testConnection()}
+              >
+                Tester la connexion
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={
+                  busy ||
+                  status.sync.running ||
+                  !status.selection?.gscPropertyUrl
+                }
+                onClick={() => void syncNow("manual")}
+              >
+                Synchroniser
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={
+                  busy ||
+                  status.sync.running ||
+                  !status.selection?.gscPropertyUrl
+                }
                 onClick={() => void syncNow("initial")}
               >
                 Import 90 jours
@@ -349,7 +447,21 @@ export function GoogleIntegrationsSettings() {
         </div>
 
         {editing && properties ? (
-          <div className="space-y-3 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+          <div className="space-y-3 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-4 dark:border-slate-700 dark:bg-slate-900/50">
+            <div className="space-y-1.5">
+              <Label htmlFor="gsc-public-url">URL publique du site</Label>
+              <input
+                id="gsc-public-url"
+                type="url"
+                className={selectClassName}
+                value={publicSiteUrl}
+                onChange={(e) => setPublicSiteUrl(e.target.value)}
+                placeholder="https://www.example.com"
+              />
+              <p className="text-[11px] text-slate-500">
+                Utilisée pour valider la propriété Domain ou URL-prefix.
+              </p>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="gsc-property">Propriété Search Console</Label>
               <select
@@ -367,22 +479,30 @@ export function GoogleIntegrationsSettings() {
                 ))}
               </select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ga4-property">Propriété GA4</Label>
-              <select
-                id="ga4-property"
-                className={selectClassName}
-                value={ga4Id}
-                onChange={(e) => setGa4Id(e.target.value)}
-              >
-                <option value="">— Aucune —</option>
-                {properties.ga4.map((item) => (
-                  <option key={item.propertyId} value={item.propertyId}>
-                    {item.propertyName} ({item.accountName} · {item.propertyId})
-                  </option>
-                ))}
-              </select>
-            </div>
+            {ga4Supported ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="ga4-property">Propriété GA4</Label>
+                <select
+                  id="ga4-property"
+                  className={selectClassName}
+                  value={ga4Id}
+                  onChange={(e) => setGa4Id(e.target.value)}
+                >
+                  <option value="">— Aucune —</option>
+                  {properties.ga4.map((item) => (
+                    <option key={item.propertyId} value={item.propertyId}>
+                      {item.propertyName} ({item.accountName} ·{" "}
+                      {item.propertyId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Google Analytics 4 n’est pas proposé pour Webflow dans cette
+                version.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"

@@ -28,8 +28,12 @@ const pageLinkClassName =
 const pageExternalClassName =
   "block min-w-0 truncate text-slate-700 outline-none hover:text-naxialis hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-naxialis/35 focus-visible:ring-offset-2";
 
-export async function DashboardSeoTrafficStrip() {
-  const summary = await getDashboardSeoSummary(28);
+export async function DashboardSeoTrafficStrip({
+  workspaceId,
+}: {
+  workspaceId?: string;
+} = {}) {
+  const summary = await getDashboardSeoSummary(28, workspaceId);
   const periodLabel =
     summary.periodStart && summary.periodEnd
       ? `${fmtPeriodDate(summary.periodStart)} → ${fmtPeriodDate(summary.periodEnd)}`
@@ -78,8 +82,9 @@ export async function DashboardSeoTrafficStrip() {
 
       {!summary.connected ? (
         <p className="mt-3 text-sm text-slate-600">
-          Connectez Search Console et GA4 dans les paramètres pour afficher ces
-          indicateurs.
+          {summary.hasGscProperty === false
+            ? "Search Console non configurée pour cet espace. Sélectionnez une propriété dédiée dans les paramètres — aucune donnée d’un autre espace n’est affichée."
+            : "Connectez Google dans les paramètres pour afficher les indicateurs Search Console de cet espace."}
         </p>
       ) : (
         <>
@@ -101,7 +106,11 @@ export async function DashboardSeoTrafficStrip() {
               label="Position moy."
               value={fmt(summary.gsc?.position, 1)}
             />
-            <Stat label="Sessions IA" value={fmt(summary.aiSessions, 0)} />
+            {summary.hasGa4Property ? (
+              <Stat label="Sessions IA" value={fmt(summary.aiSessions, 0)} />
+            ) : (
+              <Stat label="Sessions IA" value="—" />
+            )}
           </div>
 
           {summary.gsc?.hasAnyRow ? (

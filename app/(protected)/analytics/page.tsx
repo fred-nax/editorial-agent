@@ -55,7 +55,8 @@ export default async function AnalyticsPage({
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Performances SEO Search Console et trafic IA identifiable (GA4).
+            Performances SEO Search Console pour cet espace Webflow (GA4 hors
+            périmètre).
           </p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-700">
@@ -75,7 +76,9 @@ export default async function AnalyticsPage({
   const page = parsePositiveInt(params.page, 1);
 
   const overviewData =
-    tab === "overview" ? await getAnalyticsOverview(period, type) : null;
+    tab === "overview"
+      ? await getAnalyticsOverview(period, type, workspace.id)
+      : null;
   const seoData =
     tab === "seo"
       ? await getAnalyticsSeo({
@@ -85,9 +88,14 @@ export default async function AnalyticsPage({
           dir,
           page,
           contentType: type,
+          workspaceId: workspace.id,
         })
       : null;
-  const aiData = tab === "ai" ? await getAnalyticsAiTraffic(period) : null;
+  // GA4 hors périmètre Webflow V7.14.0.
+  const aiData =
+    tab === "ai" && workspace.cmsProvider === "wordpress"
+      ? await getAnalyticsAiTraffic(period, workspace.id)
+      : null;
   const articlesData =
     tab === "articles"
       ? await getAnalyticsArticles({
@@ -97,6 +105,7 @@ export default async function AnalyticsPage({
           dir,
           page,
           contentType: type,
+          workspaceId: workspace.id,
         })
       : null;
 
@@ -118,7 +127,9 @@ export default async function AnalyticsPage({
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Performances SEO Search Console et trafic IA identifiable (GA4).
+            {workspace.cmsProvider === "webflow"
+              ? "Performances SEO Search Console pour cet espace Webflow (GA4 hors périmètre)."
+              : "Performances SEO Search Console et trafic IA identifiable (GA4)."}
           </p>
         </div>
         <p className="text-xs text-slate-500">

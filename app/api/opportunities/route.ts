@@ -210,11 +210,13 @@ export async function GET(request: Request) {
       inventoryCount,
       cmsProvider: workspace.cmsProvider,
       defaultLanguage: workspace.defaultLanguage,
-      googleDataAvailable: false,
+      googleDataAvailable: await (
+        await import("@/lib/seo/gsc-signals")
+      ).workspaceHasGscData(workspace.id),
       inventorySourceNote:
         workspace.cmsProvider === "webflow"
-          ? "Inventaire Webflow local (brouillons et publiés). Aucune donnée Google Search Console ni inventaire WordPress."
-          : "Inventaire WordPress local. Les idées ne viennent pas de Google Search Console.",
+          ? "Inventaire Webflow local (brouillons et publiés). Search Console optionnelle si une propriété dédiée est configurée — jamais l’inventaire WordPress."
+          : "Inventaire WordPress local. Search Console peut enrichir les signaux lorsque des données sont synchronisées.",
       recentRuns,
       customThemes,
       savedConfigs,

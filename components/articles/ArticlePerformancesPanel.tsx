@@ -53,14 +53,17 @@ function num(value: number | null | undefined, digits = 1): string {
 export function ArticlePerformancesPanel({
   pageUrlNorm,
   published,
+  cmsDestination = "wordpress",
 }: {
   pageUrlNorm: string | null;
   published: boolean;
+  cmsDestination?: string | null;
 }) {
   const [period, setPeriod] = useState<PeriodKey>(28);
   const [data, setData] = useState<PerformancePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const isWebflow = cmsDestination === "webflow";
 
   useEffect(() => {
     if (!published || !pageUrlNorm) {
@@ -102,10 +105,10 @@ export function ArticlePerformancesPanel({
 
   if (!published || !pageUrlNorm) {
     return (
-      <div className="rounded-lg border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-5 py-8 text-sm text-slate-600">
-        Les performances publiques ne sont pas encore disponibles pour ce
-        brouillon. Publiez l’article WordPress et synchronisez l’inventaire pour
-        afficher Search Console et GA4.
+      <div className="rounded-lg border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-5 py-8 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+        {isWebflow
+          ? "Les performances seront disponibles après publication, indexation et collecte de données par Google. Aucune URL fictive n’est interrogée pour un brouillon Webflow."
+          : "Les performances publiques ne sont pas encore disponibles pour ce brouillon. Publiez l’article WordPress et synchronisez l’inventaire pour afficher Search Console et GA4."}
       </div>
     );
   }

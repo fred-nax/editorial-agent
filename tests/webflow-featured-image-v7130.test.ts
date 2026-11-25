@@ -330,12 +330,13 @@ describe("V7.13.0 — Webflow featured image (unit)", () => {
     assert.equal(sawAuthOnS3, false);
   });
 
-  it("onglet Image réactivé pour Webflow ; perf GSC toujours masquée", () => {
+  it("onglet Image + Performances GSC pour Webflow (V7.14.0)", () => {
     assert.deepEqual(getArticleDetailTabs("webflow").map((t) => t.id), [
       "report",
       "article",
       "usage",
       "featured",
+      "performances",
     ]);
     assert.equal(getArticleDetailTabs("wordpress").length, 5);
   });

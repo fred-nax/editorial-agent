@@ -67,14 +67,14 @@ describe("historique détail UX", () => {
     assert.equal(moveArticleDetailTab("article", "Tab"), "article");
   });
 
-  it("masque performances pour Webflow ; conserve Image à la une (V7.13.0)", () => {
+  it("réactive performances GSC Webflow ; conserve Image à la une (V7.14.0)", () => {
     const webflowTabs = getArticleDetailTabs("webflow");
     assert.deepEqual(
       webflowTabs.map((tab) => tab.id),
-      ["report", "article", "usage", "featured"]
+      ["report", "article", "usage", "featured", "performances"]
     );
     assert.equal(
-      moveArticleDetailTab("featured", "ArrowRight", webflowTabs),
+      moveArticleDetailTab("performances", "ArrowRight", webflowTabs),
       "report"
     );
     const page = source("app/(protected)/articles/[id]/page.tsx");
@@ -82,6 +82,7 @@ describe("historique détail UX", () => {
     assert.match(page, /cmsDestination=\{cmsDestination\}/);
     assert.match(page, /cmsDestination === "webflow"/);
     assert.match(page, /FeaturedImagePanel/);
+    assert.match(page, /ArticlePerformancesPanel/);
   });
 
   it("affiche le rapport lorsqu'une trace existe", () => {

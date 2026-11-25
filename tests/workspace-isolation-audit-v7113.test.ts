@@ -72,24 +72,28 @@ describe("V7.11.3 — audit isolation (source)", () => {
     assert.match(opp, /Configuration de recherche introuvable/);
     assert.match(opp, /ownedTheme/);
 
+    // V7.14.0 : Google/GSC ouvert aux espaces Webflow via guard neutre.
     for (const file of [
       "app/api/google/status/route.ts",
       "app/api/google/sync/route.ts",
-      "app/api/google/disconnect/route.ts",
       "app/api/google/properties/select/route.ts",
       "app/api/google/properties/route.ts",
       "app/api/google/metrics/page/route.ts",
     ]) {
       assert.match(
         read(file),
-        /requireWordPressGoogleWorkspace/,
-        `${file} doit refuser Webflow`
+        /requireGoogleAnalyticsWorkspace/,
+        `${file} doit utiliser le guard analytics multi-espace`
       );
     }
 
     assert.match(
       read("lib/google/workspace-guard.ts"),
       /assertModuleAllowedForWorkspace\(workspace, "analytics"\)/
+    );
+    assert.match(
+      read("lib/workspace/protection.ts"),
+      /"analytics"/
     );
   });
 
@@ -195,7 +199,7 @@ describe("V7.11.3 — binding cookie / header / modules", () => {
     );
   });
 
-  it("modules Webflow : opportunities + rapprochements autorisés ; analytics refusé", () => {
+  it("modules Webflow : opportunities + rapprochements + analytics GSC autorisés", () => {
     const wf = {
       id: WORKSPACE_IDS.webflow,
       slug: "webflow-ai-studio-01",
@@ -209,9 +213,9 @@ describe("V7.11.3 — binding cookie / header / modules", () => {
     assert.doesNotThrow(() =>
       assertModuleAllowedForWorkspace(wf, "opportunities")
     );
-    assert.throws(
-      () => assertModuleAllowedForWorkspace(wf, "analytics"),
-      (e: unknown) => e instanceof WorkspaceContextError && e.status === 501
+    // V7.14.0 — Search Console Webflow (GA4 toujours hors périmètre côté sync).
+    assert.doesNotThrow(() =>
+      assertModuleAllowedForWorkspace(wf, "analytics")
     );
     assert.doesNotThrow(() =>
       assertModuleAllowedForWorkspace(wf, "rapprochements")

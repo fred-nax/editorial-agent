@@ -112,10 +112,12 @@ describe("Audit fixes — inventaire WP A→B", () => {
       "lib/seo/duplicates.ts",
       "lib/topics/editorial-similarity.ts",
       "lib/veille/editorial-corpus.ts",
-      "lib/google/wp-url-map.ts",
+      "lib/google/published-url-map.ts",
     ]) {
       assert.match(read(file), /isWordPressInventoryUsable/, file);
     }
+    // Compat WP : wrappers délèguent au map multi-CMS.
+    assert.match(read("lib/google/wp-url-map.ts"), /published-url-map/);
   });
 
   it("sync incrémentale refusée si inventaire invalidé", () => {

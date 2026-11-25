@@ -178,12 +178,33 @@ export async function savePropertySelection(input: {
   ga4PropertyName?: string | null;
 }): Promise<void> {
   const workspaceId = input.workspaceId?.trim() || WORKSPACE_IDS.wordpress;
+  const gscUrl =
+    input.gscPropertyUrl === undefined
+      ? undefined
+      : input.gscPropertyUrl?.trim() || null;
+
+  // Une propriété ne peut pas être partagée silencieusement entre espaces.
+  if (gscUrl) {
+    const conflict = await db.googlePropertySelection.findFirst({
+      where: {
+        gscPropertyUrl: gscUrl,
+        NOT: { workspaceId },
+      },
+      select: { workspaceId: true },
+    });
+    if (conflict) {
+      throw new Error(
+        "Cette propriété Search Console est déjà associée à un autre espace éditorial. Choisissez une autre propriété."
+      );
+    }
+  }
+
   await db.googlePropertySelection.upsert({
     where: { workspaceId },
     create: {
       workspaceId,
       connectionId: CONNECTION_ID,
-      gscPropertyUrl: input.gscPropertyUrl ?? null,
+      gscPropertyUrl: gscUrl ?? null,
       gscPropertyType: input.gscPropertyType ?? null,
       gscPermissionLevel: input.gscPermissionLevel ?? null,
       ga4AccountId: input.ga4AccountId ?? null,
@@ -191,9 +212,7 @@ export async function savePropertySelection(input: {
       ga4PropertyName: input.ga4PropertyName ?? null,
     },
     update: {
-      ...(input.gscPropertyUrl !== undefined
-        ? { gscPropertyUrl: input.gscPropertyUrl }
-        : {}),
+      ...(gscUrl !== undefined ? { gscPropertyUrl: gscUrl } : {}),
       ...(input.gscPropertyType !== undefined
         ? { gscPropertyType: input.gscPropertyType }
         : {}),
@@ -209,6 +228,23 @@ export async function savePropertySelection(input: {
       ...(input.ga4PropertyName !== undefined
         ? { ga4PropertyName: input.ga4PropertyName }
         : {}),
+    },
+  });
+}
+
+/** Efface la sélection GSC/GA4 d’un espace sans déconnecter OAuth global. */
+export async function clearWorkspaceGoogleSelection(
+  workspaceId: string
+): Promise<void> {
+  await db.googlePropertySelection.updateMany({
+    where: { workspaceId: workspaceId.trim() },
+    data: {
+      gscPropertyUrl: null,
+      gscPropertyType: null,
+      gscPermissionLevel: null,
+      ga4AccountId: null,
+      ga4PropertyId: null,
+      ga4PropertyName: null,
     },
   });
 }

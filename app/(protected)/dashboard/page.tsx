@@ -175,8 +175,8 @@ export default async function DashboardPage() {
         ]}
       />
 
-      {/* Google/GSC/GA4 : rattaché à WordPress — pas de données de substitution pour Webflow. */}
-      {workspace.cmsProvider === "wordpress" ? <DashboardSeoTrafficStrip /> : null}
+      {/* V7.14.0 : GSC par espace (Webflow sans GA4). Jamais de données d’un autre espace. */}
+      <DashboardSeoTrafficStrip workspaceId={workspace.id} />
 
       <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 lg:gap-5">
         <DashboardTopicPreview topics={recentTopics} />

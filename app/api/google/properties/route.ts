@@ -3,20 +3,21 @@ import {
   listGa4Properties,
   listSearchConsoleSites,
 } from "@/lib/google/properties";
-import { requireWordPressGoogleWorkspace } from "@/lib/google/workspace-guard";
+import { requireGoogleAnalyticsWorkspace } from "@/lib/google/workspace-guard";
 import { requireAuth } from "@/lib/require-auth";
 import { WorkspaceContextError } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await requireAuth();
   if (!session) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
+  let workspace;
   try {
-    await requireWordPressGoogleWorkspace();
+    workspace = await requireGoogleAnalyticsWorkspace(request);
   } catch (error) {
     if (error instanceof WorkspaceContextError) {
       return NextResponse.json(
@@ -28,11 +29,16 @@ export async function GET() {
   }
 
   try {
-    const [gsc, ga4] = await Promise.all([
-      listSearchConsoleSites(),
-      listGa4Properties(),
-    ]);
-    return NextResponse.json({ gsc, ga4 });
+    const gsc = await listSearchConsoleSites();
+    const ga4 =
+      workspace.cmsProvider === "wordpress"
+        ? await listGa4Properties()
+        : [];
+    return NextResponse.json({
+      gsc,
+      ga4,
+      ga4Supported: workspace.cmsProvider === "wordpress",
+    });
   } catch (error) {
     return NextResponse.json(
       {

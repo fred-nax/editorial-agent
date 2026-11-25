@@ -126,6 +126,8 @@ model WorkspaceCmsSettings {
   wpCategoriesSyncedAt     DateTime?
   wpCategoriesOrigin       String?
   wpSeoPlugin              String?
+  /// Domaine / URL publique pour valider la propriété GSC (surtout Webflow).
+  gscPublicSiteUrl         String?
   /// Mode catégorisation WP : automatic (historique) | manual.
   wpCategorizationMode     String?  @default("automatic")
   /// IDs catégories défaut pour nouveaux sujets en mode manuel (JSON number[]).
@@ -780,6 +782,8 @@ model GscPageDailyStat {
   position    Float    @default(0)
   hasData     Boolean  @default(true)
   wpPostId    Int?
+  /// ID CMS générique (ex. item Webflow) — jamais inventé depuis un slug.
+  cmsExternalId String?
   syncedAt    DateTime @default(now())
 
   @@unique([propertyUrl, pageUrlNorm, date])
@@ -787,6 +791,7 @@ model GscPageDailyStat {
   @@index([propertyUrl, date])
   @@index([pageUrlNorm])
   @@index([wpPostId])
+  @@index([cmsExternalId])
 }
 
 /// Requêtes GSC quotidiennes (top) par page.

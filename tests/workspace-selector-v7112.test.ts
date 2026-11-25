@@ -34,7 +34,7 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
     assert.equal(isWebflowModuleEnabled("opportunities"), true);
     // V7.13.0 : images à la une Webflow activées
     assert.equal(isWebflowModuleEnabled("featured_image"), true);
-    assert.equal(isWebflowModuleEnabled("analytics"), false);
+    assert.equal(isWebflowModuleEnabled("analytics"), true);
     assert.match(webflowEmptyState("opportunities").reason, /inventaire/i);
     assert.match(webflowEmptyState("analytics").reason, /WordPress/i);
   });
@@ -114,7 +114,8 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
     assert.doesNotMatch(dash, /draftsWordpressThisMonth|draftsWebflowThisMonth/);
     assert.match(dash, /workspaceWhere/);
     assert.match(dash, /DashboardWelcome/);
-    assert.match(dash, /cmsProvider === "wordpress"/);
+    assert.match(dash, /cmsProvider === "webflow"/);
+    assert.match(dash, /DashboardSeoTrafficStrip workspaceId=\{workspace\.id\}/);
   });
 
   it("nouvel article : indicateur d’espace, pas de picker CMS", () => {

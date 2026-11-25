@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireWordPressGoogleWorkspace } from "@/lib/google/workspace-guard";
+import { requireGoogleAnalyticsWorkspace } from "@/lib/google/workspace-guard";
 import {
   enqueueGoogleSync,
   getGoogleSyncStatus,
@@ -14,13 +14,14 @@ import { WorkspaceContextError } from "@/lib/workspace";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await requireAuth();
   if (!session) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
+  let workspace;
   try {
-    await requireWordPressGoogleWorkspace();
+    workspace = await requireGoogleAnalyticsWorkspace(request);
   } catch (error) {
     if (error instanceof WorkspaceContextError) {
       return NextResponse.json(
@@ -30,8 +31,8 @@ export async function GET() {
     }
     throw error;
   }
-  await recoverStaleGoogleSyncs();
-  const status = await getGoogleSyncStatus();
+  await recoverStaleGoogleSyncs(undefined, workspace.id);
+  const status = await getGoogleSyncStatus(workspace.id);
   return NextResponse.json(status);
 }
 
@@ -41,8 +42,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
+  let workspace;
   try {
-    await requireWordPressGoogleWorkspace();
+    workspace = await requireGoogleAnalyticsWorkspace(request);
   } catch (error) {
     if (error instanceof WorkspaceContextError) {
       return NextResponse.json(
@@ -53,10 +55,10 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  await recoverStaleGoogleSyncs();
-  if (await hasRunningGoogleSync()) {
+  await recoverStaleGoogleSyncs(undefined, workspace.id);
+  if (await hasRunningGoogleSync(workspace.id)) {
     return NextResponse.json(
-      { error: "Une synchronisation Google est déjà en cours." },
+      { error: "Une synchronisation Google est déjà en cours pour cet espace." },
       { status: 409 }
     );
   }
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
       : "manual";
 
   try {
-    const { runId } = await startGoogleSync(mode);
+    const { runId } = await startGoogleSync(mode, workspace.id);
     enqueueGoogleSync(runId);
     return NextResponse.json({ runId, status: "running" }, { status: 202 });
   } catch (error) {

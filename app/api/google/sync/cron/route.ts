@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
 import {
   enqueueGoogleSync,
   hasRunningGoogleSync,
@@ -28,7 +29,7 @@ function authorizeCron(request: Request): boolean {
 
 /**
  * Endpoint cron VPS sécurisé (Bearer GOOGLE_SYNC_CRON_SECRET).
- * Exemple : 0 5 * * * curl -X POST -H "Authorization: Bearer …" https://…/api/google/sync/cron
+ * Synchronise chaque espace disposant d’une propriété GSC (et/ou GA4 WP).
  */
 export async function POST(request: Request) {
   if (!authorizeCron(request)) {
@@ -36,25 +37,46 @@ export async function POST(request: Request) {
   }
 
   await recoverStaleGoogleSyncs();
-  if (await hasRunningGoogleSync()) {
-    return NextResponse.json(
-      { ok: true, skipped: true, reason: "already_running" },
-      { status: 200 }
-    );
+
+  const selections = await db.googlePropertySelection.findMany({
+    where: {
+      OR: [
+        { gscPropertyUrl: { not: null } },
+        { ga4PropertyId: { not: null } },
+      ],
+    },
+    select: { workspaceId: true, gscPropertyUrl: true, ga4PropertyId: true },
+  });
+
+  const started: string[] = [];
+  const skipped: Array<{ workspaceId: string; reason: string }> = [];
+
+  for (const sel of selections) {
+    if (await hasRunningGoogleSync(sel.workspaceId)) {
+      skipped.push({ workspaceId: sel.workspaceId, reason: "already_running" });
+      continue;
+    }
+    try {
+      const { runId } = await startGoogleSync("daily", sel.workspaceId);
+      enqueueGoogleSync(runId);
+      started.push(runId);
+    } catch (error) {
+      skipped.push({
+        workspaceId: sel.workspaceId,
+        reason:
+          error instanceof Error ? error.message : "Synchronisation impossible.",
+      });
+    }
   }
 
-  try {
-    const { runId } = await startGoogleSync("daily");
-    enqueueGoogleSync(runId);
-    return NextResponse.json({ ok: true, runId, mode: "daily" }, { status: 202 });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          error instanceof Error ? error.message : "Synchronisation impossible.",
-      },
-      { status: 400 }
-    );
-  }
+  return NextResponse.json(
+    {
+      ok: true,
+      mode: "daily",
+      started,
+      skipped,
+      workspacesConsidered: selections.length,
+    },
+    { status: started.length > 0 ? 202 : 200 }
+  );
 }

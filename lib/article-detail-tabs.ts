@@ -10,13 +10,13 @@ export type ArticleDetailTabId = (typeof ARTICLE_DETAIL_TABS)[number]["id"];
 
 export type ArticleDetailTab = (typeof ARTICLE_DETAIL_TABS)[number];
 
-/** Onglets visibles selon la destination CMS (Webflow : pas de perf SEO GSC). */
+/**
+ * Onglets visibles selon la destination CMS.
+ * V7.14.0 : Performances SEO aussi pour Webflow (état brouillon / publié sans données).
+ */
 export function getArticleDetailTabs(
-  cmsDestination?: string | null
+  _cmsDestination?: string | null
 ): readonly ArticleDetailTab[] {
-  if (cmsDestination === "webflow") {
-    return ARTICLE_DETAIL_TABS.filter((tab) => tab.id !== "performances");
-  }
   return ARTICLE_DETAIL_TABS;
 }
 

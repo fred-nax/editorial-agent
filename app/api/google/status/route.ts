@@ -1,21 +1,23 @@
 import { NextResponse } from "next/server";
 import { isGoogleOAuthConfigured } from "@/lib/google/oauth";
-import { propertyLooksCompatibleWithWp } from "@/lib/google/url-normalize";
+import { propertyLooksCompatibleWithSite } from "@/lib/google/url-normalize";
+import { resolveWorkspacePublicSiteUrl } from "@/lib/google/site-url";
 import { getGoogleSyncStatus } from "@/lib/google/sync";
-import { requireWordPressGoogleWorkspace } from "@/lib/google/workspace-guard";
+import { requireGoogleAnalyticsWorkspace } from "@/lib/google/workspace-guard";
 import { requireAuth } from "@/lib/require-auth";
 import { WorkspaceContextError } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await requireAuth();
   if (!session) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
+  let workspace;
   try {
-    await requireWordPressGoogleWorkspace();
+    workspace = await requireGoogleAnalyticsWorkspace(request);
   } catch (error) {
     if (error instanceof WorkspaceContextError) {
       return NextResponse.json(
@@ -26,13 +28,14 @@ export async function GET() {
     throw error;
   }
 
-  const { last, running, connection } = await getGoogleSyncStatus();
+  const { last, running, connection } = await getGoogleSyncStatus(workspace.id);
   const selection = connection?.selection ?? null;
-  const { resolveWordPressConfig } = await import(
-    "@/lib/settings/app-settings"
+  const siteUrl = await resolveWorkspacePublicSiteUrl(workspace.id);
+  const gscConfigured = Boolean(selection?.gscPropertyUrl);
+  const gscCompatible = propertyLooksCompatibleWithSite(
+    selection?.gscPropertyUrl,
+    siteUrl
   );
-  const wp = await resolveWordPressConfig();
-  const wpUrl = wp?.url ?? process.env.WP_URL ?? null;
 
   return NextResponse.json({
     oauthConfigured: isGoogleOAuthConfigured(),
@@ -41,20 +44,39 @@ export async function GET() {
     accountEmail: connection?.googleAccountEmail ?? null,
     lastError: connection?.lastError ?? null,
     connectedAt: connection?.connectedAt?.toISOString() ?? null,
+    cmsProvider: workspace.cmsProvider,
+    workspaceId: workspace.id,
+    publicSiteUrl: siteUrl,
+    /** Webflow : GA4 hors périmètre V7.14.0. */
+    ga4Supported: workspace.cmsProvider === "wordpress",
     selection: selection
       ? {
           gscPropertyUrl: selection.gscPropertyUrl,
           gscPropertyType: selection.gscPropertyType,
           gscPermissionLevel: selection.gscPermissionLevel,
-          ga4AccountId: selection.ga4AccountId,
-          ga4PropertyId: selection.ga4PropertyId,
-          ga4PropertyName: selection.ga4PropertyName,
-          gscCompatibleWithWp: propertyLooksCompatibleWithWp(
-            selection.gscPropertyUrl,
-            wpUrl
-          ),
+          ga4AccountId:
+            workspace.cmsProvider === "wordpress"
+              ? selection.ga4AccountId
+              : null,
+          ga4PropertyId:
+            workspace.cmsProvider === "wordpress"
+              ? selection.ga4PropertyId
+              : null,
+          ga4PropertyName:
+            workspace.cmsProvider === "wordpress"
+              ? selection.ga4PropertyName
+              : null,
+          gscCompatibleWithSite: gscCompatible,
+          /** Alias rétrocompat UI WordPress. */
+          gscCompatibleWithWp: gscCompatible,
         }
       : null,
+    states: {
+      gscConfigured,
+      gscCompatible,
+      syncRunning: Boolean(running),
+      hasPreviousData: Boolean(last && last.status === "completed"),
+    },
     sync: {
       running: Boolean(running),
       lastStatus: last?.status ?? null,

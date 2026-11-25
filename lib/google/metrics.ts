@@ -55,10 +55,12 @@ function endOfTodayUTC(): Date {
 export async function getPagePerformance(input: {
   pageUrlNorm: string;
   periodDays: PeriodKey;
+  workspaceId?: string;
 }) {
-  const connection = await getGoogleConnection();
+  const connection = await getGoogleConnection(input.workspaceId);
   const selection = connection?.selection;
   const gscProperty = selection?.gscPropertyUrl ?? null;
+  // GA4 Webflow hors V7.14.0 — uniquement si sélection WP.
   const ga4Property = selection?.ga4PropertyId ?? null;
 
   const latestGsc =
@@ -196,8 +198,11 @@ export async function getPagePerformance(input: {
   };
 }
 
-export async function getDashboardSeoSummary(periodDays: PeriodKey = 28) {
-  const connection = await getGoogleConnection();
+export async function getDashboardSeoSummary(
+  periodDays: PeriodKey = 28,
+  workspaceId?: string
+) {
+  const connection = await getGoogleConnection(workspaceId);
   const selection = connection?.selection;
   const gscProperty = selection?.gscPropertyUrl ?? null;
   const ga4Property = selection?.ga4PropertyId ?? null;
@@ -205,6 +210,8 @@ export async function getDashboardSeoSummary(periodDays: PeriodKey = 28) {
   if (!connection || connection.status !== "connected") {
     return {
       connected: false,
+      hasGscProperty: Boolean(gscProperty),
+      hasGa4Property: Boolean(ga4Property),
       gsc: null,
       aiSessions: 0,
       topPages: [] as DashboardTopPageView[],
@@ -324,12 +331,17 @@ export async function getDashboardSeoSummary(periodDays: PeriodKey = 28) {
     : { _sum: { aiSessions: 0 } };
 
   const lastSync = await db.googleSyncRun.findFirst({
-    where: { status: "completed" },
+    where: {
+      status: "completed",
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     orderBy: { finishedAt: "desc" },
   });
 
   return {
     connected: true,
+    hasGscProperty: Boolean(gscProperty),
+    hasGa4Property: Boolean(ga4Property),
     gsc: {
       clicks: gsc.clicks,
       impressions: gsc.impressions,

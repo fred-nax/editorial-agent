@@ -36,10 +36,10 @@ describe("V7.10.2 — isolation UX WordPress / Webflow", () => {
   });
 
   it("détail : résultat CMS + onglets filtrés Webflow", () => {
-    // V7.13.0 : onglet Image réactivé ; performances GSC toujours masquées.
+    // V7.14.0 : Image + Performances GSC (URL publiée uniquement).
     assert.deepEqual(
       getArticleDetailTabs("webflow").map((tab) => tab.id),
-      ["report", "article", "usage", "featured"]
+      ["report", "article", "usage", "featured", "performances"]
     );
     assert.equal(getArticleDetailTabs("wordpress").length, 5);
     assert.equal(
@@ -48,7 +48,7 @@ describe("V7.10.2 — isolation UX WordPress / Webflow", () => {
         "End",
         getArticleDetailTabs("webflow")
       ),
-      "featured"
+      "performances"
     );
 
     const report = buildGenerationReport({

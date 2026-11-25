@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
 import { getValidAccessToken } from "@/lib/google/connection";
 import { normalizePublicUrl } from "@/lib/google/url-normalize";
-import { buildPublishedUrlMap } from "@/lib/google/wp-url-map";
+import { buildPublishedUrlMapForWorkspace } from "@/lib/google/published-url-map";
 import { logInfo } from "@/lib/logger";
+import { WORKSPACE_IDS } from "@/lib/workspace/constants";
 
 type GscRow = {
   keys?: string[];
@@ -74,7 +75,9 @@ export async function syncSearchConsolePropertyRange(input: {
   propertyUrl: string;
   start: Date;
   end: Date;
+  workspaceId?: string;
 }): Promise<number> {
+  const workspaceId = input.workspaceId?.trim() || null;
   const startDate = formatDateUTC(input.start);
   const endDate = formatDateUTC(input.end);
   let upserted = 0;
@@ -108,6 +111,7 @@ export async function syncSearchConsolePropertyRange(input: {
           },
         },
         create: {
+          workspaceId,
           propertyUrl: input.propertyUrl,
           date: dateOnly(new Date(`${day}T00:00:00.000Z`)),
           clicks,
@@ -117,6 +121,7 @@ export async function syncSearchConsolePropertyRange(input: {
           hasData: true,
         },
         update: {
+          ...(workspaceId ? { workspaceId } : {}),
           clicks,
           impressions,
           ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
@@ -156,10 +161,13 @@ export async function syncSearchConsoleRange(input: {
   propertyUrl: string;
   start: Date;
   end: Date;
+  workspaceId?: string;
 }): Promise<number> {
+  const workspaceId =
+    input.workspaceId?.trim() || WORKSPACE_IDS.wordpress;
   const startDate = formatDateUTC(input.start);
   const endDate = formatDateUTC(input.end);
-  const urlMap = await buildPublishedUrlMap();
+  const urlMap = await buildPublishedUrlMapForWorkspace(workspaceId);
   let upserted = 0;
 
   // Pages × date (agrégation byPage — suivi éditorial / URL)
@@ -195,6 +203,7 @@ export async function syncSearchConsoleRange(input: {
           },
         },
         create: {
+          workspaceId,
           propertyUrl: input.propertyUrl,
           pageUrl,
           pageUrlNorm: norm,
@@ -204,16 +213,19 @@ export async function syncSearchConsoleRange(input: {
           ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
           position: Number(row.position ?? 0),
           hasData: true,
-          wpPostId: urlMap.get(norm) ?? null,
+          wpPostId: urlMap.get(norm)?.wpPostId ?? null,
+          cmsExternalId: urlMap.get(norm)?.cmsExternalId ?? null,
         },
         update: {
+          workspaceId,
           pageUrl,
           clicks,
           impressions,
           ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
           position: Number(row.position ?? 0),
           hasData: true,
-          wpPostId: urlMap.get(norm) ?? null,
+          wpPostId: urlMap.get(norm)?.wpPostId ?? null,
+          cmsExternalId: urlMap.get(norm)?.cmsExternalId ?? null,
           syncedAt: new Date(),
         },
       });
@@ -260,6 +272,7 @@ export async function syncSearchConsoleRange(input: {
           },
         },
         create: {
+          workspaceId,
           propertyUrl: input.propertyUrl,
           pageUrlNorm: norm,
           query,
@@ -270,6 +283,7 @@ export async function syncSearchConsoleRange(input: {
           position: Number(row.position ?? 0),
         },
         update: {
+          workspaceId,
           clicks,
           impressions,
           ctr: Number(row.ctr ?? (impressions > 0 ? clicks / impressions : 0)),
@@ -298,6 +312,7 @@ export async function syncSearchConsoleRange(input: {
     propertyUrl: input.propertyUrl,
     start: propertyStart,
     end: input.end,
+    workspaceId,
   });
 
   logInfo("google-gsc", "sync range complete", {

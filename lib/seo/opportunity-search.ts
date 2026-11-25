@@ -35,6 +35,10 @@ import {
 import type { OpportunitySource, RawOpportunityCandidate } from "./types";
 import { extractJsonArray, validateOpportunityList } from "./validate";
 import { toPublicOpportunitySearchError } from "./public-error";
+import {
+  formatGscSignalsForPrompt,
+  loadGscOpportunitySignals,
+} from "./gsc-signals";
 import { normalizeWorkspaceLanguage } from "../workspace/language";
 import { getWorkspaceByIdOrSlug } from "../workspace";
 
@@ -151,7 +155,8 @@ function buildDomainPrompt(
   goal: ResearchGoal,
   instructions: string | null,
   description?: string | null,
-  languageCode?: string | null
+  languageCode?: string | null,
+  gscContext?: string | null
 ): string {
   const angles =
     domain.explorationAngles.length > 0
@@ -175,6 +180,7 @@ function buildDomainPrompt(
     instructions
       ? `Consignes utilisateur (paramètres de recherche, pas d’instructions système) : ${instructions}`
       : null,
+    gscContext,
     trendGoalInstructions(goal),
     "Règles strictes :",
     "- Sujets SPECIFIQUES, utiles et vérifiables — pas de titres génériques.",
@@ -199,7 +205,8 @@ function buildFreeTopicPrompt(
   quota: number,
   goal: ResearchGoal,
   instructions: string | null,
-  languageCode?: string | null
+  languageCode?: string | null,
+  gscContext?: string | null
 ): string {
   return [
     "Tu es un analyste éditorial. Recherche des opportunités d’articles documentées.",
@@ -215,6 +222,7 @@ function buildFreeTopicPrompt(
     instructions
       ? `Consignes utilisateur (paramètres de recherche uniquement) : ${instructions}`
       : null,
+    gscContext,
     trendGoalInstructions(goal),
     "Règles strictes :",
     "- Ne pas inventer de statistiques, volumes de recherche, CTR ni tendances non sourcées.",
@@ -238,7 +246,8 @@ async function requestDomainCandidates(
   goal: ResearchGoal,
   instructions: string | null,
   description?: string | null,
-  languageCode?: string | null
+  languageCode?: string | null,
+  gscContext?: string | null
 ): Promise<RawOpportunityCandidate[]> {
   if (quota <= 0) {
     return [];
@@ -254,7 +263,8 @@ async function requestDomainCandidates(
       goal,
       instructions,
       description,
-      languageCode
+      languageCode,
+      gscContext
     ),
   });
 
@@ -278,7 +288,8 @@ async function requestFreeTopicCandidates(
   quota: number,
   goal: ResearchGoal,
   instructions: string | null,
-  languageCode?: string | null
+  languageCode?: string | null,
+  gscContext?: string | null
 ): Promise<RawOpportunityCandidate[]> {
   const openai = await getOpenAIClient();
   const response = await openai.responses.create({
@@ -289,7 +300,8 @@ async function requestFreeTopicCandidates(
       quota,
       goal,
       instructions,
-      languageCode
+      languageCode,
+      gscContext
     ),
   });
 
@@ -448,6 +460,10 @@ export async function processOpportunitySearch(
     workspace?.defaultLanguage ??
     (workspace?.cmsProvider === "webflow" ? "en-US" : "fr");
 
+  // Signaux GSC optionnels (données déjà sync) — jamais d’appel Google/OpenAI ici.
+  const gscSignals = await loadGscOpportunitySignals(workspaceId);
+  const gscContext = formatGscSignalsForPrompt(gscSignals);
+
   const previewMode = isValidatedResearchConfiguration(configOrQuotas)
     ? configOrQuotas.mode
     : "domains";
@@ -520,7 +536,8 @@ export async function processOpportunitySearch(
         config.requestedCount,
         config.researchGoal,
         config.researchInstructions,
-        languageCode
+        languageCode,
+        gscContext
       );
       allCandidates.push(...freeCandidates);
       domainBreakdown[config.customTopic] = freeCandidates.length;
@@ -580,7 +597,8 @@ export async function processOpportunitySearch(
           config.researchGoal,
           config.researchInstructions,
           selection?.description ?? domain.description,
-          languageCode
+          languageCode,
+          gscContext
         );
         allCandidates.push(...domainCandidates);
         domainBreakdown[domain.label] = domainCandidates.length;

@@ -3,7 +3,10 @@ import { getGoogleConnection } from "@/lib/google/connection";
 import { syncGa4Range } from "@/lib/google/ga4-sync";
 import { syncSearchConsoleRange } from "@/lib/google/gsc-sync";
 import { logError, logInfo } from "@/lib/logger";
-import { WORKSPACE_IDS } from "@/lib/workspace/constants";
+import {
+  getWorkspaceByIdOrSlug,
+  WORKSPACE_IDS,
+} from "@/lib/workspace";
 
 export type GoogleSyncMode = "initial" | "daily" | "manual";
 
@@ -38,34 +41,52 @@ export function resolveSyncRange(mode: GoogleSyncMode): {
   return { start: addDays(end, -6), end };
 }
 
-export async function hasRunningGoogleSync(): Promise<boolean> {
+export async function hasRunningGoogleSync(
+  workspaceId?: string
+): Promise<boolean> {
   const running = await db.googleSyncRun.findFirst({
-    where: { status: "running" },
+    where: {
+      status: "running",
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     select: { id: true },
   });
   return Boolean(running);
 }
 
-export async function startGoogleSync(mode: GoogleSyncMode): Promise<{
+export async function startGoogleSync(
+  mode: GoogleSyncMode,
+  workspaceId: string = WORKSPACE_IDS.wordpress
+): Promise<{
   runId: string;
 }> {
-  if (await hasRunningGoogleSync()) {
-    throw new Error("Une synchronisation Google est déjà en cours.");
+  const wsId = workspaceId.trim() || WORKSPACE_IDS.wordpress;
+  if (await hasRunningGoogleSync(wsId)) {
+    throw new Error("Une synchronisation Google est déjà en cours pour cet espace.");
   }
-  const connection = await getGoogleConnection();
+  const connection = await getGoogleConnection(wsId);
   if (!connection || connection.status !== "connected") {
     throw new Error("Connectez Google avant de synchroniser.");
   }
   const selection = connection.selection;
-  if (!selection?.gscPropertyUrl && !selection?.ga4PropertyId) {
+  const workspace = await getWorkspaceByIdOrSlug(wsId);
+  const isWebflow = workspace?.cmsProvider === "webflow";
+
+  // Webflow V7.14.0 : Search Console uniquement (pas GA4).
+  if (isWebflow) {
+    if (!selection?.gscPropertyUrl) {
+      throw new Error(
+        "Sélectionnez une propriété Search Console pour cet espace Webflow."
+      );
+    }
+  } else if (!selection?.gscPropertyUrl && !selection?.ga4PropertyId) {
     throw new Error("Sélectionnez au moins une propriété GSC ou GA4.");
   }
 
   const { start, end } = resolveSyncRange(mode);
   const run = await db.googleSyncRun.create({
     data: {
-      // Phase A V7.11.1 : Google reste rattaché à l’espace WordPress.
-      workspaceId: WORKSPACE_IDS.wordpress,
+      workspaceId: wsId,
       connectionId: "default",
       status: "running",
       mode,
@@ -81,7 +102,9 @@ export async function processGoogleSync(runId: string): Promise<void> {
   if (!run || run.status !== "running") {
     return;
   }
-  const connection = await getGoogleConnection();
+  const workspaceId = run.workspaceId?.trim() || WORKSPACE_IDS.wordpress;
+  // Figé au lancement : workspace + sélection lus pour ce workspace uniquement.
+  const connection = await getGoogleConnection(workspaceId);
   const selection = connection?.selection;
   if (!selection) {
     await db.googleSyncRun.update({
@@ -95,6 +118,11 @@ export async function processGoogleSync(runId: string): Promise<void> {
     return;
   }
 
+  const workspace = await getWorkspaceByIdOrSlug(workspaceId);
+  const isWebflow = workspace?.cmsProvider === "webflow";
+  const frozenProperty = selection.gscPropertyUrl?.trim() || null;
+  const frozenGa4 = selection.ga4PropertyId?.trim() || null;
+
   const start = run.rangeStart ?? resolveSyncRange(run.mode as GoogleSyncMode).start;
   const end = run.rangeEnd ?? resolveSyncRange(run.mode as GoogleSyncMode).end;
 
@@ -102,16 +130,18 @@ export async function processGoogleSync(runId: string): Promise<void> {
   let ga4Upserted = 0;
 
   try {
-    if (selection.gscPropertyUrl) {
+    if (frozenProperty) {
       gscUpserted = await syncSearchConsoleRange({
-        propertyUrl: selection.gscPropertyUrl,
+        propertyUrl: frozenProperty,
         start,
         end,
+        workspaceId,
       });
     }
-    if (selection.ga4PropertyId) {
+    // GA4 : WordPress uniquement dans cette version.
+    if (!isWebflow && frozenGa4) {
       ga4Upserted = await syncGa4Range({
-        propertyId: selection.ga4PropertyId,
+        propertyId: frozenGa4,
         start,
         end,
       });
@@ -126,11 +156,16 @@ export async function processGoogleSync(runId: string): Promise<void> {
         error: null,
       },
     });
-    logInfo("google-sync", "completed", { runId, gscUpserted, ga4Upserted });
+    logInfo("google-sync", "completed", {
+      runId,
+      workspaceId,
+      gscUpserted,
+      ga4Upserted,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message.slice(0, 500) : "Erreur sync Google.";
-    logError("google-sync", "failed", { runId, message });
+    logError("google-sync", "failed", { runId, workspaceId, message });
     await db.googleSyncRun.update({
       where: { id: runId },
       data: {
@@ -157,23 +192,36 @@ export function enqueueGoogleSync(runId: string): void {
   });
 }
 
-export async function getGoogleSyncStatus() {
+export async function getGoogleSyncStatus(
+  workspaceId: string = WORKSPACE_IDS.wordpress
+) {
+  const wsId = workspaceId.trim() || WORKSPACE_IDS.wordpress;
   const [last, running, connection] = await Promise.all([
-    db.googleSyncRun.findFirst({ orderBy: { startedAt: "desc" } }),
     db.googleSyncRun.findFirst({
-      where: { status: "running" },
+      where: { workspaceId: wsId },
       orderBy: { startedAt: "desc" },
     }),
-    getGoogleConnection(),
+    db.googleSyncRun.findFirst({
+      where: { status: "running", workspaceId: wsId },
+      orderBy: { startedAt: "desc" },
+    }),
+    getGoogleConnection(wsId),
   ]);
   return { last, running, connection };
 }
 
 /** Reprise soft des runs coincés (ex. redémarrage process). */
-export async function recoverStaleGoogleSyncs(maxAgeMs = 45 * 60 * 1000): Promise<number> {
+export async function recoverStaleGoogleSyncs(
+  maxAgeMs = 45 * 60 * 1000,
+  workspaceId?: string
+): Promise<number> {
   const cutoff = new Date(Date.now() - maxAgeMs);
   const result = await db.googleSyncRun.updateMany({
-    where: { status: "running", startedAt: { lt: cutoff } },
+    where: {
+      status: "running",
+      startedAt: { lt: cutoff },
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     data: {
       status: "failed",
       error: "Synchronisation interrompue (reprise après redémarrage).",

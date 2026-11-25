@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPagePerformance } from "@/lib/google/metrics";
 import type { PeriodKey } from "@/lib/google/aggregates";
-import { requireWordPressGoogleWorkspace } from "@/lib/google/workspace-guard";
+import { requireGoogleAnalyticsWorkspace } from "@/lib/google/workspace-guard";
 import { requireAuth } from "@/lib/require-auth";
 import { WorkspaceContextError } from "@/lib/workspace";
 
@@ -13,8 +13,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
+  let workspace;
   try {
-    await requireWordPressGoogleWorkspace();
+    workspace = await requireGoogleAnalyticsWorkspace(request);
   } catch (error) {
     if (error instanceof WorkspaceContextError) {
       return NextResponse.json(
@@ -39,6 +40,10 @@ export async function GET(request: Request) {
     );
   }
 
-  const data = await getPagePerformance({ pageUrlNorm, periodDays });
+  const data = await getPagePerformance({
+    pageUrlNorm,
+    periodDays,
+    workspaceId: workspace.id,
+  });
   return NextResponse.json(data);
 }

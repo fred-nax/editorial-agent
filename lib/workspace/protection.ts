@@ -32,6 +32,8 @@ const WEBFLOW_ENABLED_MODULES = new Set<WebflowModuleCapability>([
   "rapprochements",
   "opportunities",
   "featured_image",
+  /// V7.14.0 — Search Console (GA4 Webflow hors périmètre).
+  "analytics",
 ]);
 
 export function isWebflowModuleEnabled(
@@ -73,11 +75,11 @@ export function webflowEmptyState(module: WebflowModuleCapability): {
     rapprochements:
       "Rapprochements éditoriaux Webflow : synchronisez l’inventaire CMS de l’espace. Aucun inventaire WordPress n’est réutilisé.",
     opportunities:
-      "Opportunités SEO Webflow : inventaire CMS, thématiques et recherches isolés par espace. Aucune donnée Google ni inventaire WordPress. Les idées viennent de recherches documentaires / couverture éditoriale — pas de volumes SEO mesurés.",
+      "Opportunités SEO Webflow : inventaire CMS et thématiques isolés. Search Console optionnelle — sans propriété dédiée, idées documentaires uniquement (pas de volumes Google inventés).",
     veille:
       "Veille éditoriale Webflow sans corpus WordPress — configurations et historique isolés par espace.",
     analytics:
-      "Analytics Webflow indisponible tant qu’aucune propriété Google dédiée n’est configurée pour cet espace. Les statistiques WordPress ne sont pas affichées.",
+      "Search Console non configurée pour cet espace Webflow. Sélectionnez une propriété Google dédiée dans les paramètres — les statistiques WordPress ne sont jamais affichées ici.",
     topics: "File éditoriale Webflow vide.",
   };
   return {

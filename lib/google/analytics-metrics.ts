@@ -85,16 +85,17 @@ type PageAgg = {
   lastDate: string | null;
 };
 
-async function connectionState(): Promise<{
+async function connectionState(workspaceId?: string): Promise<{
   state: AnalyticsConnectionState;
   gscProperty: string | null;
   ga4Property: string | null;
 }> {
-  const connection = await getGoogleConnection();
+  const connection = await getGoogleConnection(workspaceId);
   const selection = connection?.selection;
   const gscProperty = selection?.gscPropertyUrl ?? null;
   const ga4Property = selection?.ga4PropertyId ?? null;
   const lastSync = await db.googleSyncRun.findFirst({
+    where: workspaceId ? { workspaceId } : undefined,
     orderBy: { startedAt: "desc" },
   });
   return {
@@ -184,9 +185,12 @@ function aggregatePageRows(
   return [...byPage.values()];
 }
 
-async function loadPublishedMaps() {
+async function loadPublishedMaps(workspaceId?: string) {
   const publishedPosts = await db.wordPressPost.findMany({
-    where: { status: "publish" },
+    where: {
+      status: "publish",
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     select: { wpPostId: true, title: true, url: true, contentType: true },
   });
   const postsByNorm = indexPublishedPostsByNorm(publishedPosts);
@@ -196,6 +200,7 @@ async function loadPublishedMaps() {
   const articles = await db.articleGeneration.findMany({
     where: {
       wpPostId: { in: publishedPosts.map((p) => p.wpPostId) },
+      ...(workspaceId ? { workspaceId } : {}),
     },
     select: { id: true, wpPostId: true },
     orderBy: { createdAt: "desc" },
@@ -273,9 +278,10 @@ function paginate<T>(rows: T[], page: number, pageSize: number) {
 
 export async function getAnalyticsOverview(
   periodDays: PeriodKey,
-  contentType: AnalyticsContentTypeFilter = "all"
+  contentType: AnalyticsContentTypeFilter = "all",
+  workspaceId?: string
 ) {
-  const { state, gscProperty, ga4Property } = await connectionState();
+  const { state, gscProperty, ga4Property } = await connectionState(workspaceId);
   if (!state.connected) {
     return {
       connection: state,
@@ -311,7 +317,7 @@ export async function getAnalyticsOverview(
           where: { propertyUrl: gscProperty, date: { gte: start, lte: end } },
         })
       : [];
-  const maps = await loadPublishedMaps();
+  const maps = await loadPublishedMaps(workspaceId);
   const topPages = toAnalyticsPageRows(aggregatePageRows(pageRows), maps)
     .filter((row) => matchesContentTypeFilter(row.contentType, contentType))
     .sort((a, b) => b.clicks - a.clicks)
@@ -388,10 +394,15 @@ export async function getAnalyticsSeo(input: {
   page?: number;
   pageSize?: number;
   contentType?: AnalyticsContentTypeFilter;
+  workspaceId?: string;
 }) {
   const contentType = input.contentType ?? "all";
-  const overview = await getAnalyticsOverview(input.periodDays, contentType);
-  const { state, gscProperty } = await connectionState();
+  const overview = await getAnalyticsOverview(
+    input.periodDays,
+    contentType,
+    input.workspaceId
+  );
+  const { state, gscProperty } = await connectionState(input.workspaceId);
   const dir = input.dir ?? "desc";
   const pageSize = input.pageSize ?? 20;
   const query = (input.q ?? "").trim().toLowerCase();
@@ -455,7 +466,7 @@ export async function getAnalyticsSeo(input: {
     dir
   );
 
-  const maps = await loadPublishedMaps();
+  const maps = await loadPublishedMaps(input.workspaceId);
   let pages = toAnalyticsPageRows(aggregatePageRows(pageRows), maps).filter(
     (row) => matchesContentTypeFilter(row.contentType, contentType)
   );
@@ -482,8 +493,11 @@ export async function getAnalyticsSeo(input: {
   };
 }
 
-export async function getAnalyticsAiTraffic(periodDays: PeriodKey) {
-  const { state, ga4Property } = await connectionState();
+export async function getAnalyticsAiTraffic(
+  periodDays: PeriodKey,
+  workspaceId?: string
+) {
+  const { state, ga4Property } = await connectionState(workspaceId);
   if (!state.connected || !ga4Property) {
     return {
       connection: state,
@@ -577,7 +591,7 @@ export async function getAnalyticsAiTraffic(periodDays: PeriodKey) {
     destAgg.set(key, cur);
   }
 
-  const maps = await loadPublishedMaps();
+  const maps = await loadPublishedMaps(workspaceId);
   const destinations = [...destAgg.values()]
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 50)
@@ -627,8 +641,11 @@ export async function getAnalyticsArticles(input: {
   page?: number;
   pageSize?: number;
   contentType?: AnalyticsContentTypeFilter;
+  workspaceId?: string;
 }) {
-  const { state, gscProperty, ga4Property } = await connectionState();
+  const { state, gscProperty, ga4Property } = await connectionState(
+    input.workspaceId
+  );
   const dir = input.dir ?? "desc";
   const pageSize = input.pageSize ?? 20;
   const query = (input.q ?? "").trim().toLowerCase();
@@ -657,7 +674,7 @@ export async function getAnalyticsArticles(input: {
   const start = period?.start ?? null;
   const end = period?.end ?? null;
 
-  const maps = await loadPublishedMaps();
+  const maps = await loadPublishedMaps(input.workspaceId);
   const [pageRows, ga4Rows] = await Promise.all([
     gscProperty && start && end
       ? db.gscPageDailyStat.findMany({

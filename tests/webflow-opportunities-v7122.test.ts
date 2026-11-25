@@ -13,9 +13,9 @@ function read(path: string): string {
 }
 
 describe("V7.12.2 — Opportunités SEO Webflow (source)", () => {
-  it("active le module opportunities sans analytics / Google", () => {
+  it("active le module opportunities ; analytics GSC optionnel (V7.14.0)", () => {
     assert.equal(isWebflowModuleEnabled("opportunities"), true);
-    assert.equal(isWebflowModuleEnabled("analytics"), false);
+    assert.equal(isWebflowModuleEnabled("analytics"), true);
     // Images Webflow (V7.13.0) n’impactent pas le module opportunités
     assert.equal(isWebflowModuleEnabled("featured_image"), true);
 
@@ -32,15 +32,13 @@ describe("V7.12.2 — Opportunités SEO Webflow (source)", () => {
     assert.doesNotThrow(() =>
       assertModuleAllowedForWorkspace(wf, "opportunities")
     );
-    assert.throws(
-      () => assertModuleAllowedForWorkspace(wf, "analytics"),
-      (e: unknown) =>
-        e instanceof Error && /analytics|Google|501|non disponible/i.test(String(e))
+    assert.doesNotThrow(() =>
+      assertModuleAllowedForWorkspace(wf, "analytics")
     );
 
     const reason = webflowEmptyState("opportunities").reason;
     assert.match(reason, /Google|Search Console/i);
-    assert.match(reason, /WordPress/i);
+    assert.match(reason, /inventaire|documentaires|thématiques/i);
   });
 
   it("préflight inventaire CMS-aware et jamais de fallback WordPress", () => {
@@ -52,7 +50,8 @@ describe("V7.12.2 — Opportunités SEO Webflow (source)", () => {
     );
     assert.match(route, /Inventaire Webflow vide/);
     assert.match(route, /cmsProvider/);
-    assert.match(route, /googleDataAvailable:\s*false/);
+    assert.match(route, /googleDataAvailable:/);
+    assert.match(route, /workspaceHasGscData|gsc-signals/);
     assert.match(route, /inventorySourceNote/);
   });
 

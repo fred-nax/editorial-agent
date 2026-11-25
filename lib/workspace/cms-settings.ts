@@ -29,6 +29,7 @@ export type WorkspaceCmsSettingsRow = {
   wpApiUserName: string | null;
   wpApiUserSlug: string | null;
   wpSeoPlugin: string | null;
+  gscPublicSiteUrl: string | null;
   webflowApiTokenEncrypted: string | null;
   webflowSiteId: string | null;
   webflowCollectionId: string | null;
@@ -180,6 +181,7 @@ export async function loadWorkspaceCmsSettings(
         row?.wpSeoPlugin,
         allowWpLegacy ? legacy?.wpSeoPlugin : null
       ),
+      gscPublicSiteUrl: row?.gscPublicSiteUrl ?? workspace.siteUrl ?? null,
       webflowApiTokenEncrypted: null,
       webflowSiteId: null,
       webflowCollectionId: null,
@@ -216,6 +218,7 @@ export async function loadWorkspaceCmsSettings(
     wpApiUserName: null,
     wpApiUserSlug: null,
     wpSeoPlugin: null,
+    gscPublicSiteUrl: row?.gscPublicSiteUrl ?? workspace.siteUrl ?? null,
     webflowApiTokenEncrypted: prefer(
       row?.webflowApiTokenEncrypted,
       allowWebflowLegacy ? legacy?.webflowApiTokenEncrypted : null

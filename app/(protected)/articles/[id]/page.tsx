@@ -26,7 +26,7 @@ import {
   formatTokenCount,
 } from "@/lib/format";
 import { parseStoredEditorialContext } from "@/lib/editorial-context";
-import { resolvePublishedUrlForGeneration } from "@/lib/google/wp-url-map";
+import { resolvePublishedUrlForGeneration } from "@/lib/google/published-url-map";
 import { toFeaturedImagePublic } from "@/lib/images/types";
 import { formatModelLabel } from "@/lib/openai-pricing";
 import { CmsDestinationBadge } from "@/components/cms/CmsDestinationBadge";
@@ -101,12 +101,13 @@ export default async function ArticleDetailPage({
       ? formatTokenCount(article.inputTokens + article.outputTokens)
       : null;
 
-  const publishedPerf = !isWebflow
-    ? await resolvePublishedUrlForGeneration({
-        wpPostId: article.wpPostId,
-        wpUrl: article.wpUrl,
-      })
-    : null;
+  const publishedPerf = await resolvePublishedUrlForGeneration({
+    workspaceId: article.workspaceId,
+    cmsDestination,
+    wpPostId: article.wpPostId,
+    wpUrl: article.wpUrl,
+    cmsExternalId: article.cmsExternalId,
+  });
 
   const visibleTabs = getArticleDetailTabs(cmsDestination);
   const requestedTab: ArticleDetailTabId =
@@ -265,12 +266,11 @@ export default async function ArticleDetailPage({
           )
         }
         performances={
-          isWebflow ? undefined : (
-            <ArticlePerformancesPanel
-              published={Boolean(publishedPerf)}
-              pageUrlNorm={publishedPerf?.pageUrlNorm ?? null}
-            />
-          )
+          <ArticlePerformancesPanel
+            published={Boolean(publishedPerf)}
+            pageUrlNorm={publishedPerf?.pageUrlNorm ?? null}
+            cmsDestination={cmsDestination}
+          />
         }
       />
     </div>
