@@ -1,4 +1,8 @@
 import { getOpenAIClient } from "@/lib/openai";
+import {
+  parseChatCompletionUsage,
+  type ChatCompletionUsageSnapshot,
+} from "@/lib/openai-usage-parse";
 import { FEATURED_ALT_MODEL, MAX_ALT_TEXT_LENGTH } from "./config";
 
 export type AltTextInput = {
@@ -50,7 +54,11 @@ export const FEATURED_ALT_SYSTEM_PROMPT = [
  */
 export async function proposeFeaturedImageAltText(
   input: AltTextInput
-): Promise<{ altText: string | null; model: string }> {
+): Promise<{
+  altText: string | null;
+  model: string;
+  usage: ChatCompletionUsageSnapshot | null;
+}> {
   const language = input.languageLabel?.trim() || "français";
   const title = input.title?.trim() || input.subject.trim();
   const dataUrl = `data:${input.mimeType};base64,${input.imageBytes.toString("base64")}`;
@@ -89,8 +97,12 @@ export async function proposeFeaturedImageAltText(
     });
 
     const raw = completion.choices[0]?.message?.content ?? "";
-    return { altText: cleanAlt(raw), model: FEATURED_ALT_MODEL };
+    return {
+      altText: cleanAlt(raw),
+      model: FEATURED_ALT_MODEL,
+      usage: parseChatCompletionUsage(completion),
+    };
   } catch {
-    return { altText: null, model: FEATURED_ALT_MODEL };
+    return { altText: null, model: FEATURED_ALT_MODEL, usage: null };
   }
 }

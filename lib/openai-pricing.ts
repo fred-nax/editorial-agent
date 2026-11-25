@@ -1,20 +1,23 @@
 /**
- * Tarifs LLM officiels OpenAI (USD / 1M tokens) — standard short-context.
+ * Tarifs OpenAI officiels (USD) — catalogue versionné.
  *
- * Sources (consultées 2026-11-25) :
+ * Sources consultées 2026-11-25 :
  * - https://developers.openai.com/api/docs/pricing
- * - https://developers.openai.com/api/docs/models/gpt-5.6-sol
- * - https://developers.openai.com/api/docs/models/gpt-5.6-terra
+ * - https://platform.openai.com/docs/pricing
+ * - https://cdn.openai.com/API/docs/txt/llms-models-pricing.txt
+ * - https://platform.openai.com/docs/guides/tools-web-search
+ * - https://platform.openai.com/docs/api-reference/images
+ * - https://platform.openai.com/docs/api-reference/responses
  *
- * gpt-5.6-sol : Input $4 / Cached $0.40 / Output $20 (promo jusqu’au 2026-11-30).
- * gpt-5.6 alias → gpt-5.6-sol (doc modèle).
+ * Une entrée enregistrée fige `pricingVersion` : un futur catalogue
+ * ne recalcule pas silencieusement les anciennes consommations.
  *
- * cached_tokens est inclus dans input_tokens.
- * reasoning_tokens est inclus dans output_tokens → ne pas les recompter.
- *
- * Ce coût est uniquement le coût LLM session. Hors web_search / images /
- * autres tools (pas de tokens image persistés sur ArticleGeneration).
+ * cached_tokens ⊆ input_tokens ; reasoning_tokens ⊆ output_tokens.
+ * ne pas les recompter.
+ * Ne jamais inventer un tarif pour un modèle inconnu.
  */
+
+export const OPENAI_PRICING_VERSION = "v7150-2026-11-25";
 
 export type LlmUsageForPricing = {
   inputTokens: number;
@@ -29,16 +32,29 @@ export type ModelTokenRates = {
   cachedInputPerMillion: number;
   /** USD / 1M tokens output (reasoning inclus) */
   outputPerMillion: number;
-  /**
-   * Seuil de tokens d’entrée au-delà duquel le tarif long-context
-   * s’applique à toute la requête (doc GPT-5.6*).
-   */
   longContextInputThreshold?: number;
-  /** Multiplicateur input (uncached + cached) en long-context. */
   longContextInputMultiplier?: number;
-  /** Multiplicateur output en long-context. */
   longContextOutputMultiplier?: number;
-  /** Note tarifaire (promo, etc.). */
+  note?: string;
+};
+
+export type ImageModelTokenRates = {
+  textInputPerMillion: number;
+  textCachedInputPerMillion: number;
+  imageInputPerMillion: number;
+  imageCachedInputPerMillion: number;
+  imageOutputPerMillion: number;
+  note?: string;
+};
+
+export type WebSearchToolRates = {
+  /** USD pour 1000 appels facturables à l’outil. */
+  usdPerThousandCalls: number;
+  /**
+   * true = tokens de contenu de recherche inclus dans le forfait appel
+   * (gpt-4o / gpt-4.1). false = facturés au tarif modèle (déjà dans usage).
+   */
+  searchContentIncludedInCallFee: boolean;
   note?: string;
 };
 
@@ -65,6 +81,59 @@ const MODEL_RATES: Record<string, ModelTokenRates> = {
     longContextOutputMultiplier: 1.5,
     note: "Tarif standard / promo Sol jusqu’au 2026-11-30 (sources OpenAI 2026-11-25).",
   },
+  "gpt-4.1": {
+    uncachedInputPerMillion: 2.0,
+    cachedInputPerMillion: 0.5,
+    outputPerMillion: 8.0,
+  },
+  "gpt-4.1-mini": {
+    uncachedInputPerMillion: 0.4,
+    cachedInputPerMillion: 0.1,
+    outputPerMillion: 1.6,
+  },
+};
+
+/** Modèles image tarifés au token (Images API / Responses). */
+const IMAGE_MODEL_RATES: Record<string, ImageModelTokenRates> = {
+  "gpt-image-2.5-flare": {
+    textInputPerMillion: 5.0,
+    textCachedInputPerMillion: 1.25,
+    imageInputPerMillion: 8.0,
+    imageCachedInputPerMillion: 2.0,
+    imageOutputPerMillion: 30.0,
+    note: "Tarifs token Standard — developers.openai.com/api/docs/pricing 2026-11-25.",
+  },
+  "gpt-image-2.5-sunburst": {
+    textInputPerMillion: 5.0,
+    textCachedInputPerMillion: 1.25,
+    imageInputPerMillion: 8.0,
+    imageCachedInputPerMillion: 2.0,
+    imageOutputPerMillion: 30.0,
+  },
+  "gpt-image-2": {
+    textInputPerMillion: 5.0,
+    textCachedInputPerMillion: 1.25,
+    imageInputPerMillion: 8.0,
+    imageCachedInputPerMillion: 2.0,
+    imageOutputPerMillion: 30.0,
+  },
+};
+
+/**
+ * Familles web_search (doc tools pricing 2026-11-25) :
+ * - reasoning / gpt-5* : $10 / 1k calls + content tokens au tarif modèle
+ * - gpt-4o / gpt-4.1 (+ mini) preview : $25 / 1k, content inclus
+ */
+const WEB_SEARCH_REASONING: WebSearchToolRates = {
+  usdPerThousandCalls: 10,
+  searchContentIncludedInCallFee: false,
+  note: "Web search — modèles reasoning / gpt-5* : $10/1k + content tokens au tarif modèle.",
+};
+
+const WEB_SEARCH_GPT41_FAMILY: WebSearchToolRates = {
+  usdPerThousandCalls: 25,
+  searchContentIncludedInCallFee: true,
+  note: "Web search preview — gpt-4o / gpt-4.1 : $25/1k, content tokens inclus.",
 };
 
 export function resolvePricingModelId(
@@ -88,6 +157,41 @@ export function getModelRates(
     return null;
   }
   return MODEL_RATES[id] ?? null;
+}
+
+export function getImageModelRates(
+  model: string | null | undefined
+): ImageModelTokenRates | null {
+  const id = resolvePricingModelId(model);
+  if (!id) {
+    return null;
+  }
+  return IMAGE_MODEL_RATES[id] ?? null;
+}
+
+export function getWebSearchToolRates(
+  model: string | null | undefined
+): WebSearchToolRates | null {
+  const id = resolvePricingModelId(model);
+  if (!id) {
+    return null;
+  }
+  if (
+    id.startsWith("gpt-5") ||
+    id.startsWith("o3") ||
+    id.startsWith("o4") ||
+    id.includes("deep-research")
+  ) {
+    return WEB_SEARCH_REASONING;
+  }
+  if (id.startsWith("gpt-4.1") || id.startsWith("gpt-4o")) {
+    return WEB_SEARCH_GPT41_FAMILY;
+  }
+  return null;
+}
+
+function roundUsdMicros(cost: number): number {
+  return Math.round(cost * 1_000_000) / 1_000_000;
 }
 
 /**
@@ -133,7 +237,80 @@ export function estimateLlmCostUsd(
       inputMult +
     (outputTokens / 1_000_000) * rates.outputPerMillion * outputMult;
 
-  return Math.round(cost * 1_000_000) / 1_000_000;
+  return roundUsdMicros(cost);
+}
+
+export type ImageUsageForPricing = {
+  textInputTokens: number;
+  textCachedInputTokens?: number;
+  imageInputTokens: number;
+  imageCachedInputTokens?: number;
+  imageOutputTokens: number;
+};
+
+/**
+ * Coût image au token (gpt-image-2*). null si modèle inconnu / compteurs invalides.
+ * Ne cumule pas un forfait fixe par image lorsque la tarification token s’applique.
+ */
+export function estimateImageTokenCostUsd(
+  model: string | null | undefined,
+  usage: ImageUsageForPricing
+): number | null {
+  const rates = getImageModelRates(model);
+  if (!rates) {
+    return null;
+  }
+
+  const textIn = usage.textInputTokens;
+  const textCached = usage.textCachedInputTokens ?? 0;
+  const imageIn = usage.imageInputTokens;
+  const imageCached = usage.imageCachedInputTokens ?? 0;
+  const imageOut = usage.imageOutputTokens;
+
+  const values = [textIn, textCached, imageIn, imageCached, imageOut];
+  if (
+    values.some((v) => !Number.isFinite(v) || v < 0) ||
+    textCached > textIn ||
+    imageCached > imageIn
+  ) {
+    return null;
+  }
+
+  const cost =
+    ((textIn - textCached) / 1_000_000) * rates.textInputPerMillion +
+    (textCached / 1_000_000) * rates.textCachedInputPerMillion +
+    ((imageIn - imageCached) / 1_000_000) * rates.imageInputPerMillion +
+    (imageCached / 1_000_000) * rates.imageCachedInputPerMillion +
+    (imageOut / 1_000_000) * rates.imageOutputPerMillion;
+
+  return roundUsdMicros(cost);
+}
+
+/**
+ * Coût outil web_search (USD) — uniquement les appels facturables.
+ * Les tokens de contenu déjà dans l’usage modèle ne sont pas recomptés ici.
+ */
+export function estimateWebSearchToolCostUsd(
+  model: string | null | undefined,
+  billableCallCount: number
+): number | null {
+  const rates = getWebSearchToolRates(model);
+  if (!rates) {
+    return null;
+  }
+  if (
+    !Number.isFinite(billableCallCount) ||
+    billableCallCount < 0 ||
+    !Number.isInteger(billableCallCount)
+  ) {
+    return null;
+  }
+  if (billableCallCount === 0) {
+    return 0;
+  }
+  return roundUsdMicros(
+    (billableCallCount / 1000) * rates.usdPerThousandCalls
+  );
 }
 
 export type CostEstimateKind = "known" | "zero" | "unknown" | "partial";
@@ -181,10 +358,42 @@ export function formatModelLabel(model: string | null | undefined): string | nul
   if (id === "gpt-5.6-sol") {
     return model.trim() === "gpt-5.6" ? "GPT-5.6 Sol (alias gpt-5.6)" : "GPT-5.6 Sol";
   }
+  if (id === "gpt-4.1-mini") {
+    return "GPT-4.1 mini";
+  }
+  if (id === "gpt-4.1") {
+    return "GPT-4.1";
+  }
+  if (id === "gpt-image-2.5-flare") {
+    return "GPT Image 2.5 Flare";
+  }
   return model;
 }
 
-/** Modèles tarifés connus (tests / audit). */
+/** Modèles LLM tarifés connus (tests / audit). */
 export function listPricedModelIds(): string[] {
   return Object.keys(MODEL_RATES);
+}
+
+export function listPricedImageModelIds(): string[] {
+  return Object.keys(IMAGE_MODEL_RATES);
+}
+
+export function pricingCatalogMeta(): {
+  version: string;
+  sources: string[];
+  effectiveDate: string;
+} {
+  return {
+    version: OPENAI_PRICING_VERSION,
+    effectiveDate: "2026-11-25",
+    sources: [
+      "https://developers.openai.com/api/docs/pricing",
+      "https://platform.openai.com/docs/pricing",
+      "https://cdn.openai.com/API/docs/txt/llms-models-pricing.txt",
+      "https://platform.openai.com/docs/guides/tools-web-search",
+      "https://platform.openai.com/docs/api-reference/images",
+      "https://platform.openai.com/docs/api-reference/usage",
+    ],
+  };
 }

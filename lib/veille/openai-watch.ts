@@ -1,6 +1,11 @@
 import { assertLiveWatchAllowed, type VeilleSearchClient } from "./search";
 import { countryByCode } from "./verify";
 import type { VeilleQuery } from "./types";
+import {
+  countWebSearchCallsInResponse,
+  parseResponsesUsage,
+} from "@/lib/openai-usage-parse";
+import { recordResponsesApiUsage } from "@/lib/openai-usage-tracker";
 
 export type WebSearchToolConfig = {
   type: "web_search";
@@ -34,18 +39,42 @@ export function buildWebSearchToolConfig(query: VeilleQuery): WebSearchToolConfi
   return tool;
 }
 
-export function createOpenAiWatchClient(): VeilleSearchClient {
+export function createOpenAiWatchClient(workspaceId: string): VeilleSearchClient {
+  const frozenWorkspaceId = workspaceId.trim();
   return {
     async search(input, query: VeilleQuery) {
       assertLiveWatchAllowed();
       const { getOpenAIClient } = await import("@/lib/openai");
       const openai = await getOpenAIClient();
-      return openai.responses.create({
-        model: "gpt-5.6-terra",
-        tools: [buildWebSearchToolConfig(query)],
-        include: ["web_search_call.action.sources"],
-        input,
+      const model = "gpt-5.6-terra";
+      let response: unknown;
+      try {
+        response = await openai.responses.create({
+          model,
+          tools: [buildWebSearchToolConfig(query)],
+          include: ["web_search_call.action.sources"],
+          input,
+        });
+      } catch (error) {
+        // Échec local après tentative : pas de usage retournée → rien à enregistrer.
+        throw error;
+      }
+
+      const usage = parseResponsesUsage(response);
+      const webSearchCallCount = countWebSearchCallsInResponse(response);
+      const responseId = usage?.responseId ?? `veille:${Date.now()}`;
+      await recordResponsesApiUsage({
+        workspaceId: frozenWorkspaceId,
+        operationType: "editorial_watch",
+        idempotencyKey: `veille:search:${responseId}`,
+        operationKey: responseId,
+        model,
+        status: "succeeded",
+        usage,
+        webSearchCallCount,
       });
+
+      return response;
     },
   };
 }

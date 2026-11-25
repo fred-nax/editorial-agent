@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     // Suggestions éphémères à partir de la source fournie — pas de corpus WP croisé.
     const result = await handleVeilleSuggestions(request, {
       authenticated: Boolean(session?.user),
-      client: createOpenAiSuggestionClient(),
+      client: createOpenAiSuggestionClient(workspace.id),
     });
     if (result.status >= 500) {
       logError("veille", "suggestions failed", { status: result.status });

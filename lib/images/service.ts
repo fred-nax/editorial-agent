@@ -274,12 +274,36 @@ async function runImageGenerationCore(input: {
     );
     await writeFeaturedImageFile(relativePath, generated.bytes);
 
+    // Consommation image figée dès succès OpenAI (avant transfert CMS).
+    const { recordImageGenerationUsage, recordImageAltUsage } = await import(
+      "@/lib/openai-usage-tracker"
+    );
+    await recordImageGenerationUsage({
+      workspaceId: generation.workspaceId,
+      generationId: generation.id,
+      featuredImageId: imageId,
+      model: generated.model,
+      size: generated.size,
+      quality: generated.quality,
+      status: "succeeded",
+      usage: generated.usage,
+    });
+
     const alt = await proposeFeaturedImageAltText({
       imageBytes: generated.bytes,
       mimeType: generated.mimeType,
       title: generation.title,
       subject: generation.subject,
       languageLabel: languageLabel(editorial?.language ?? null),
+    });
+
+    await recordImageAltUsage({
+      workspaceId: generation.workspaceId,
+      generationId: generation.id,
+      featuredImageId: imageId,
+      model: alt.model,
+      status: alt.altText ? "succeeded" : "failed",
+      usage: alt.usage,
     });
 
     const updated = await db.articleFeaturedImage.update({

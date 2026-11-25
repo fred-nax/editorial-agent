@@ -287,7 +287,7 @@ describe("suggestions SEO de la veille", () => {
     assert.equal(process.env.npm_lifecycle_event, "test");
     assert.throws(() => assertLiveSuggestionsAllowed(), /ne contactent pas OpenAI/);
     await assert.rejects(
-      () => createOpenAiSuggestionClient().suggest("test"),
+      () => createOpenAiSuggestionClient("wordpress").suggest("test"),
       /ne contactent pas OpenAI/
     );
     const client = readFileSync(resolve("lib/veille/openai-suggestions.ts"), "utf8");

@@ -1,4 +1,6 @@
 import { SuggestionRequestError, type SuggestionClient } from "./suggestions";
+import { parseResponsesUsage } from "@/lib/openai-usage-parse";
+import { recordResponsesApiUsage } from "@/lib/openai-usage-tracker";
 
 export const VEILLE_SUGGESTION_MODEL = "gpt-5.6-terra";
 
@@ -44,13 +46,16 @@ export function assertLiveSuggestionsAllowed(): void {
   }
 }
 
-export function createOpenAiSuggestionClient(): SuggestionClient {
+export function createOpenAiSuggestionClient(
+  workspaceId: string
+): SuggestionClient {
+  const frozenWorkspaceId = workspaceId.trim();
   return {
     async suggest(input: string) {
       assertLiveSuggestionsAllowed();
       const { getOpenAIClient } = await import("@/lib/openai");
       const openai = await getOpenAIClient();
-      return openai.responses.create({
+      const response = await openai.responses.create({
         model: VEILLE_SUGGESTION_MODEL,
         input,
         text: {
@@ -62,6 +67,20 @@ export function createOpenAiSuggestionClient(): SuggestionClient {
           },
         },
       });
+
+      const usage = parseResponsesUsage(response);
+      const responseId = usage?.responseId ?? `veille-sug:${Date.now()}`;
+      await recordResponsesApiUsage({
+        workspaceId: frozenWorkspaceId,
+        operationType: "editorial_watch_suggestions",
+        idempotencyKey: `veille:suggestions:${responseId}`,
+        operationKey: responseId,
+        model: VEILLE_SUGGESTION_MODEL,
+        status: "succeeded",
+        usage,
+      });
+
+      return response;
     },
   };
 }

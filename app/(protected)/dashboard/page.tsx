@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import {
   DashboardEditorialWatchPreview,
   type EditorialWatchPreviewItem,
@@ -12,6 +13,10 @@ import { DashboardWelcome } from "@/components/dashboard/DashboardWelcome";
 import { db } from "@/lib/db";
 import { formatEstimatedCost } from "@/lib/format";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
+import {
+  getUsageSummary,
+  resolveUsagePeriod,
+} from "@/lib/openai-usage-aggregate";
 import { parseWatchSnapshot } from "@/lib/veille/history";
 import { resolveActiveWorkspace, workspaceWhere } from "@/lib/workspace";
 
@@ -72,11 +77,18 @@ export default async function DashboardPage() {
     workspace.siteUrl?.replace(/^https?:\/\//i, "").replace(/\/$/, "") ||
     cmsLabel;
 
+  const monthPeriod = resolveUsagePeriod({
+    preset: "custom",
+    from: monthStart.toISOString(),
+    to: new Date().toISOString(),
+  });
+
   const [
     draftsThisMonth,
     pendingTopics,
     runningGenerations,
     llmCostThisMonth,
+    usageMonth,
     recentArticles,
     recentTopics,
     recentWatchSearches,
@@ -105,6 +117,15 @@ export default async function DashboardPage() {
         estimatedCost: { not: null },
       },
       _sum: { estimatedCost: true },
+    }),
+    getUsageSummary({
+      workspaceId: workspace.id,
+      from: monthPeriod.from,
+      to: monthPeriod.to,
+      operationType: "all",
+      model: "all",
+      status: "all",
+      completeness: "all",
     }),
     db.articleGeneration.findMany({
       where: scope,
@@ -170,10 +191,34 @@ export default async function DashboardPage() {
           {
             label: "Coût LLM estimé du mois",
             value: formatEstimatedCost(llmCostThisMonth._sum.estimatedCost),
-            hint: "Somme des estimations LLM connues — hors images, tools ; isolé à cet espace.",
+            hint: "Somme des estimations LLM historiques connues (ArticleGeneration) — hors images/tools.",
           },
         ]}
       />
+
+      <div className="rounded-2xl border border-[#D7EAF6] bg-[#EDF7FD] px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-slate-700">
+              Coût OpenAI consolidé connu (mois)
+            </p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900 tabular-nums">
+              {usageMonth.knownEstimatedCostLabel}
+            </p>
+            <p className="mt-1 max-w-2xl text-xs text-slate-600">
+              Estimation locale connue (registre + legacy LLM).{" "}
+              {usageMonth.unknownOrPartialCount} opération(s) inconnue(s) ou
+              partielle(s). Ce n’est pas une facture OpenAI.
+            </p>
+          </div>
+          <Link
+            href="/usage"
+            className="rounded-md border border-[#0F5270]/30 bg-white px-3 py-2 text-sm font-medium text-[#0F5270] hover:bg-white/80"
+          >
+            Voir Consommation
+          </Link>
+        </div>
+      </div>
 
       {/* V7.14.1 : GSC + GA4 par espace. Jamais de données d’un autre espace. */}
       <DashboardSeoTrafficStrip workspaceId={workspace.id} />

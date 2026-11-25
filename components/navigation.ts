@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   ChartNoAxesCombined,
+  CircleDollarSign,
   History,
   LayoutDashboard,
   Library,
@@ -25,6 +26,7 @@ export const navigation: NavItem[] = [
   { href: "/topics", label: "File éditoriale", icon: ListTodo },
   { href: "/inventory", label: "Inventaire", icon: Library },
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
+  { href: "/usage", label: "Consommation", icon: CircleDollarSign },
   { href: "/opportunities", label: "Opportunités SEO", icon: SearchCheck },
   { href: "/veille", label: "Veille éditoriale", icon: Radar },
   { href: "/settings", label: "Paramètres", icon: Settings },
@@ -43,6 +45,9 @@ export function isNavActive(pathname: string, href: string): boolean {
   }
   if (href === "/analytics") {
     return pathname === "/analytics" || pathname.startsWith("/analytics/");
+  }
+  if (href === "/usage") {
+    return pathname === "/usage" || pathname.startsWith("/usage/");
   }
   if (href === "/inventory") {
     return pathname === "/inventory" || pathname.startsWith("/inventory/");
@@ -70,6 +75,9 @@ export function sectionTitle(pathname: string): string {
   }
   if (pathname.startsWith("/analytics")) {
     return "Analytics";
+  }
+  if (pathname.startsWith("/usage")) {
+    return "Consommation";
   }
   if (pathname.startsWith("/inventory")) {
     return "Inventaire";

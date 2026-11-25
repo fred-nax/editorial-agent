@@ -137,6 +137,7 @@ export async function POST(request: Request) {
 
     const analyzed = await analyzeEditorialSimilarityWithAi({
       subject: parsed.subject,
+      workspaceId: workspace.id,
       angle: parsed.angle,
       candidates,
     });

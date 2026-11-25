@@ -102,6 +102,7 @@ model EditorialWorkspace {
   ga4PageStats      Ga4PageDailyStat[]
   ga4SourceStats    Ga4PageSourceDailyStat[]
   migrationIssues   WorkspaceMigrationIssue[]
+  openAiUsageEvents OpenAiUsageEvent[]
 
   @@index([cmsProvider, enabled])
 }
@@ -212,6 +213,7 @@ model ArticleGeneration {
   updatedAt         DateTime           @updatedAt
 
   featuredImages ArticleFeaturedImage[]
+  openAiUsageEvents OpenAiUsageEvent[]
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
@@ -254,11 +256,79 @@ model ArticleFeaturedImage {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  openAiUsageEvents OpenAiUsageEvent[]
+
   @@index([generationId, createdAt])
   @@index([workspaceId, status])
   @@index([status])
   @@index([status, updatedAt])
   @@index([webflowAssetId])
+}
+
+/// Registre centralisé des consommations OpenAI (V7.15.0).
+/// Pas de prompts / réponses brutes / secrets. Montants en Decimal.
+/// Les coûts historiques ArticleGeneration.estimatedCost restent la source
+/// legacy ; lecture unifiée côté agrégation (pas de double comptage).
+model OpenAiUsageEvent {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  workspace         EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  /// article_generation | web_search | image_generation | image_alt |
+  /// editorial_watch | editorial_watch_suggestions | seo_opportunity |
+  /// title_suggestion | editorial_similarity
+  operationType     String
+  /// Identifiant métier (runId, searchId, etc.).
+  operationKey      String?
+  generationId      String?
+  generation        ArticleGeneration? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  featuredImageId   String?
+  featuredImage     ArticleFeaturedImage? @relation(fields: [featuredImageId], references: [id], onDelete: SetNull)
+
+  requestedModel    String?
+  usedModel         String?
+  /// agents.sessions | responses | images.generate | chat.completions
+  endpoint          String
+  responseId        String?
+  requestId         String?
+
+  consumedAt        DateTime @default(now())
+  /// succeeded | failed | partial
+  status            String   @default("succeeded")
+
+  inputTokens       Int?
+  cachedInputTokens Int?
+  outputTokens      Int?
+  reasoningTokens   Int?
+  totalTokens       Int?
+  textInputTokens   Int?
+  imageInputTokens  Int?
+  imageOutputTokens Int?
+  toolCallCount     Int?
+
+  estimatedCostUsd  Decimal? @db.Decimal(18, 8)
+  currency          String   @default("USD")
+  /// Version du catalogue tarifaire figée à l’enregistrement.
+  pricingVersion    String
+  /// complete | partial | unknown | zero
+  completeness      String
+  /// local_estimate | legacy_mirror (jamais « facturé »)
+  costSource        String   @default("local_estimate")
+
+  /// Clé d’idempotence (retries / événements dupliqués).
+  idempotencyKey    String   @unique
+  /// Métadonnées non éditoriales (taille image, qualité, etc.).
+  meta              Json?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([workspaceId, consumedAt])
+  @@index([workspaceId, operationType, consumedAt])
+  @@index([workspaceId, completeness])
+  @@index([generationId, operationType])
+  @@index([featuredImageId])
+  @@index([operationKey])
 }
 
 model Topic {

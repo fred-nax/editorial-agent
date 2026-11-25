@@ -241,6 +241,8 @@ function buildFreeTopicPrompt(
 }
 
 async function requestDomainCandidates(
+  workspaceId: string,
+  runId: string,
   domain: EditorialDomain,
   quota: number,
   goal: ResearchGoal,
@@ -254,8 +256,9 @@ async function requestDomainCandidates(
   }
 
   const openai = await getOpenAIClient();
+  const model = "gpt-5.6-terra";
   const response = await openai.responses.create({
-    model: "gpt-5.6-terra",
+    model,
     tools: [{ type: "web_search" }],
     input: buildDomainPrompt(
       domain,
@@ -266,6 +269,27 @@ async function requestDomainCandidates(
       languageCode,
       gscContext
     ),
+  });
+
+  const { parseResponsesUsage, countWebSearchCallsInResponse } = await import(
+    "@/lib/openai-usage-parse"
+  );
+  const { recordResponsesApiUsage } = await import(
+    "@/lib/openai-usage-tracker"
+  );
+  const usage = parseResponsesUsage(response);
+  const domainKey = domain.id || domain.legacyKey || domain.label;
+  const responseId =
+    usage?.responseId ?? `seo-domain:${runId}:${domainKey}:${Date.now()}`;
+  await recordResponsesApiUsage({
+    workspaceId,
+    operationType: "seo_opportunity",
+    idempotencyKey: `seo:${runId}:domain:${domainKey}:${responseId}`,
+    operationKey: runId,
+    model,
+    status: "succeeded",
+    usage,
+    webSearchCallCount: countWebSearchCallsInResponse(response),
   });
 
   const text =
@@ -284,6 +308,8 @@ async function requestDomainCandidates(
 }
 
 async function requestFreeTopicCandidates(
+  workspaceId: string,
+  runId: string,
   topic: string,
   quota: number,
   goal: ResearchGoal,
@@ -292,8 +318,9 @@ async function requestFreeTopicCandidates(
   gscContext?: string | null
 ): Promise<RawOpportunityCandidate[]> {
   const openai = await getOpenAIClient();
+  const model = "gpt-5.6-terra";
   const response = await openai.responses.create({
-    model: "gpt-5.6-terra",
+    model,
     tools: [{ type: "web_search" }],
     input: buildFreeTopicPrompt(
       topic,
@@ -303,6 +330,25 @@ async function requestFreeTopicCandidates(
       languageCode,
       gscContext
     ),
+  });
+
+  const { parseResponsesUsage, countWebSearchCallsInResponse } = await import(
+    "@/lib/openai-usage-parse"
+  );
+  const { recordResponsesApiUsage } = await import(
+    "@/lib/openai-usage-tracker"
+  );
+  const usage = parseResponsesUsage(response);
+  const responseId = usage?.responseId ?? `seo-free:${runId}:${Date.now()}`;
+  await recordResponsesApiUsage({
+    workspaceId,
+    operationType: "seo_opportunity",
+    idempotencyKey: `seo:${runId}:free:${responseId}`,
+    operationKey: runId,
+    model,
+    status: "succeeded",
+    usage,
+    webSearchCallCount: countWebSearchCallsInResponse(response),
   });
 
   const text =
@@ -321,13 +367,17 @@ async function requestFreeTopicCandidates(
 }
 
 async function aiSaysDuplicate(
+  workspaceId: string,
+  runId: string,
   left: RawOpportunityCandidate,
-  right: RawOpportunityCandidate
+  right: RawOpportunityCandidate,
+  pairIndex: number
 ): Promise<boolean> {
   try {
     const openai = await getOpenAIClient();
+    const model = "gpt-5.6-terra";
     const response = await openai.responses.create({
-      model: "gpt-5.6-terra",
+      model,
       input: [
         "Deux idées d'articles sont-elles quasi identiques (même problème, même angle) ?",
         "Réponds UNIQUEMENT par JSON {\"duplicate\": true|false, \"reason\": \"...\"}.",
@@ -346,6 +396,22 @@ async function aiSaysDuplicate(
         })}`,
       ].join("\n"),
     });
+    const { parseResponsesUsage } = await import("@/lib/openai-usage-parse");
+    const { recordResponsesApiUsage } = await import(
+      "@/lib/openai-usage-tracker"
+    );
+    const usage = parseResponsesUsage(response);
+    const responseId =
+      usage?.responseId ?? `seo-dup:${runId}:${pairIndex}:${Date.now()}`;
+    await recordResponsesApiUsage({
+      workspaceId,
+      operationType: "seo_opportunity",
+      idempotencyKey: `seo:${runId}:dup:${pairIndex}:${responseId}`,
+      operationKey: runId,
+      model,
+      status: "succeeded",
+      usage,
+    });
     const text =
       typeof response.output_text === "string" ? response.output_text : "";
     const match = text.match(/\{[\s\S]*\}/);
@@ -360,6 +426,8 @@ async function aiSaysDuplicate(
 }
 
 async function refineAmbiguousPairs(
+  workspaceId: string,
+  runId: string,
   candidates: RawOpportunityCandidate[]
 ): Promise<RawOpportunityCandidate[]> {
   const kept = [...candidates];
@@ -376,7 +444,13 @@ async function refineAmbiguousPairs(
         continue;
       }
       checks += 1;
-      const duplicate = await aiSaysDuplicate(left, right);
+      const duplicate = await aiSaysDuplicate(
+        workspaceId,
+        runId,
+        left,
+        right,
+        checks
+      );
       if (duplicate) {
         kept.splice(j, 1);
         j -= 1;
@@ -532,6 +606,8 @@ export async function processOpportunitySearch(
 
     if (config.mode === "free" && config.customTopic) {
       const freeCandidates = await requestFreeTopicCandidates(
+        workspaceId,
+        runId,
         config.customTopic,
         config.requestedCount,
         config.researchGoal,
@@ -592,6 +668,8 @@ export async function processOpportunitySearch(
           continue;
         }
         const domainCandidates = await requestDomainCandidates(
+          workspaceId,
+          runId,
           domain,
           quota,
           config.researchGoal,
@@ -608,7 +686,7 @@ export async function processOpportunitySearch(
 
     const beforeDedupe = allCandidates.length;
     const { kept: deduped } = dedupeCandidateBatch(allCandidates, 0.62);
-    const refined = await refineAmbiguousPairs(deduped);
+    const refined = await refineAmbiguousPairs(workspaceId, runId, deduped);
     const rejected = beforeDedupe - refined.length;
     const batchUrlCounts = countBatchSourceUrls(refined);
 

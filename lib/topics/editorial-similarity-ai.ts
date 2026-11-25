@@ -153,6 +153,7 @@ export function normalizeAiAssessments(
 
 export async function analyzeEditorialSimilarityWithAi(input: {
   subject: string;
+  workspaceId: string;
   angle?: string | null;
   candidates: EditorialMatch[];
 }): Promise<EditorialMatch[]> {
@@ -223,6 +224,22 @@ export async function analyzeEditorialSimilarityWithAi(input: {
           ].join("\n"),
         },
       ],
+    });
+
+    const { parseResponsesUsage } = await import("@/lib/openai-usage-parse");
+    const { recordResponsesApiUsage } = await import(
+      "@/lib/openai-usage-tracker"
+    );
+    const usage = parseResponsesUsage(response);
+    const responseId = usage?.responseId ?? `similarity:${Date.now()}`;
+    await recordResponsesApiUsage({
+      workspaceId: input.workspaceId.trim(),
+      operationType: "editorial_similarity",
+      idempotencyKey: `similarity:${responseId}`,
+      operationKey: responseId,
+      model: EDITORIAL_SIMILARITY_MODEL,
+      status: "succeeded",
+      usage,
     });
 
     const text = extractOutputText(response);

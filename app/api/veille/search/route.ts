@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     assertModuleAllowedForWorkspace(workspace, "veille");
     const result = await completeVeilleSearch(request, {
       authenticated: Boolean(session?.user),
-      client: createOpenAiWatchClient(),
+      client: createOpenAiWatchClient(workspace.id),
       store: prismaWatchHistoryStore(workspace.id),
       confirmDates: (articles, periodDays, now) =>
         confirmArticleDates(articles, periodDays, now, (url) =>

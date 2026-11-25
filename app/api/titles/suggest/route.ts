@@ -5,6 +5,10 @@ import {
   suggestEditorialTitles,
   TitleSuggestionError,
 } from "@/lib/titles/suggest";
+import {
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +31,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const workspace = await resolveActiveWorkspace();
     const body = parseJsonBody(await request.json());
     const editorial = parseEditorialContext({
       angle: body.angle,
@@ -39,6 +44,7 @@ export async function POST(request: Request) {
 
     const result = await suggestEditorialTitles({
       subject: body.subject,
+      workspaceId: workspace.id,
       editorial,
     });
 
@@ -47,6 +53,12 @@ export async function POST(request: Request) {
       model: result.model,
     });
   } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
     if (error instanceof TitleSuggestionError) {
       return NextResponse.json(
         { error: error.message },

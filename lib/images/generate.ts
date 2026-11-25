@@ -1,4 +1,5 @@
 import { getOpenAIClient } from "@/lib/openai";
+import { parseImagesUsage, type ImagesUsageSnapshot } from "@/lib/openai-usage-parse";
 import {
   FEATURED_IMAGE_MIME,
   FEATURED_IMAGE_MODEL,
@@ -13,6 +14,8 @@ export type GeneratedImageBytes = {
   model: string;
   size: string;
   quality: string;
+  /** Consommation Images API si fournie par OpenAI — null sinon (coût inconnu). */
+  usage: ImagesUsageSnapshot | null;
 };
 
 export class FeaturedImageGenerationError extends Error {
@@ -76,5 +79,6 @@ export async function generateFeaturedImageBytes(input: {
     model: FEATURED_IMAGE_MODEL,
     size: input.size,
     quality: FEATURED_IMAGE_QUALITY,
+    usage: parseImagesUsage(response),
   };
 }

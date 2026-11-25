@@ -163,6 +163,16 @@ export class AgentSessionError extends Error {
     | "missing_session"
     | "tool_not_allowed_for_cms"
     | "tool_not_allowed_for_agent";
+  /** Consommation récupérée après un échec local (ex. brouillon CMS manquant). */
+  usageSnapshot: {
+    model: string | null;
+    inputTokens: number | null;
+    cachedInputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    totalTokens: number | null;
+    estimatedCost: number | null;
+  } | null = null;
 
   constructor(
     message: string,
@@ -1261,11 +1271,30 @@ export async function runAgentSession(
         `Aperçu texte agent (non utilisé pour créer un brouillon) : ${lastAssistantTextPreview}`
       );
     }
+    // La session a pu consommer des tokens même sans brouillon CMS.
+    const failedUsage = await collectSessionUsage(sessionId, openai);
+    const failedCost =
+      failedUsage.usage !== null
+        ? estimateLlmCostUsd(failedUsage.model, {
+            inputTokens: failedUsage.usage.inputTokens,
+            cachedInputTokens: failedUsage.usage.cachedInputTokens,
+            outputTokens: failedUsage.usage.outputTokens,
+          })
+        : null;
     const error = new AgentSessionError(
       `${missingTool} n'a pas été appelé.${hint}`,
       "no_draft",
       sessionId
     );
+    error.usageSnapshot = {
+      model: failedUsage.model,
+      inputTokens: failedUsage.usage?.inputTokens ?? null,
+      cachedInputTokens: failedUsage.usage?.cachedInputTokens ?? null,
+      outputTokens: failedUsage.usage?.outputTokens ?? null,
+      reasoningTokens: failedUsage.usage?.reasoningTokens ?? null,
+      totalTokens: failedUsage.usage?.totalTokens ?? null,
+      estimatedCost: failedCost,
+    };
     attachObservedEvents(
       error,
       eventTraceFromState(eventTrace, sessionId),

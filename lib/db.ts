@@ -12,7 +12,7 @@ const globalForPrisma = globalThis as unknown as {
 
 /** Change quand le schéma Prisma change, pour ne pas réutiliser un client généré avant. */
 const PRISMA_CLIENT_TOKEN =
-  "app-settings-inventory-valid-v7-7-0-20261116b-editorial-workspaces-v7111";
+  "openai-usage-events-v7150-20261125";
 
 type PrismaModule = {
   PrismaClient: typeof PrismaClient;
@@ -106,6 +106,13 @@ function editorialWorkspacesReady(prisma: typeof Prisma): boolean {
   );
 }
 
+/** V7.15.0 — registre centralisé des consommations OpenAI. */
+function openAiUsageEventsReady(prisma: typeof Prisma): boolean {
+  return prisma.dmmf.datamodel.models.some(
+    (model) => model.name === "OpenAiUsageEvent"
+  );
+}
+
 function clientMatchesSchema(prisma: typeof Prisma): boolean {
   return (
     topicHasOrigin(prisma) &&
@@ -116,7 +123,8 @@ function clientMatchesSchema(prisma: typeof Prisma): boolean {
     googleIntegrationsReady(prisma) &&
     wordpressContentTypeReady(prisma) &&
     appSettingsReady(prisma) &&
-    editorialWorkspacesReady(prisma)
+    editorialWorkspacesReady(prisma) &&
+    openAiUsageEventsReady(prisma)
   );
 }
 

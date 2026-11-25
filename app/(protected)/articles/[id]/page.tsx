@@ -14,6 +14,7 @@ import { EditorialContextPanel } from "@/components/EditorialContextPanel";
 import { GenerationLiveRefresh } from "@/components/GenerationLiveRefresh";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { GenerationReport } from "@/components/GenerationReport";
+import { ArticleCostBreakdownPanel } from "@/components/articles/ArticleCostBreakdown";
 import { GenerationUsage } from "@/components/GenerationUsage";
 import { db } from "@/lib/db";
 import { toPublicGenerationError } from "@/lib/generation-errors";
@@ -29,6 +30,7 @@ import { parseStoredEditorialContext } from "@/lib/editorial-context";
 import { resolvePublishedUrlForGeneration } from "@/lib/google/published-url-map";
 import { toFeaturedImagePublic } from "@/lib/images/types";
 import { formatModelLabel } from "@/lib/openai-pricing";
+import { getArticleCostBreakdown } from "@/lib/openai-usage-aggregate";
 import { CmsDestinationBadge } from "@/components/cms/CmsDestinationBadge";
 import {
   getArticleDetailTabs,
@@ -107,6 +109,12 @@ export default async function ArticleDetailPage({
     wpPostId: article.wpPostId,
     wpUrl: article.wpUrl,
     cmsExternalId: article.cmsExternalId,
+  });
+
+  const costBreakdown = await getArticleCostBreakdown({
+    workspaceId: article.workspaceId,
+    generationId: article.id,
+    historicalEstimatedCost: article.estimatedCost,
   });
 
   const visibleTabs = getArticleDetailTabs(cmsDestination);
@@ -234,17 +242,25 @@ export default async function ArticleDetailPage({
           />
         }
         usage={
-          <GenerationUsage
-            cost={formatEstimatedCost(article.estimatedCost)}
-            inputTokens={formatTokenCount(article.inputTokens)}
-            cachedTokens={formatTokenCount(article.cachedInputTokens)}
-            outputTokens={formatTokenCount(article.outputTokens)}
-            reasoningTokens={formatTokenCount(article.reasoningTokens)}
-            totalTokens={totalTokens ?? "—"}
-            model={formatModelLabel(article.model) ?? "—"}
-            duration={formatDuration(article.durationMs)}
-            sessionId={article.sessionId}
-          />
+          <div className="space-y-8">
+            <GenerationUsage
+              cost={formatEstimatedCost(article.estimatedCost)}
+              inputTokens={formatTokenCount(article.inputTokens)}
+              cachedTokens={formatTokenCount(article.cachedInputTokens)}
+              outputTokens={formatTokenCount(article.outputTokens)}
+              reasoningTokens={formatTokenCount(article.reasoningTokens)}
+              totalTokens={totalTokens ?? "—"}
+              model={formatModelLabel(article.model) ?? "—"}
+              duration={formatDuration(article.durationMs)}
+              sessionId={article.sessionId}
+            />
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                Ventilation OpenAI (article)
+              </h3>
+              <ArticleCostBreakdownPanel breakdown={costBreakdown} />
+            </div>
+          </div>
         }
         featured={
           canManageFeaturedImage ? (

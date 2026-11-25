@@ -175,6 +175,7 @@ export function normalizeTitleSuggestions(
 
 export async function suggestEditorialTitles(input: {
   subject: unknown;
+  workspaceId: string;
   editorial?: Pick<
     EditorialContext,
     "angle" | "audience" | "objective" | "seoKeywords" | "language"
@@ -225,6 +226,22 @@ export async function suggestEditorialTitles(input: {
           schema: SUGGESTION_SCHEMA,
         },
       },
+    });
+
+    const { parseResponsesUsage } = await import("@/lib/openai-usage-parse");
+    const { recordResponsesApiUsage } = await import(
+      "@/lib/openai-usage-tracker"
+    );
+    const usage = parseResponsesUsage(response);
+    const responseId = usage?.responseId ?? `titles:${Date.now()}`;
+    await recordResponsesApiUsage({
+      workspaceId: input.workspaceId.trim(),
+      operationType: "title_suggestion",
+      idempotencyKey: `titles:${responseId}`,
+      operationKey: responseId,
+      model: TITLE_SUGGESTION_MODEL,
+      status: "succeeded",
+      usage,
     });
 
     const text = response.output_text?.trim();

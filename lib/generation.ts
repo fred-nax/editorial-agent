@@ -30,6 +30,11 @@ import {
   preserveProgressStageOnFailure,
   type GenerationStage,
 } from "./progress";
+import { countWebSearchCallsFromTraceIds } from "./openai-usage-parse";
+import {
+  recordArticleGenerationLlmUsage,
+  recordArticleGenerationWebSearchUsage,
+} from "./openai-usage-tracker";
 
 export type ArticleRunner = (
   subject: string
@@ -318,6 +323,34 @@ export async function processArticleGeneration(
       usageRetries: result.usageCollection.retries,
     });
 
+    // V7.15.0 — registre consommations (ne relance jamais OpenAI).
+    await recordArticleGenerationLlmUsage({
+      workspaceId,
+      generationId: id,
+      sessionId: result.sessionId,
+      model: result.model,
+      status: "succeeded",
+      inputTokens: result.inputTokens,
+      cachedInputTokens: result.cachedInputTokens,
+      outputTokens: result.outputTokens,
+      reasoningTokens: result.reasoningTokens,
+      totalTokens: result.totalTokens,
+      estimatedCostUsd: result.estimatedCost,
+    });
+    const webSearchCalls = countWebSearchCallsFromTraceIds(
+      result.trace?.ids.webSearchCallIds
+    );
+    if (webSearchCalls > 0) {
+      await recordArticleGenerationWebSearchUsage({
+        workspaceId,
+        generationId: id,
+        sessionId: result.sessionId,
+        model: result.model,
+        billableCallCount: webSearchCalls,
+        status: "succeeded",
+      });
+    }
+
     // Image à la une : WordPress uniquement pour l’instant (V7.10.1).
     if (!isWebflow) {
       await enqueueFeaturedImageAfterArticle(id);
@@ -371,6 +404,44 @@ export async function processArticleGeneration(
       durationMs,
       message: toStoredError(error),
     });
+
+    // Conserver une consommation OpenAI déjà retournée malgré l’échec local.
+    if (
+      error instanceof AgentSessionError &&
+      error.usageSnapshot &&
+      (error.usageSnapshot.inputTokens !== null ||
+        error.usageSnapshot.outputTokens !== null)
+    ) {
+      await recordArticleGenerationLlmUsage({
+        workspaceId,
+        generationId: id,
+        sessionId,
+        model: error.usageSnapshot.model,
+        status: "failed",
+        inputTokens: error.usageSnapshot.inputTokens,
+        cachedInputTokens: error.usageSnapshot.cachedInputTokens,
+        outputTokens: error.usageSnapshot.outputTokens,
+        reasoningTokens: error.usageSnapshot.reasoningTokens,
+        totalTokens: error.usageSnapshot.totalTokens,
+        estimatedCostUsd: error.usageSnapshot.estimatedCost,
+      });
+      const failedTrace = storedTrace.trace as
+        | { ids?: { webSearchCallIds?: string[] } }
+        | null;
+      const webSearchCalls = countWebSearchCallsFromTraceIds(
+        failedTrace?.ids?.webSearchCallIds
+      );
+      if (webSearchCalls > 0) {
+        await recordArticleGenerationWebSearchUsage({
+          workspaceId,
+          generationId: id,
+          sessionId,
+          model: error.usageSnapshot.model,
+          billableCallCount: webSearchCalls,
+          status: "failed",
+        });
+      }
+    }
   }
 }
 
