@@ -636,7 +636,12 @@ export function ArticleForm({
         angle={angle}
         layout={isFull ? "full" : "compact"}
         disabled={busy}
-        enabled={cmsDestination === "wordpress"}
+        enabled={
+          cmsDestination === "wordpress" || cmsDestination === "webflow"
+        }
+        cmsProvider={
+          cmsDestination === "webflow" ? "webflow" : "wordpress"
+        }
       />
 
       {isFull ? (

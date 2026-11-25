@@ -14,7 +14,7 @@ import {
   tryAcquireSimilarityCheckSlot,
 } from "@/lib/topics/editorial-similarity-locks";
 import {
-  assertWordPressOnlyModule,
+  assertModuleAllowedForWorkspace,
   resolveActiveWorkspace,
   WorkspaceContextError,
 } from "@/lib/workspace";
@@ -29,7 +29,9 @@ function unauthorized() {
 /**
  * Deux modes compatibles :
  * - Veille (historique) : `{ proposals: [...] }`
- * - File / Nouvel article (V7.4) : `{ subject, angle?, mode?: "editorial" }`
+ * - File / Nouvel article (V7.4+) : `{ subject, angle?, mode?: "editorial" }`
+ *
+ * V7.12.1 : rapprochements Webflow via inventaire de l’espace (jamais WP en fallback).
  */
 export async function POST(request: Request) {
   const session = await requireAuth();
@@ -40,8 +42,6 @@ export async function POST(request: Request) {
   let workspace;
   try {
     workspace = await resolveActiveWorkspace();
-    // Rapprochements / inventaire WP uniquement (pas de compensation Webflow).
-    assertWordPressOnlyModule(workspace.cmsProvider);
   } catch (error) {
     if (error instanceof WorkspaceContextError) {
       return NextResponse.json(
@@ -69,6 +69,18 @@ export async function POST(request: Request) {
     (typeof record?.subject === "string" && !Array.isArray(record.proposals));
 
   if (wantsEditorial) {
+    try {
+      assertModuleAllowedForWorkspace(workspace, "rapprochements");
+    } catch (error) {
+      if (error instanceof WorkspaceContextError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: error.status }
+        );
+      }
+      throw error;
+    }
+
     const parsed = parseEditorialSubjectInput(payload);
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
@@ -86,6 +98,8 @@ export async function POST(request: Request) {
           inventoryStale: false,
           publishedCount: 0,
           skipped: true,
+          workspaceId: workspace.id,
+          cmsProvider: workspace.cmsProvider,
         },
         { status: 200 }
       );
@@ -99,19 +113,24 @@ export async function POST(request: Request) {
     }
 
     try {
+      // workspaceId figé sur l’espace actif de la requête (pas de bascule mid-flight).
+      const frozenWorkspaceId = workspace.id;
       const result = await checkEditorialRapprochement({
         subject: parsed.subject,
         angle: parsed.angle,
-        workspaceId: workspace.id,
+        workspaceId: frozenWorkspaceId,
       });
       return NextResponse.json({
         ...result,
         matches: result.matches.map(publicMatchView),
         skipped: false,
+        workspaceId: frozenWorkspaceId,
+        cmsProvider: workspace.cmsProvider,
       });
     } catch (error) {
       logError("topics", "editorial rapprochement failed", {
         message: error instanceof Error ? error.message : "unknown",
+        workspaceId: workspace.id,
       });
       return NextResponse.json(
         {
@@ -128,6 +147,19 @@ export async function POST(request: Request) {
     } finally {
       releaseSimilarityCheckSlot();
     }
+  }
+
+  // Mode veille / propositions — corpus déjà isolé par workspace.
+  try {
+    assertModuleAllowedForWorkspace(workspace, "veille");
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
 
   const result = await handleCheckDuplicates(

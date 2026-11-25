@@ -38,6 +38,7 @@ export async function loadEditorialCorpus(
   }
 
   const includeWordPressInventory = workspace.cmsProvider === "wordpress";
+  const includeWebflowInventory = workspace.cmsProvider === "webflow";
 
   const { isWordPressInventoryUsable } = await import(
     "@/lib/settings/inventory-guard"
@@ -45,63 +46,91 @@ export async function loadEditorialCorpus(
   const inventoryUsable =
     includeWordPressInventory && (await isWordPressInventoryUsable());
 
-  const [diagnostic, postCount, topicCount, generationCount, posts, topics, generations] =
-    await Promise.all([
-      includeWordPressInventory
-        ? getWordPressInventoryDiagnostic(id)
+  const { getWebflowInventoryDiagnostic } = await import(
+    "@/lib/webflow/inventory"
+  );
+  const { listEditorialInventory } = await import(
+    "@/lib/editorial-inventory/access"
+  );
+
+  const [
+    diagnostic,
+    postCount,
+    topicCount,
+    generationCount,
+    posts,
+    topics,
+    generations,
+    webflowInventory,
+  ] = await Promise.all([
+    includeWordPressInventory
+      ? getWordPressInventoryDiagnostic(id)
+      : includeWebflowInventory
+        ? getWebflowInventoryDiagnostic(id)
         : Promise.resolve({
             count: 0,
             byStatus: {} as Record<string, number>,
             lastSync: null,
             running: null,
           }),
-      inventoryUsable
-        ? db.wordPressPost.count({
-            where: { workspaceId: id, status: { in: KNOWN_POST_STATUSES } },
-          })
-        : Promise.resolve(0),
-      db.topic.count({ where: { workspaceId: id, status: { not: "archived" } } }),
-      db.articleGeneration.count({
-        where: { workspaceId: id, status: { in: ["completed", "failed"] } },
-      }),
-      inventoryUsable
-        ? db.wordPressPost.findMany({
-            where: { workspaceId: id, status: { in: KNOWN_POST_STATUSES } },
-            select: {
-              wpPostId: true,
-              title: true,
-              slug: true,
-              url: true,
-              excerpt: true,
-              status: true,
-            },
-            take: POST_LIMIT,
-          })
-        : Promise.resolve([]),
-      db.topic.findMany({
-        where: { workspaceId: id, status: { not: "archived" } },
-        select: { id: true, subject: true, angle: true, status: true },
-        take: TOPIC_LIMIT,
-      }),
-      db.articleGeneration.findMany({
-        where: { workspaceId: id, status: { in: ["completed", "failed"] } },
-        select: {
-          id: true,
-          subject: true,
-          title: true,
-          slug: true,
-          excerpt: true,
-          wpPostId: true,
-          wpUrl: true,
-          topicId: true,
-          status: true,
-          cmsExternalId: true,
-        },
-        take: GENERATION_LIMIT,
-      }),
-    ]);
+    inventoryUsable
+      ? db.wordPressPost.count({
+          where: { workspaceId: id, status: { in: KNOWN_POST_STATUSES } },
+        })
+      : Promise.resolve(0),
+    db.topic.count({ where: { workspaceId: id, status: { not: "archived" } } }),
+    db.articleGeneration.count({
+      where: { workspaceId: id, status: { in: ["completed", "failed"] } },
+    }),
+    inventoryUsable
+      ? db.wordPressPost.findMany({
+          where: { workspaceId: id, status: { in: KNOWN_POST_STATUSES } },
+          select: {
+            wpPostId: true,
+            title: true,
+            slug: true,
+            url: true,
+            excerpt: true,
+            status: true,
+          },
+          take: POST_LIMIT,
+        })
+      : Promise.resolve([]),
+    db.topic.findMany({
+      where: { workspaceId: id, status: { not: "archived" } },
+      select: { id: true, subject: true, angle: true, status: true },
+      take: TOPIC_LIMIT,
+    }),
+    db.articleGeneration.findMany({
+      where: { workspaceId: id, status: { in: ["completed", "failed"] } },
+      select: {
+        id: true,
+        subject: true,
+        title: true,
+        slug: true,
+        excerpt: true,
+        wpPostId: true,
+        wpUrl: true,
+        topicId: true,
+        status: true,
+        cmsExternalId: true,
+      },
+      take: GENERATION_LIMIT,
+    }),
+    includeWebflowInventory
+      ? listEditorialInventory({
+          workspaceId: id,
+          purpose: "duplicates",
+          take: POST_LIMIT,
+        })
+      : Promise.resolve({ items: [], total: 0, cmsProvider: "webflow" as const }),
+  ]);
   const truncated =
-    postCount > posts.length || topicCount > topics.length || generationCount > generations.length;
+    postCount > posts.length ||
+    topicCount > topics.length ||
+    generationCount > generations.length ||
+    (includeWebflowInventory &&
+      webflowInventory.total > webflowInventory.items.length);
   const coverage = resolveInventoryCoverage({
     count: diagnostic.count,
     running: Boolean(diagnostic.running),
@@ -116,6 +145,9 @@ export async function loadEditorialCorpus(
         }
       : null,
   });
+  const inventoryCmsIds = new Set(
+    webflowInventory.items.map((item) => item.cmsExternalId)
+  );
   const records: CorpusRecord[] = [
     ...posts.map((post) => ({
       source: "wordpress" as const,
@@ -129,6 +161,20 @@ export async function loadEditorialCorpus(
       topicId: null,
       generationTopicId: null,
     })),
+    ...webflowInventory.items
+      .filter((item) => item.status !== "archived" && item.status !== "missing")
+      .map((item) => ({
+        source: "wordpress" as const,
+        title: item.title,
+        subject: item.excerpt?.trim() || item.slug.replaceAll("-", " "),
+        angle: null,
+        intent: null,
+        url: httpUrl(item.url),
+        slug: item.slug,
+        wpPostId: null,
+        topicId: null,
+        generationTopicId: null,
+      })),
     ...topics.map((topic) => ({
       source: "topic" as const,
       title: topic.subject,
@@ -147,6 +193,11 @@ export async function loadEditorialCorpus(
           generation.status === "completed" ||
           generation.wpPostId !== null ||
           Boolean(generation.cmsExternalId)
+      )
+      .filter(
+        (generation) =>
+          !generation.cmsExternalId ||
+          !inventoryCmsIds.has(generation.cmsExternalId)
       )
       .map((generation) => ({
         source: "generation" as const,

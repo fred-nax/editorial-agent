@@ -23,13 +23,16 @@ describe("V7.10.2 — isolation UX WordPress / Webflow", () => {
     assert.match(page, /espace actif/);
 
     const form = read("components/ArticleForm.tsx");
-    assert.match(form, /enabled=\{cmsDestination === "wordpress"\}/);
+    assert.match(
+      form,
+      /enabled=\{\s*cmsDestination === "wordpress" \|\| cmsDestination === "webflow"\s*\}/
+    );
     assert.match(form, /brouillon sera créé dans Webflow/);
 
     const panel = read("components/EditorialRapprochementPanel.tsx");
     assert.match(panel, /enabled = true/);
-    assert.match(panel, /Actualiser les articles WordPress/);
-    assert.match(panel, /désactivés pour Webflow/);
+    assert.match(panel, /Actualiser l&apos;inventaire/);
+    assert.match(panel, /cmsProvider/);
   });
 
   it("détail : résultat CMS + onglets filtrés Webflow", () => {

@@ -7,6 +7,8 @@ export type LinkRelation =
 
 export type CatalogEntry = {
   wpPostId: number;
+  /** Identifiant CMS stable (Webflow item id) — optionnel pour WP historique. */
+  cmsExternalId?: string;
   title: string;
   url: string;
   slug: string;

@@ -9,10 +9,18 @@ export type RapprochementKind = (typeof RAPPROCHEMENT_KINDS)[number];
 export type EditorialMatch = {
   kind: RapprochementKind;
   title: string;
-  url: string;
+  /** URL publique si connue — null pour brouillons / URL non vérifiée. */
+  url: string | null;
   explanation: string;
   message: string;
-  wpPostId: number;
+  /**
+   * Identifiant WP numérique historique (null pour Webflow / sujets / générations).
+   * Conservé pour compatibilité UI / analyse IA WP.
+   */
+  wpPostId: number | null;
+  /** Identifiant CMS stable (wpPostId string ou webflowItemId). */
+  cmsExternalId: string;
+  status: string;
   /** Score interne de tri uniquement — jamais affiché comme % SEO. */
   rankScore: number;
 };
@@ -34,11 +42,11 @@ export type EditorialRapprochementResult = EditorialInventoryMeta & {
 
 export const RAPPROCHEMENT_MESSAGES: Record<RapprochementKind, string> = {
   probable_duplicate:
-    "Un article publié traite déjà de ce sujet. Vérifiez s’il est préférable de le mettre à jour.",
+    "Un contenu existant traite déjà de ce sujet. Vérifiez s’il est préférable de le mettre à jour.",
   close:
-    "Ce sujet est proche d’un article existant. Précisez votre angle pour éviter les redondances.",
+    "Ce sujet est proche d’un contenu existant. Précisez votre angle pour éviter les redondances.",
   complementary:
-    "Cet article pourrait être intéressant pour le maillage interne.",
+    "Ce contenu pourrait être intéressant pour le maillage interne (si une URL publique est disponible).",
 };
 
 export const RAPPROCHEMENT_LABELS: Record<RapprochementKind, string> = {

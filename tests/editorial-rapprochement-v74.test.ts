@@ -20,11 +20,16 @@ function readSource(relativePath: string): string {
 function post(
   overrides: Partial<PublishedPostRecord> & Pick<PublishedPostRecord, "title" | "wpPostId">
 ): PublishedPostRecord {
+  const slug = overrides.slug ?? "article";
+  const wpPostId = overrides.wpPostId;
   return {
-    slug: overrides.slug ?? "article",
-    url: overrides.url ?? `https://naxialis.com/${overrides.slug ?? "article"}`,
+    slug,
+    url: overrides.url ?? `https://naxialis.com/${slug}`,
     excerpt: overrides.excerpt ?? null,
+    cmsExternalId: overrides.cmsExternalId ?? String(wpPostId),
+    status: overrides.status ?? "publish",
     ...overrides,
+    wpPostId,
   };
 }
 
@@ -222,7 +227,7 @@ describe("V7.4 — rapprochements éditoriaux", () => {
     const panel = readSource("components/EditorialRapprochementPanel.tsx");
     assert.match(panel, /EDITORIAL_CHECK_DEBOUNCE_MS/);
     assert.match(panel, /Analyser plus précisément avec l&apos;IA/);
-    assert.match(panel, /Actualiser les articles WordPress/);
+    assert.match(panel, /Actualiser l&apos;inventaire/);
     assert.doesNotMatch(panel, /useEffect\(\(\) => \{[\s\S]{0,40}analyze-similarity/);
 
     const form = readSource("components/ArticleForm.tsx");

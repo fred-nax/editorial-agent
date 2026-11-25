@@ -66,12 +66,18 @@ Ne considère pas la tâche terminée avant que create_wordpress_draft ait été
 /**
  * Prompt dynamique Webflow (V7.10.1+) — exige create_webflow_draft.
  * Pas de Slim SEO / WordPress / inventaire WP.
+ * V7.12.1 : bloc optionnel d’indices inventaire (données, pas instructions).
  */
 function buildWebflowArticlePrompt(
   subject: string,
-  identity: EditorialIdentity
+  identity: EditorialIdentity,
+  inventoryHintsBlock?: string | null
 ): string {
   const phrases = editorialPromptPhrases(identity);
+  const hints =
+    inventoryHintsBlock?.trim()
+      ? `\n${inventoryHintsBlock.trim()}\n`
+      : "";
 
   return `
 ${phrases.articleIntro}
@@ -98,9 +104,11 @@ Règles Webflow :
 - ne jamais inventer de références CMS pour catégorie, auteur ou image ;
 - ne jamais utiliser d’inventaire WordPress pour le maillage interne ;
 - ne jamais inventer d’URL ;
+- pour le maillage, n’utiliser que les URL listées dans le contexte inventaire s’il y en a ;
 - ne jamais appeler create_wordpress_draft ;
 - ne considère pas la tâche terminée tant que create_webflow_draft n’a pas été appelée ;
 - ne te contente pas de rédiger l’article en texte : tu dois créer le brouillon via create_webflow_draft.
+${hints}
 `;
 }
 
@@ -113,10 +121,11 @@ export function buildArticlePrompt(
   subject: string,
   linkPlan?: InternalLinkPlan | null,
   identity: EditorialIdentity = NAXIALIS_DEFAULT_IDENTITY,
-  cmsDestination: CmsDestinationId | string = "wordpress"
+  cmsDestination: CmsDestinationId | string = "wordpress",
+  inventoryHintsBlock?: string | null
 ): string {
   if (cmsDestination === "webflow") {
-    return buildWebflowArticlePrompt(subject, identity);
+    return buildWebflowArticlePrompt(subject, identity, inventoryHintsBlock);
   }
   return buildWordPressArticlePrompt(subject, linkPlan, identity);
 }

@@ -1,6 +1,6 @@
 /**
- * Accès inventaire éditorial par workspace (V7.12.0).
- * Prépare doublons / maillage / SEO — non branché sur ces modules dans cette version.
+ * Accès inventaire éditorial par workspace (V7.12.0+).
+ * V7.12.1 : branché sur doublons / maillage Webflow (jamais de croisement CMS).
  */
 
 import { db } from "@/lib/db";
@@ -30,18 +30,25 @@ export type EditorialInventoryItem = {
   metaDescription: string | null;
   publishedAt: Date | null;
   modifiedAt: Date | null;
+  /** Webflow only — présent dans GET …/items/live. */
+  isLive: boolean | null;
 };
 
-function purposeFilter(
-  purpose: EditorialInventoryPurpose
-): { status?: string | { in: string[] }; missingAt?: null } {
+const DEFAULT_TAKE = 20;
+/** Plafond pour modules éditoriaux (doublons / maillage). */
+const MAX_TAKE = 2500;
+
+function purposeFilterWebflow(purpose: EditorialInventoryPurpose): {
+  status?: string;
+  missingAt?: null;
+  isLive?: boolean;
+} {
   switch (purpose) {
     case "internal_links":
     case "seo_opportunities":
-      // Contenus réellement publiés (pas de brouillon / missing).
-      return { status: "published", missingAt: null };
+      // Publié + live confirmé — l’appelant filtre encore l’URL.
+      return { status: "published", missingAt: null, isLive: true };
     case "duplicates":
-      // Tous les articles non manquants (y compris draft/changed/archived).
       return { missingAt: null };
     case "all":
     default:
@@ -71,12 +78,12 @@ export async function listEditorialInventory(input: {
   }
 
   const purpose = input.purpose ?? "all";
-  const take = Math.min(100, Math.max(1, input.take ?? 20));
+  const take = Math.min(MAX_TAKE, Math.max(1, input.take ?? DEFAULT_TAKE));
   const skip = Math.max(0, input.skip ?? 0);
   const search = input.search?.trim();
 
   if (workspace.cmsProvider === "webflow") {
-    const purposeWhere = purposeFilter(purpose);
+    const purposeWhere = purposeFilterWebflow(purpose);
     const where = {
       ...workspaceWhere(workspace.id),
       ...purposeWhere,
@@ -98,6 +105,21 @@ export async function listEditorialInventory(input: {
         orderBy: [{ lastUpdatedAt: "desc" }, { title: "asc" }],
         take,
         skip,
+        select: {
+          workspaceId: true,
+          webflowItemId: true,
+          title: true,
+          slug: true,
+          url: true,
+          status: true,
+          excerpt: true,
+          contentText: true,
+          metaTitle: true,
+          metaDescription: true,
+          lastPublishedAt: true,
+          lastUpdatedAt: true,
+          isLive: true,
+        },
       }),
     ]);
 
@@ -118,6 +140,7 @@ export async function listEditorialInventory(input: {
         metaDescription: row.metaDescription,
         publishedAt: row.lastPublishedAt,
         modifiedAt: row.lastUpdatedAt,
+        isLive: row.isLive,
       })),
     };
   }
@@ -148,6 +171,18 @@ export async function listEditorialInventory(input: {
       orderBy: [{ modifiedAt: "desc" }, { title: "asc" }],
       take,
       skip,
+      select: {
+        workspaceId: true,
+        wpPostId: true,
+        title: true,
+        slug: true,
+        url: true,
+        status: true,
+        excerpt: true,
+        contentText: true,
+        publishedAt: true,
+        modifiedAt: true,
+      },
     }),
   ]);
 
@@ -168,6 +203,20 @@ export async function listEditorialInventory(input: {
       metaDescription: null,
       publishedAt: row.publishedAt,
       modifiedAt: row.modifiedAt,
+      isLive: null,
     })),
   };
+}
+
+/** URL http(s) connue — jamais inventée. */
+export function isConfirmedPublicUrl(value: string | null | undefined): boolean {
+  if (!value?.trim()) {
+    return false;
+  }
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }

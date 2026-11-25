@@ -237,6 +237,7 @@ export async function processArticleGeneration(
         generationMessage:
           generationMessage === subject ? undefined : generationMessage,
         cmsDestination: generation.cmsDestination ?? "wordpress",
+        workspaceId,
         onProgress: async (progress) => {
           await updateGenerationProgress(id, progress.stage, progress.message);
         },

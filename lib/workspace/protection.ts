@@ -29,6 +29,7 @@ const WEBFLOW_ENABLED_MODULES = new Set<WebflowModuleCapability>([
   "topics",
   "veille",
   "inventory",
+  "rapprochements",
 ]);
 
 export function isWebflowModuleEnabled(
@@ -68,9 +69,9 @@ export function webflowEmptyState(module: WebflowModuleCapability): {
     featured_image:
       "Images à la une non disponibles pour Webflow dans cette version.",
     rapprochements:
-      "Rapprochements éditoriaux (inventaire WordPress) non disponibles pour Webflow.",
+      "Rapprochements éditoriaux Webflow : synchronisez l’inventaire CMS de l’espace. Aucun inventaire WordPress n’est réutilisé.",
     opportunities:
-      "Opportunités SEO Webflow indisponibles : l’inventaire et le maillage Webflow ne sont pas encore implémentés. Les thématiques et opportunités WordPress ne sont pas injectées.",
+      "Opportunités SEO Webflow indisponibles dans cette version (inventaire SEO / maillage opportunités non branchés). Les thématiques et opportunités WordPress ne sont pas injectées.",
     veille:
       "Veille éditoriale Webflow sans corpus WordPress — configurations et historique isolés par espace.",
     analytics:

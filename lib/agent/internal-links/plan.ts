@@ -6,16 +6,56 @@ import {
 import { db } from "../../db";
 import { logInfo } from "../../logger";
 import { loadPublishedCatalog } from "./catalog";
+import { loadWebflowPublishedCatalog } from "./webflow-catalog";
 import { selectInternalLinks, type SelectOptions } from "./select";
 import type { InternalLinkPlan } from "./types";
 
+export type BuildInternalLinkPlanOptions = SelectOptions & {
+  /**
+   * Espace figé (génération / Webflow).
+   * Absent : comportement WordPress historique (catalogue WP global usable).
+   */
+  workspaceId?: string;
+  cmsProvider?: "wordpress" | "webflow";
+};
+
 /**
  * Construit le plan de maillage pour un sujet à partir de l'inventaire publié.
+ * Signature historique : `buildInternalLinkPlan(subject)` — WordPress inchangé.
  */
 export async function buildInternalLinkPlan(
   subject: string,
-  options: SelectOptions = {}
+  options: BuildInternalLinkPlanOptions = {}
 ): Promise<InternalLinkPlan> {
+  const cmsProvider = options.cmsProvider ?? "wordpress";
+
+  if (cmsProvider === "webflow") {
+    if (!options.workspaceId) {
+      return emptyPlan(subject, { maxLinks: 0, stale: true });
+    }
+    const { entries, stale, liveUnavailable } = await loadWebflowPublishedCatalog(
+      options.workspaceId
+    );
+    if (liveUnavailable && entries.length === 0) {
+      logInfo("internal-links", "webflow live unavailable — no links", {
+        workspaceId: options.workspaceId,
+      });
+      return emptyPlan(subject, { maxLinks: 4, stale, catalogSize: 0 });
+    }
+    const plan = selectInternalLinks(subject, entries, {
+      ...options,
+      recentUrls: options.recentUrls ?? [],
+    });
+    plan.catalogStale = stale;
+    logInfo("internal-links", "webflow plan built", {
+      workspaceId: options.workspaceId,
+      subject: subject.slice(0, 120),
+      catalogSize: plan.catalogSize,
+      selectedCount: plan.selected.length,
+    });
+    return plan;
+  }
+
   const { entries, stale } = await loadPublishedCatalog();
 
   let recentUrls = options.recentUrls;
@@ -46,6 +86,23 @@ export async function buildInternalLinkPlan(
   });
 
   return plan;
+}
+
+function emptyPlan(
+  subject: string,
+  opts: { maxLinks: number; stale: boolean; catalogSize?: number }
+): InternalLinkPlan {
+  return {
+    subject,
+    themes: [],
+    catalogSize: opts.catalogSize ?? 0,
+    catalogStale: opts.stale,
+    candidates: [],
+    selected: [],
+    rejected: [],
+    minScore: 0.28,
+    maxLinks: opts.maxLinks,
+  };
 }
 
 /**

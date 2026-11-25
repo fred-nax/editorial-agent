@@ -17,10 +17,13 @@ function post(
   overrides: Partial<PublishedPostRecord> &
     Pick<PublishedPostRecord, "title" | "wpPostId">
 ): PublishedPostRecord {
+  const slug = overrides.slug ?? "article";
   return {
-    slug: overrides.slug ?? "article",
-    url: overrides.url ?? `https://naxialis.com/${overrides.slug ?? "article"}`,
+    slug,
+    url: overrides.url ?? `https://naxialis.com/${slug}`,
     excerpt: overrides.excerpt ?? null,
+    cmsExternalId: overrides.cmsExternalId ?? String(overrides.wpPostId),
+    status: overrides.status ?? "publish",
     ...overrides,
   };
 }
@@ -252,7 +255,7 @@ describe("V7.4.1 — précision des rapprochements éditoriaux", () => {
     const panel = readSource("components/EditorialRapprochementPanel.tsx");
     assert.match(
       panel,
-      /Aucun article présentant un rapprochement significatif/
+      /Aucun contenu présentant un rapprochement significatif/
     );
     assert.doesNotMatch(
       panel,

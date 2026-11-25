@@ -18,10 +18,13 @@ function post(
   overrides: Partial<PublishedPostRecord> &
     Pick<PublishedPostRecord, "title" | "wpPostId">
 ): PublishedPostRecord {
+  const slug = overrides.slug ?? "article";
   return {
-    slug: overrides.slug ?? "article",
-    url: overrides.url ?? `https://naxialis.com/${overrides.slug ?? "article"}`,
+    slug,
+    url: overrides.url ?? `https://naxialis.com/${slug}`,
     excerpt: overrides.excerpt ?? null,
+    cmsExternalId: overrides.cmsExternalId ?? String(overrides.wpPostId),
+    status: overrides.status ?? "publish",
     ...overrides,
   };
 }

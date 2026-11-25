@@ -51,6 +51,8 @@ import {
 } from "../generation-trace";
 import { buildArticlePrompt } from "./prompt";
 import { getWebflowGenerationReadiness } from "../webflow/readiness";
+import { checkEditorialRapprochement } from "../topics/editorial-similarity";
+import { formatEditorialGenerationHints } from "../topics/editorial-generation-hints";
 
 function siteHostFromWpUrl(wpUrl: string, fallbackHost: string): string {
   try {
@@ -76,6 +78,11 @@ export type RunAgentSessionOptions = {
    * Défaut wordpress. Détermine l’agent OpenAI et les outils autorisés.
    */
   cmsDestination?: string | null;
+  /**
+   * Espace figé (génération) — requis pour maillage / indices Webflow.
+   * Jamais lu depuis le cookie UI.
+   */
+  workspaceId?: string;
 };
 
 export type RunAgentSessionCmsResult = {
@@ -521,23 +528,61 @@ export async function runAgentSession(
     allowedInternalUrls = linkPlan.selected.map((item) => item.url);
     wpHost = siteHostFromWpUrl(wordpressCredentials.url, identity.siteHost);
   } else {
-    // Webflow : pas d’inventaire WordPress pour le maillage.
+    // Webflow : maillage uniquement via inventaire Webflow (URL live confirmées).
     log(onLog, "");
-    log(
-      onLog,
-      "Maillage interne WordPress désactivé pour la destination Webflow."
-    );
-    linkPlan = {
-      subject: trimmedSubject,
-      themes: [],
-      catalogSize: 0,
-      catalogStale: false,
-      candidates: [],
-      selected: [],
-      rejected: [],
-      minScore: 0.28,
-      maxLinks: 0,
-    };
+    log(onLog, "Préparation du maillage interne Webflow…");
+    const frozenWorkspaceId = options.workspaceId;
+    if (!frozenWorkspaceId) {
+      log(
+        onLog,
+        "Maillage Webflow : workspaceId absent — aucun lien interne autorisé."
+      );
+      linkPlan = {
+        subject: trimmedSubject,
+        themes: [],
+        catalogSize: 0,
+        catalogStale: true,
+        candidates: [],
+        selected: [],
+        rejected: [],
+        minScore: 0.28,
+        maxLinks: 0,
+      };
+    } else {
+      try {
+        linkPlan = await buildInternalLinkPlan(trimmedSubject, {
+          workspaceId: frozenWorkspaceId,
+          cmsProvider: "webflow",
+        });
+        log(
+          onLog,
+          `Maillage Webflow : ${linkPlan.selected.length} destination(s) autorisée(s) sur ${linkPlan.catalogSize} publiée(s) live.`
+        );
+        for (const item of linkPlan.selected) {
+          log(
+            onLog,
+            `  • ${item.title} (${Math.round(item.score * 100)} %) — ${item.url}`
+          );
+        }
+        allowedInternalUrls = linkPlan.selected.map((item) => item.url);
+      } catch (error) {
+        log(
+          onLog,
+          `Maillage Webflow indisponible (${error instanceof Error ? error.message : "erreur"}) — aucun lien.`
+        );
+        linkPlan = {
+          subject: trimmedSubject,
+          themes: [],
+          catalogSize: 0,
+          catalogStale: true,
+          candidates: [],
+          selected: [],
+          rejected: [],
+          minScore: 0.28,
+          maxLinks: 0,
+        };
+      }
+    }
   }
 
   log(onLog, "");
@@ -563,11 +608,36 @@ export async function runAgentSession(
     );
   }
 
+  let inventoryHintsBlock: string | null = null;
+  if (cmsDestination === "webflow" && options.workspaceId) {
+    try {
+      const rapprochement = await checkEditorialRapprochement({
+        subject: trimmedSubject,
+        workspaceId: options.workspaceId,
+      });
+      inventoryHintsBlock = formatEditorialGenerationHints({
+        rapprochements: rapprochement.matches,
+        linkPlan,
+        inventoryNote: rapprochement.coverageNote,
+      });
+      log(
+        onLog,
+        `Contexte inventaire Webflow : ${rapprochement.matches.length} rapprochement(s), ${linkPlan.selected.length} lien(s) autorisé(s).`
+      );
+    } catch (error) {
+      log(
+        onLog,
+        `Contexte inventaire Webflow indisponible (${error instanceof Error ? error.message : "erreur"}).`
+      );
+    }
+  }
+
   const articlePrompt = buildArticlePrompt(
     options.generationMessage?.trim() || trimmedSubject,
     linkPlan,
     identity,
-    cmsDestination
+    cmsDestination,
+    inventoryHintsBlock
   );
 
   const stream = await openai.beta.agents.sessions.create({

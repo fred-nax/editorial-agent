@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useWorkspaceOptional } from "@/components/workspace";
 import {
   EDITORIAL_CHECK_DEBOUNCE_MS,
   MIN_SUBJECT_CHARS_FOR_CHECK,
@@ -22,10 +23,12 @@ import {
 type ApiMatch = {
   kind: RapprochementKind;
   title: string;
-  url: string;
+  url: string | null;
   explanation: string;
   message: string;
-  wpPostId: number;
+  wpPostId: number | null;
+  cmsExternalId?: string;
+  status?: string;
 };
 
 type CheckPayload = {
@@ -40,6 +43,7 @@ type CheckPayload = {
   error?: string;
   ai?: boolean;
   note?: string;
+  cmsProvider?: string;
 };
 
 function kindStyles(kind: RapprochementKind): string {
@@ -66,21 +70,48 @@ function formatSyncDate(value: string | null | undefined): string | null {
   });
 }
 
+function statusLabel(status: string | undefined, cms: "wordpress" | "webflow"): string {
+  if (!status) {
+    return cms === "webflow" ? "Statut inconnu" : "Publié";
+  }
+  if (status.startsWith("topic:")) {
+    return `File (${status.slice(6)})`;
+  }
+  if (status.startsWith("generation:")) {
+    return `Génération (${status.slice(11)})`;
+  }
+  const map: Record<string, string> = {
+    publish: "Publié",
+    published: "Publié",
+    draft: "Brouillon",
+    changed: "Publié (modifs non publiées)",
+    archived: "Archivé",
+    future: "Planifié",
+    private: "Privé",
+    pending: "En attente",
+  };
+  return map[status] ?? status;
+}
+
 export function EditorialRapprochementPanel({
   subject,
   angle,
   layout = "full",
   disabled = false,
-  /** false = destination non WordPress (ex. Webflow) : pas de check ni sync inventaire. */
+  /** false = module désactivé pour la destination. */
   enabled = true,
+  cmsProvider = "wordpress",
 }: {
   subject: string;
   angle?: string;
   layout?: "full" | "compact";
   disabled?: boolean;
   enabled?: boolean;
+  cmsProvider?: "wordpress" | "webflow";
 }) {
   const reactId = useId();
+  const workspaceCtx = useWorkspaceOptional();
+  const workspaceFetch = workspaceCtx?.workspaceFetch ?? fetch;
   const [phase, setPhase] = useState<"idle" | "checking" | "ready" | "error">(
     "idle"
   );
@@ -91,6 +122,11 @@ export function EditorialRapprochementPanel({
   const [compactOpen, setCompactOpen] = useState(false);
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const inventoryLabel = cmsProvider === "webflow" ? "Webflow" : "WordPress";
+  const syncEndpoint =
+    cmsProvider === "webflow"
+      ? "/api/webflow-inventory/sync"
+      : "/api/wordpress-inventory/sync";
 
   useEffect(() => {
     if (!enabled || disabled) {
@@ -129,7 +165,7 @@ export function EditorialRapprochementPanel({
         body.angle = angleValue;
       }
 
-      void fetch("/api/topics/check-duplicates", {
+      void workspaceFetch("/api/topics/check-duplicates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -163,7 +199,7 @@ export function EditorialRapprochementPanel({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [subject, angle, disabled, enabled]);
+  }, [subject, angle, disabled, enabled, workspaceFetch]);
 
   useEffect(() => {
     return () => {
@@ -172,7 +208,7 @@ export function EditorialRapprochementPanel({
   }, []);
 
   async function runAiAnalysis() {
-    if (!enabled) {
+    if (!enabled || cmsProvider !== "wordpress") {
       return;
     }
     const cleaned = subject.replace(/\s+/g, " ").trim();
@@ -190,7 +226,7 @@ export function EditorialRapprochementPanel({
       if (angleValue) {
         body.angle = angleValue;
       }
-      const response = await fetch("/api/topics/analyze-similarity", {
+      const response = await workspaceFetch("/api/topics/analyze-similarity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -215,20 +251,20 @@ export function EditorialRapprochementPanel({
     setSyncBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/wordpress-inventory/sync", {
+      const response = await workspaceFetch(syncEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "incremental" }),
+        body: JSON.stringify(
+          cmsProvider === "webflow" ? { mode: "full" } : { mode: "incremental" }
+        ),
       });
       const data = (await response.json()) as { error?: string };
-      if (!response.ok) {
+      if (!response.ok && response.status !== 202) {
         throw new Error(data.error ?? "Synchronisation impossible.");
       }
-      // Relance la vérification locale après demande de sync.
       requestSeq.current += 1;
       setPhase("idle");
       setPayload(null);
-      // Force re-check by toggling via microtask subject dependency: call check now.
       const cleaned = subject.replace(/\s+/g, " ").trim();
       if (cleaned.length >= MIN_SUBJECT_CHARS_FOR_CHECK) {
         setPhase("checking");
@@ -240,7 +276,7 @@ export function EditorialRapprochementPanel({
         if (angleValue) {
           body.angle = angleValue;
         }
-        const check = await fetch("/api/topics/check-duplicates", {
+        const check = await workspaceFetch("/api/topics/check-duplicates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -268,8 +304,7 @@ export function EditorialRapprochementPanel({
     return (
       <section className="rounded-lg border border-[#E2E8F0] bg-slate-50/40 px-3 py-2.5">
         <p className="text-sm text-slate-600">
-          Les rapprochements éditoriaux et la synchronisation de l’inventaire
-          WordPress sont désactivés pour Webflow.
+          Les rapprochements éditoriaux sont désactivés pour cette destination.
         </p>
       </section>
     );
@@ -279,6 +314,13 @@ export function EditorialRapprochementPanel({
   const hasMatches = Boolean(payload?.hasMatches && matches.length > 0);
   const syncLabel = formatSyncDate(payload?.lastSyncAt);
   const showPanel = phase !== "idle" || Boolean(error);
+  const neverSynced =
+    payload?.coverage === "unavailable" &&
+    (payload.coverageNote ?? "").toLowerCase().includes("jamais");
+  const emptyInventory =
+    payload?.publishedCount === 0 &&
+    phase === "ready" &&
+    !payload?.skipped;
 
   if (!showPanel && layout === "compact") {
     return null;
@@ -289,13 +331,36 @@ export function EditorialRapprochementPanel({
       {phase === "checking" ? (
         <p className="flex items-center gap-2 text-sm text-slate-600">
           <Loader2 className="size-4 animate-spin" aria-hidden />
-          Analyse des articles publiés…
+          Analyse des contenus existants ({inventoryLabel})…
         </p>
       ) : null}
 
-      {phase === "ready" && !hasMatches && !payload?.skipped ? (
+      {phase === "ready" && syncLabel ? (
+        <p className="text-xs text-slate-500">
+          Dernière synchronisation inventaire : {syncLabel}
+        </p>
+      ) : null}
+
+      {phase === "ready" && neverSynced ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          Inventaire jamais synchronisé. Lancez une synchronisation pour activer
+          les rapprochements.
+        </p>
+      ) : null}
+
+      {phase === "ready" && emptyInventory && !neverSynced ? (
+        <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          Inventaire vide — aucun contenu à comparer pour l’instant.
+        </p>
+      ) : null}
+
+      {phase === "ready" &&
+      !hasMatches &&
+      !payload?.skipped &&
+      !emptyInventory &&
+      !neverSynced ? (
         <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          Aucun article présentant un rapprochement significatif n’a été trouvé
+          Aucun contenu présentant un rapprochement significatif n’a été trouvé
           dans l’inventaire actuel.
         </p>
       ) : null}
@@ -303,16 +368,17 @@ export function EditorialRapprochementPanel({
       {phase === "ready" && hasMatches ? (
         <div className="space-y-2">
           <p className="text-sm font-medium text-[#0F172A]">
-            Articles proches détectés
+            Contenus proches détectés
           </p>
           <p className="text-xs text-slate-600">
-            Un contenu similaire existe déjà. Vous pouvez affiner votre angle ou
+            Similarité éditoriale locale (titres, slugs, résumés). Ce n’est pas
+            une preuve de cannibalisation SEO. Vous pouvez affiner l’angle ou
             continuer la rédaction.
           </p>
           <ul className="space-y-2">
             {matches.map((match) => (
               <li
-                key={`${match.wpPostId}-${match.kind}`}
+                key={`${match.cmsExternalId ?? match.wpPostId}-${match.kind}`}
                 className="rounded-md border border-[#E2E8F0] bg-white px-3 py-2.5"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -320,11 +386,16 @@ export function EditorialRapprochementPanel({
                     <p className="text-sm font-medium text-[#0F172A]">
                       {match.title}
                     </p>
-                    <span
-                      className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${kindStyles(match.kind)}`}
-                    >
-                      {RAPPROCHEMENT_LABELS[match.kind]}
-                    </span>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${kindStyles(match.kind)}`}
+                      >
+                        {RAPPROCHEMENT_LABELS[match.kind]}
+                      </span>
+                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">
+                        {statusLabel(match.status, cmsProvider)}
+                      </span>
+                    </div>
                     <p className="mt-1.5 text-xs text-slate-600">
                       {match.message}
                     </p>
@@ -332,40 +403,48 @@ export function EditorialRapprochementPanel({
                       {match.explanation}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    className="shrink-0 border-[#E2E8F0] bg-white"
-                    nativeButton={false}
-                    render={
-                      <a href={match.url} target="_blank" rel="noreferrer" />
-                    }
-                  >
-                    <ExternalLink data-icon="inline-start" />
-                    Voir l&apos;article
-                  </Button>
+                  {match.url ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="shrink-0 border-[#E2E8F0] bg-white"
+                      nativeButton={false}
+                      render={
+                        <a href={match.url} target="_blank" rel="noreferrer" />
+                      }
+                    >
+                      <ExternalLink data-icon="inline-start" />
+                      Voir
+                    </Button>
+                  ) : (
+                    <span className="text-[11px] text-slate-400">
+                      Pas d’URL publique
+                    </span>
+                  )}
                 </div>
               </li>
             ))}
           </ul>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-[#E2E8F0] bg-white"
-              disabled={aiBusy}
-              onClick={() => void runAiAnalysis()}
-            >
-              {aiBusy ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
-              ) : (
-                <Sparkles data-icon="inline-start" />
-              )}
-              Analyser plus précisément avec l&apos;IA
-            </Button>
-          </div>
+          {cmsProvider === "wordpress" ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-[#E2E8F0] bg-white"
+                disabled={aiBusy}
+                onClick={() => void runAiAnalysis()}
+              >
+                {aiBusy ? (
+                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                ) : (
+                  <Sparkles data-icon="inline-start" />
+                )}
+                Analyser plus précisément avec l&apos;IA
+              </Button>
+            </div>
+          ) : null}
           {payload?.ai ? (
             <p className="text-[11px] text-slate-500">
               Classement affiné par analyse IA (titres / extraits disponibles
@@ -375,7 +454,9 @@ export function EditorialRapprochementPanel({
         </div>
       ) : null}
 
-      {(payload?.inventoryStale || payload?.coverage === "partial") &&
+      {(payload?.inventoryStale ||
+        payload?.coverage === "partial" ||
+        payload?.coverage === "unavailable") &&
       phase === "ready" ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           <p>
@@ -395,7 +476,7 @@ export function EditorialRapprochementPanel({
             ) : (
               <RefreshCw data-icon="inline-start" />
             )}
-            Actualiser les articles WordPress
+            Actualiser l&apos;inventaire {inventoryLabel}
           </Button>
         </div>
       ) : null}
@@ -460,7 +541,7 @@ export function EditorialRapprochementPanel({
       aria-live="polite"
     >
       <p className="text-sm font-medium text-[#0F172A]">
-        Vérification des articles publiés
+        Vérification des contenus existants ({inventoryLabel})
       </p>
       {resultsBlock}
     </section>

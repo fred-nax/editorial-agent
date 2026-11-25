@@ -44,11 +44,16 @@ import {
 import { decodeHtmlEntities } from "@/lib/seo/normalize";
 
 export type PublishedPostRecord = {
-  wpPostId: number;
+  /** Identifiant WP numérique ; null hors WordPress. */
+  wpPostId: number | null;
+  cmsExternalId: string;
   title: string;
   slug: string;
-  url: string;
+  /** URL publique si connue — null autorisé (brouillons Webflow). */
+  url: string | null;
   excerpt: string | null;
+  status: string;
+  contentText?: string | null;
 };
 
 function httpUrl(value: string | null | undefined): string | null {
@@ -317,16 +322,21 @@ export function scorePublishedPost(
   angle: string | null,
   post: PublishedPostRecord
 ): EditorialMatch | null {
+  // WP historique : URL http(s) obligatoire.
+  // Webflow (wpPostId null) : URL optionnelle pour alerter sur les brouillons.
   const url = httpUrl(post.url);
-  if (!url) {
+  if (!url && post.wpPostId != null) {
     return null;
   }
 
   const title = decodeHtmlEntities(post.title);
   const excerpt = post.excerpt ? decodeHtmlEntities(post.excerpt) : null;
+  const contentSnippet = post.contentText
+    ? decodeHtmlEntities(post.contentText).slice(0, 800)
+    : "";
 
   const proposalText = `${subject} ${angle ?? ""}`;
-  const postText = `${title} ${excerpt ?? ""} ${post.slug.replaceAll("-", " ")}`;
+  const postText = `${title} ${excerpt ?? ""} ${contentSnippet} ${post.slug.replaceAll("-", " ")}`;
   const left = extractEditorialConcepts(proposalText);
   const right = extractEditorialConcepts(postText);
   const overlap = technicalOverlapScore(left, right);
@@ -362,6 +372,7 @@ export function scorePublishedPost(
   );
 
   // Lexical léger + intention : ne doit jamais dominer les concepts techniques.
+  // Jamais présenté comme preuve de cannibalisation SEO.
   const blended = Math.min(
     1,
     overlap.score * 0.64 +
@@ -391,6 +402,10 @@ export function scorePublishedPost(
     explanation: buildExplanation({ kind, overlap, intention, titleScore }),
     message: RAPPROCHEMENT_MESSAGES[kind],
     wpPostId: post.wpPostId,
+    cmsExternalId:
+      post.cmsExternalId ||
+      (post.wpPostId != null ? String(post.wpPostId) : post.slug),
+    status: post.status || "publish",
     rankScore: titleExact ? 1 : blended,
   };
 }
@@ -436,12 +451,13 @@ export function findEditorialRapprochements(
     : found;
 
   const kept: EditorialMatch[] = [];
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   for (const match of filtered) {
-    if (seen.has(match.wpPostId)) {
+    const key = match.cmsExternalId || String(match.wpPostId ?? match.title);
+    if (seen.has(key)) {
       continue;
     }
-    seen.add(match.wpPostId);
+    seen.add(key);
     kept.push(match);
     if (kept.length >= max) {
       break;
@@ -509,10 +525,12 @@ export async function loadPublishedInventory(
   const published: PublishedPostRecord[] = posts
     .map((post) => ({
       wpPostId: post.wpPostId,
+      cmsExternalId: String(post.wpPostId),
       title: decodeHtmlEntities(post.title),
       slug: post.slug,
       url: post.url,
       excerpt: post.excerpt ? decodeHtmlEntities(post.excerpt) : null,
+      status: "publish",
     }))
     .filter((post) => httpUrl(post.url));
 
@@ -529,12 +547,176 @@ export async function loadPublishedInventory(
   };
 }
 
+/**
+ * Inventaire Webflow pour rapprochements : drafts + published + changed
+ * (pas missing / archived pour le bruit). Déduplique vs générations.
+ */
+export async function loadWebflowInventoryForRapprochement(
+  workspaceId: string
+): Promise<{
+  posts: PublishedPostRecord[];
+  meta: EditorialInventoryMeta;
+}> {
+  const { listEditorialInventory } = await import(
+    "@/lib/editorial-inventory/access"
+  );
+  const { getWebflowInventoryDiagnostic } = await import(
+    "@/lib/webflow/inventory"
+  );
+  const { INVENTORY_STALE_AFTER_MS: staleMs } = await import(
+    "./editorial-similarity-config"
+  );
+
+  const [diagnostic, inventory] = await Promise.all([
+    getWebflowInventoryDiagnostic(workspaceId),
+    listEditorialInventory({
+      workspaceId,
+      purpose: "duplicates",
+      take: 2500,
+    }),
+  ]);
+
+  const inventoryIds = new Set(
+    inventory.items.map((item) => item.cmsExternalId)
+  );
+
+  const items: PublishedPostRecord[] = inventory.items
+    .filter((item) => item.status !== "archived" && item.status !== "missing")
+    .map((item) => ({
+      wpPostId: null,
+      cmsExternalId: item.cmsExternalId,
+      title: decodeHtmlEntities(item.title),
+      slug: item.slug,
+      url: item.url,
+      excerpt: item.excerpt ? decodeHtmlEntities(item.excerpt) : null,
+      status: item.status,
+      contentText: item.contentText,
+    }));
+
+  // Sujets file + générations du même espace, sans double-compter l’inventaire.
+  const [topics, generations] = await Promise.all([
+    db.topic.findMany({
+      where: { workspaceId, status: { not: "archived" } },
+      select: { id: true, subject: true, angle: true, status: true },
+      take: 500,
+    }),
+    db.articleGeneration.findMany({
+      where: {
+        workspaceId,
+        status: { in: ["completed", "failed"] },
+        cmsDestination: "webflow",
+      },
+      select: {
+        id: true,
+        subject: true,
+        title: true,
+        slug: true,
+        excerpt: true,
+        cmsExternalId: true,
+        status: true,
+      },
+      take: 500,
+    }),
+  ]);
+
+  for (const topic of topics) {
+    items.push({
+      wpPostId: null,
+      cmsExternalId: `topic:${topic.id}`,
+      title: topic.subject,
+      slug: slugify(topic.subject),
+      url: null,
+      excerpt: topic.angle,
+      status: `topic:${topic.status}`,
+    });
+  }
+
+  for (const generation of generations) {
+    if (
+      generation.cmsExternalId &&
+      inventoryIds.has(generation.cmsExternalId)
+    ) {
+      continue;
+    }
+    items.push({
+      wpPostId: null,
+      cmsExternalId:
+        generation.cmsExternalId ?? `generation:${generation.id}`,
+      title: generation.title?.trim() || generation.subject,
+      slug: generation.slug ?? slugify(generation.subject),
+      url: null,
+      excerpt: generation.excerpt,
+      status: `generation:${generation.status}`,
+    });
+  }
+
+  const lastSyncAt =
+    diagnostic.lastSync?.finishedAt?.toISOString() ??
+    diagnostic.lastSync?.startedAt?.toISOString() ??
+    null;
+  const finishedAt = diagnostic.lastSync?.finishedAt;
+  const neverSynced = !diagnostic.lastSync;
+  const inventoryStale =
+    neverSynced ||
+    !finishedAt ||
+    diagnostic.lastSync?.status === "failed" ||
+    Date.now() - finishedAt.getTime() > staleMs;
+
+  let coverage: InventoryCoverage = "available";
+  let coverageNote =
+    "Inventaire Webflow local disponible (espace actif uniquement).";
+  let verified = true;
+  if (neverSynced) {
+    coverage = "unavailable";
+    coverageNote =
+      "Inventaire Webflow jamais synchronisé. Lancez une synchronisation depuis Inventaire.";
+    verified = false;
+  } else if (diagnostic.count === 0) {
+    coverage = "partial";
+    coverageNote =
+      "Inventaire Webflow vide. Synchronisez la collection ou vérifiez le mapping CMS.";
+    verified = false;
+  } else if (diagnostic.lastSync?.status === "failed") {
+    coverage = "unavailable";
+    coverageNote =
+      "La dernière synchronisation Webflow a échoué. Les rapprochements peuvent être incomplets.";
+    verified = false;
+  } else if (inventoryStale) {
+    coverage = "partial";
+    coverageNote =
+      "Inventaire Webflow potentiellement périmé — relancez une synchronisation.";
+    verified = true;
+  }
+
+  return {
+    posts: items,
+    meta: {
+      coverage,
+      coverageNote,
+      verified,
+      lastSyncAt,
+      inventoryStale,
+      publishedCount: items.length,
+    },
+  };
+}
+
 export async function checkEditorialRapprochement(input: {
   subject: string;
   angle?: string | null;
   workspaceId?: string;
 }): Promise<EditorialRapprochementResult> {
-  const { posts, meta } = await loadPublishedInventory(input.workspaceId);
+  const { WORKSPACE_IDS } = await import("@/lib/workspace/constants");
+  const { getWorkspaceByIdOrSlug } = await import("@/lib/workspace/context");
+  const resolvedWorkspaceId = input.workspaceId ?? WORKSPACE_IDS.wordpress;
+  const workspace = await getWorkspaceByIdOrSlug(resolvedWorkspaceId);
+
+  const loaded =
+    workspace?.cmsProvider === "webflow"
+      ? await loadWebflowInventoryForRapprochement(resolvedWorkspaceId)
+      : await loadPublishedInventory(resolvedWorkspaceId);
+
+  const { posts, meta } = loaded;
   const matches =
     meta.publishedCount === 0
       ? []
@@ -558,6 +740,8 @@ export function publicMatchView(match: EditorialMatch) {
     explanation: match.explanation,
     message: match.message,
     wpPostId: match.wpPostId,
+    cmsExternalId: match.cmsExternalId,
+    status: match.status,
   };
 }
 

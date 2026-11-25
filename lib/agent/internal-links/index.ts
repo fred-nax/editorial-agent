@@ -1,4 +1,5 @@
 export { loadPublishedCatalog, normalizeInternalUrl, isNaxialisHost } from "./catalog";
+export { loadWebflowPublishedCatalog } from "./webflow-catalog";
 export {
   selectInternalLinks,
   extractSubjectThemes,

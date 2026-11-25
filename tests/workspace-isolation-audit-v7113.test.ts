@@ -195,7 +195,7 @@ describe("V7.11.3 — binding cookie / header / modules", () => {
     );
   });
 
-  it("modules Webflow refusés (opportunities / analytics / rapprochements)", () => {
+  it("modules Webflow refusés (opportunities / analytics) ; rapprochements autorisés V7.12.1", () => {
     const wf = {
       id: WORKSPACE_IDS.webflow,
       slug: "webflow-ai-studio-01",
@@ -213,6 +213,9 @@ describe("V7.11.3 — binding cookie / header / modules", () => {
     assert.throws(
       () => assertModuleAllowedForWorkspace(wf, "analytics"),
       (e: unknown) => e instanceof WorkspaceContextError && e.status === 501
+    );
+    assert.doesNotThrow(() =>
+      assertModuleAllowedForWorkspace(wf, "rapprochements")
     );
     assert.throws(
       () => assertWordPressOnlyModule("webflow"),
