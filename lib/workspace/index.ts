@@ -12,6 +12,7 @@ export {
   assertWorkspaceCmsProvider,
   assertGenerationWorkspaceConsistency,
   assertWordPressOnlyModule,
+  assertWebflowOnlyModule,
 } from "./guards";
 export { workspaceWhere, assertWorkspaceId, cmsProviderFromWorkspace } from "./scope";
 export {

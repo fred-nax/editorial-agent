@@ -39,6 +39,24 @@ export {
   type WebflowGenerationReadiness,
 } from "@/lib/webflow/readiness";
 export {
+  listAllWebflowCollectionItems,
+  type WebflowCmsItemRemote,
+  type WebflowListItemsPage,
+} from "@/lib/webflow/items";
+export {
+  deriveWebflowInventoryStatus,
+  normalizeWebflowInventoryItem,
+  type NormalizedWebflowInventoryItem,
+  type WebflowInventoryStatus,
+} from "@/lib/webflow/inventory-normalize";
+export { resolveWebflowInventoryConfig } from "@/lib/webflow/inventory-config";
+export {
+  enqueueWebflowInventorySync,
+  getWebflowInventoryDiagnostic,
+  processWebflowInventorySync,
+  recoverStaleWebflowSyncRuns,
+} from "@/lib/webflow/inventory";
+export {
   WEBFLOW_API_BASE,
   WEBFLOW_FIELD_TYPE_ALLOWLIST,
   WEBFLOW_OPTIONAL_EDITORIAL_FIELDS,

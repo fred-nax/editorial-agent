@@ -28,6 +28,7 @@ const WEBFLOW_ENABLED_MODULES = new Set<WebflowModuleCapability>([
   "dashboard",
   "topics",
   "veille",
+  "inventory",
 ]);
 
 export function isWebflowModuleEnabled(
@@ -63,7 +64,7 @@ export function webflowEmptyState(module: WebflowModuleCapability): {
     history: "Aucun historique Webflow.",
     dashboard: "Tableau de bord Webflow vide.",
     inventory:
-      "Inventaire CMS Webflow non disponible dans cette version. Aucun inventaire WordPress n’est réutilisé.",
+      "Inventaire CMS Webflow : synchronisez la collection configurée. Aucun inventaire WordPress n’est réutilisé.",
     featured_image:
       "Images à la une non disponibles pour Webflow dans cette version.",
     rapprochements:

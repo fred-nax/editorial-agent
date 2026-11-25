@@ -27,11 +27,11 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
     assert.ok(WORKSPACE_SWITCH_STORAGE_KEY.includes("v7112"));
   });
 
-  it("autorise veille Webflow et refuse opportunités / inventaire / images", () => {
+  it("autorise veille et inventaire Webflow ; refuse opportunités / images", () => {
     assert.equal(isWebflowModuleEnabled("veille"), true);
     assert.equal(isWebflowModuleEnabled("topics"), true);
+    assert.equal(isWebflowModuleEnabled("inventory"), true);
     assert.equal(isWebflowModuleEnabled("opportunities"), false);
-    assert.equal(isWebflowModuleEnabled("inventory"), false);
     assert.equal(isWebflowModuleEnabled("featured_image"), false);
     assert.equal(isWebflowModuleEnabled("analytics"), false);
     assert.match(webflowEmptyState("opportunities").reason, /inventaire/i);

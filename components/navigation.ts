@@ -3,6 +3,7 @@ import {
   ChartNoAxesCombined,
   History,
   LayoutDashboard,
+  Library,
   ListTodo,
   Plug,
   Radar,
@@ -22,6 +23,7 @@ export const navigation: NavItem[] = [
   { href: "/articles/new", label: "Nouvel article", icon: SquarePen },
   { href: "/articles", label: "Historique", icon: History },
   { href: "/topics", label: "File éditoriale", icon: ListTodo },
+  { href: "/inventory", label: "Inventaire", icon: Library },
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { href: "/opportunities", label: "Opportunités SEO", icon: SearchCheck },
   { href: "/veille", label: "Veille éditoriale", icon: Radar },
@@ -41,6 +43,9 @@ export function isNavActive(pathname: string, href: string): boolean {
   }
   if (href === "/analytics") {
     return pathname === "/analytics" || pathname.startsWith("/analytics/");
+  }
+  if (href === "/inventory") {
+    return pathname === "/inventory" || pathname.startsWith("/inventory/");
   }
   // Paramètres ≠ Intégrations (sous-route dédiée).
   if (href === "/settings") {
@@ -65,6 +70,9 @@ export function sectionTitle(pathname: string): string {
   }
   if (pathname.startsWith("/analytics")) {
     return "Analytics";
+  }
+  if (pathname.startsWith("/inventory")) {
+    return "Inventaire";
   }
   if (pathname.startsWith("/settings/integrations")) {
     return "Intégrations";

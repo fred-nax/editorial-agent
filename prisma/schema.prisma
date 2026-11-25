@@ -86,6 +86,8 @@ model EditorialWorkspace {
   watchSearches     EditorialWatchSearch[]
   wordpressPosts    WordPressPost[]
   wordpressSyncRuns WordPressSyncRun[]
+  webflowCmsItems   WebflowCmsItem[]
+  webflowSyncRuns   WebflowSyncRun[]
   customThemes      CustomTheme[]
   researchConfigs   ResearchConfig[]
   opportunityRuns   OpportunitySearchRun[]
@@ -320,6 +322,79 @@ model WordPressSyncRun {
   error           String?
   startedAt       DateTime  @default(now())
   finishedAt      DateTime?
+
+  @@index([workspaceId, startedAt])
+}
+
+/// Inventaire CMS Webflow (lecture seule, upsert, jamais de purge destructive sur échec).
+/// Dédié — ne partage pas WordPressPost (ids hex, collection, statuts distincts).
+model WebflowCmsItem {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  workspace       EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  /// Identifiant item Webflow (hex 24).
+  webflowItemId   String
+  siteId          String
+  collectionId    String
+  title           String
+  slug            String
+  /// URL publique uniquement si connue/vérifiée — jamais inventée.
+  url             String?
+  /// published | draft | archived | changed | missing
+  status          String
+  isDraft         Boolean   @default(true)
+  isArchived      Boolean   @default(false)
+  /// Présent dans GET …/items/live lors de la dernière sync réussie.
+  isLive          Boolean   @default(false)
+  excerpt         String?
+  contentHtml     String?
+  contentText     String?
+  metaTitle       String?
+  metaDescription String?
+  featuredImageUrl String?
+  featuredImageAlt String?
+  categoryRef     String?
+  authorRef       String?
+  createdOnAt     DateTime?
+  lastUpdatedAt   DateTime?
+  lastPublishedAt DateTime?
+  /// Absent du fetch complet réussi → missing (conservé, non hard-delete).
+  missingAt       DateTime?
+  syncedAt        DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([workspaceId, collectionId, webflowItemId])
+  @@index([workspaceId, slug])
+  @@index([workspaceId, status])
+  @@index([workspaceId, lastUpdatedAt])
+  @@index([collectionId])
+}
+
+model WebflowSyncRun {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  workspace        EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  status           String
+  mode             String
+  siteId           String?
+  collectionId     String?
+  fetchedCount     Int       @default(0)
+  upsertedCount    Int       @default(0)
+  createdCount     Int       @default(0)
+  updatedCount     Int       @default(0)
+  unchangedCount   Int       @default(0)
+  missingCount     Int       @default(0)
+  expectedTotal    Int?
+  storedCount      Int?
+  pagesFetched     Int?
+  totalPages       Int?
+  liveFetchedCount Int?
+  statusBreakdown  Json?
+  diagnosticNote   String?
+  error            String?
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
 
   @@index([workspaceId, startedAt])
 }

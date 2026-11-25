@@ -57,3 +57,8 @@ export function assertGenerationWorkspaceConsistency(input: {
 export function assertWordPressOnlyModule(workspaceCmsProvider: string): void {
   assertWorkspaceCmsProvider(workspaceCmsProvider, "wordpress");
 }
+
+/** Modules Webflow-only refusés dans un espace WordPress. */
+export function assertWebflowOnlyModule(workspaceCmsProvider: string): void {
+  assertWorkspaceCmsProvider(workspaceCmsProvider, "webflow");
+}

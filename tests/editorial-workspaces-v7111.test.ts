@@ -82,7 +82,7 @@ describe("V7.11.1 — espaces éditoriaux (socle)", () => {
   it("protection transitoire Webflow — empty states, pas de compensation WP", () => {
     assert.equal(isWebflowModuleEnabled("generation"), true);
     assert.equal(isWebflowModuleEnabled("history"), true);
-    assert.equal(isWebflowModuleEnabled("inventory"), false);
+    assert.equal(isWebflowModuleEnabled("inventory"), true);
     assert.equal(isWebflowModuleEnabled("analytics"), false);
     assert.equal(isWebflowModuleEnabled("opportunities"), false);
     assert.equal(isWebflowModuleEnabled("veille"), true);
@@ -102,13 +102,16 @@ describe("V7.11.1 — espaces éditoriaux (socle)", () => {
       defaultLanguage: "fr",
       enabled: true,
     };
-    assert.throws(
-      () => assertModuleAllowedForWorkspace(workspaceWebflow, "inventory"),
-      (error: unknown) =>
-        error instanceof WorkspaceContextError && error.status === 501
+    assert.doesNotThrow(() =>
+      assertModuleAllowedForWorkspace(workspaceWebflow, "inventory")
     );
     assert.doesNotThrow(() =>
       assertModuleAllowedForWorkspace(workspaceWebflow, "generation")
+    );
+    assert.throws(
+      () => assertModuleAllowedForWorkspace(workspaceWebflow, "opportunities"),
+      (error: unknown) =>
+        error instanceof WorkspaceContextError && error.status === 501
     );
   });
 

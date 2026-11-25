@@ -35,10 +35,18 @@ export function assertWebflowAllowedRequest(
 ): void {
   const normalized = path.startsWith("/") ? path : `/${path}`;
 
+  // Lecture inventaire : GET …/items/live autorisé (V7.12.0).
+  // Toute écriture /publish ou mutation live reste interdite.
   if (/\/(live|publish)(\/|$)/i.test(normalized)) {
+    if (
+      method === "GET" &&
+      /\/collections\/[^/]+\/items\/live\/?$/i.test(normalized)
+    ) {
+      return;
+    }
     throw new WebflowApiError(
       "bad_request",
-      "Endpoints Webflow live/publish interdits."
+      "Endpoints Webflow live/publish interdits (sauf GET …/items/live lecture seule)."
     );
   }
   if (method === "GET") {
@@ -121,10 +129,28 @@ export function createWebflowClient(options: WebflowClientOptions) {
       });
 
       if (!response.ok) {
-        throw mapWebflowHttpStatus(
+        let detail: string | null = null;
+        try {
+          const text = (await response.text()).slice(0, 240);
+          detail = text.trim() || null;
+        } catch {
+          detail = null;
+        }
+        const mapped = mapWebflowHttpStatus(
           response.status,
           response.headers.get("retry-after")
         );
+        if (detail && response.status >= 400 && response.status < 500) {
+          throw new WebflowApiError(
+            mapped.code,
+            `${mapped.message} (${detail})`,
+            {
+              status: mapped.status,
+              retryAfterSeconds: mapped.retryAfterSeconds,
+            }
+          );
+        }
+        throw mapped;
       }
 
       // 202 Accepted possible pour create item
