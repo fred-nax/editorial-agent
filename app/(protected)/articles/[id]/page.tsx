@@ -7,6 +7,7 @@ import {
   FeaturedImagePanel,
   FeaturedImageUnavailable,
 } from "@/components/articles/FeaturedImagePanel";
+import { WebflowDraftRefsPanel } from "@/components/articles/WebflowDraftRefsPanel";
 import { ArticlePerformancesPanel } from "@/components/articles/ArticlePerformancesPanel";
 import { EditorialContextPanel } from "@/components/EditorialContextPanel";
 import { GenerationLiveRefresh } from "@/components/GenerationLiveRefresh";
@@ -186,6 +187,12 @@ export default async function ArticleDetailPage({
       ) : null}
 
       <EditorialContextPanel value={article.editorialContext} />
+
+      {isWebflow &&
+      article.status === "completed" &&
+      article.cmsExternalId?.trim() ? (
+        <WebflowDraftRefsPanel generationId={article.id} />
+      ) : null}
 
       <ArticleDetailTabs
         initialTab={initialTab}

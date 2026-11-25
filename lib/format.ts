@@ -14,15 +14,16 @@ export function formatCost(value: number | null | undefined): string {
 
 /**
  * Affichage du coût LLM estimé (USD), préfixe `$`.
- * - null / NaN → "—" (inconnu, distinct de zéro)
+ * - null / NaN → "Inconnu" (distinct de zéro)
  * - 0 → "$0.00"
  * - |x| < 1 → 4 décimales ($0.0024, $0.0450, $0.1248)
  * - |x| ≥ 1 → 2 décimales ($1.25)
  * Ne masque plus les petits montants sous un plafond opaque.
+ * Ce n’est jamais un montant facturé OpenAI — estimation LLM seule.
  */
 export function formatEstimatedCost(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
+    return "Inconnu";
   }
 
   if (value === 0) {
@@ -34,6 +35,20 @@ export function formatEstimatedCost(value: number | null | undefined): string {
   const formatted = abs.toFixed(decimals);
   const sign = value < 0 ? "-" : "";
   return `${sign}$${formatted}`;
+}
+
+/** Libellé court pour tooltips / hints (hors images & tools). */
+export function formatEstimatedCostHint(options?: {
+  unknown?: boolean;
+  partial?: boolean;
+}): string {
+  if (options?.unknown) {
+    return "Coût LLM inconnu (modèle sans tarif ou tokens manquants). Hors images et outils.";
+  }
+  if (options?.partial) {
+    return "Estimation LLM partielle — hors web_search, images et autres outils.";
+  }
+  return "Estimation LLM — hors éventuels frais liés aux outils et aux images.";
 }
 
 export function formatTokenCount(value: number | null | undefined): string {

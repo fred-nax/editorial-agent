@@ -102,8 +102,59 @@ export async function GET(request: Request) {
     },
   });
 
+  const refIds = Array.from(
+    new Set(
+      items
+        .flatMap((item) => [item.categoryRef, item.authorRef])
+        .filter((id): id is string => Boolean(id?.trim()))
+    )
+  );
+  const refRows =
+    refIds.length === 0
+      ? []
+      : await db.webflowCmsReference.findMany({
+          where: {
+            workspaceId: workspace.id,
+            webflowItemId: { in: refIds },
+          },
+          select: {
+            webflowItemId: true,
+            kind: true,
+            name: true,
+            missingAt: true,
+            isArchived: true,
+          },
+        });
+  const categoryById = new Map(
+    refRows
+      .filter((r) => r.kind === "category")
+      .map((r) => [r.webflowItemId, r] as const)
+  );
+  const authorById = new Map(
+    refRows
+      .filter((r) => r.kind === "author")
+      .map((r) => [r.webflowItemId, r] as const)
+  );
+
   return NextResponse.json({
-    items,
+    items: items.map((item) => {
+      const category = item.categoryRef
+        ? categoryById.get(item.categoryRef)
+        : null;
+      const author = item.authorRef ? authorById.get(item.authorRef) : null;
+      return {
+        ...item,
+        categoryName: category?.name ?? null,
+        authorName: author?.name ?? null,
+        categoryUnavailable: Boolean(
+          item.categoryRef &&
+            (!category || category.missingAt || category.isArchived)
+        ),
+        authorUnavailable: Boolean(
+          item.authorRef && (!author || author.missingAt || author.isArchived)
+        ),
+      };
+    }),
     total,
     page,
     pageSize,

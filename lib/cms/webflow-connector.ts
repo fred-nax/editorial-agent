@@ -44,6 +44,10 @@ export function createWebflowConnector(): CmsConnector {
             meta_title: input.meta_title ?? "",
             meta_description: input.meta_description ?? "",
           },
+          refs: {
+            categoryItemId: input.webflowCategoryItemId,
+            authorItemId: input.webflowAuthorItemId,
+          },
           rejectIfSlugExists: true,
         });
 

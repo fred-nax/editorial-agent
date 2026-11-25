@@ -64,7 +64,9 @@ export function GenerationUsage({
             </p>
             {card.key === "cost" ? (
               <p className="mt-1 text-xs text-slate-500">
-                Hors éventuels frais liés aux outils.
+                {cost === "Inconnu"
+                  ? "Coût LLM inconnu (tarif ou tokens manquants). Hors images et outils — estimation, non facture OpenAI."
+                  : "Estimation LLM — hors web_search, images et autres outils (non facture OpenAI)."}
               </p>
             ) : null}
           </article>

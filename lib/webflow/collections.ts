@@ -26,8 +26,30 @@ type CollectionDetailsApiResponse = {
     type?: string;
     isRequired?: boolean;
     isEditable?: boolean;
+    validations?: Record<string, unknown> | null;
   }>;
 };
+
+/** Extrait l’ID de collection référencée depuis les validations Data API V2. */
+export function extractReferencedCollectionId(
+  validations: Record<string, unknown> | null | undefined
+): string | null {
+  if (!validations || typeof validations !== "object") {
+    return null;
+  }
+  const direct = validations.collectionId;
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+  const nested = validations.collection;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    const id = (nested as { id?: unknown }).id;
+    if (typeof id === "string" && id.trim()) {
+      return id.trim();
+    }
+  }
+  return null;
+}
 
 export async function listWebflowCollections(
   client: WebflowClient,
@@ -94,6 +116,7 @@ export async function getWebflowCollectionDetails(
             type?: string;
             isRequired?: boolean;
             isEditable?: boolean;
+            validations?: Record<string, unknown> | null;
           } => typeof field?.id === "string" && field.id.trim().length > 0
         )
         .map((field) => ({
@@ -112,6 +135,9 @@ export async function getWebflowCollectionDetails(
               : "PlainText",
           isRequired: field.isRequired === true,
           isEditable: field.isEditable !== false,
+          referencedCollectionId: extractReferencedCollectionId(
+            field.validations ?? null
+          ),
         }))
     : [];
 

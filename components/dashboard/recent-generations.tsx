@@ -197,7 +197,11 @@ export function DashboardRecentGenerations({
                       </TableCell>
                       <TableCell
                         className="px-3 py-3.5 text-sm text-slate-700"
-                        title="Hors éventuels frais liés aux outils."
+                        title={
+                          article.estimatedCost == null
+                            ? "Coût LLM inconnu — hors images et outils."
+                            : "Estimation LLM — hors images et outils."
+                        }
                       >
                         {formatEstimatedCost(article.estimatedCost)}
                       </TableCell>
@@ -262,7 +266,11 @@ export function DashboardRecentGenerations({
                     <div>
                       <dt
                         className="text-xs text-slate-500"
-                        title="Hors éventuels frais liés aux outils."
+                        title={
+                          article.estimatedCost == null
+                            ? "Coût LLM inconnu — hors images et outils."
+                            : "Estimation LLM — hors images et outils."
+                        }
                       >
                         Coût LLM estimé
                       </dt>

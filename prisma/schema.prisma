@@ -86,9 +86,10 @@ model EditorialWorkspace {
   watchSearches     EditorialWatchSearch[]
   wordpressPosts    WordPressPost[]
   wordpressSyncRuns WordPressSyncRun[]
-  webflowCmsItems   WebflowCmsItem[]
-  webflowSyncRuns   WebflowSyncRun[]
-  customThemes      CustomTheme[]
+  webflowCmsItems       WebflowCmsItem[]
+  webflowCmsReferences  WebflowCmsReference[]
+  webflowSyncRuns       WebflowSyncRun[]
+  customThemes          CustomTheme[]
   researchConfigs   ResearchConfig[]
   opportunityRuns   OpportunitySearchRun[]
   opportunities     SeoOpportunity[]
@@ -129,6 +130,10 @@ model WorkspaceCmsSettings {
   webflowSiteId            String?
   webflowCollectionId      String?
   webflowFieldMappingJson  String?
+  /// Défauts catégorie / auteur Webflow (item IDs Reference, workspace-scopés).
+  webflowDefaultCategoryItemId String?
+  webflowDefaultAuthorItemId   String?
+  webflowReferencesSyncedAt    DateTime?
   /// Langue éditoriale (copie du workspace, surcharge éventuelle).
   defaultLanguage          String?
   createdAt                DateTime @default(now())
@@ -250,6 +255,9 @@ model Topic {
   priority  Int         @default(0)
   notes     String?
   category  String?
+  /// Références Webflow figées pour la file (item IDs), isolées du libellé `category`.
+  webflowCategoryItemId String?
+  webflowAuthorItemId   String?
   angle     String?
   /// "veille" pour un sujet issu de la veille. Null pour un sujet manuel ou SEO.
   origin            String?
@@ -375,6 +383,35 @@ model WebflowCmsItem {
   @@index([workspaceId, slug])
   @@index([workspaceId, status])
   @@index([workspaceId, lastUpdatedAt])
+  @@index([collectionId])
+}
+
+/// Catalogue synchronisé des références CMS Webflow (catégories, auteurs, …).
+model WebflowCmsReference {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  /// category | author
+  kind          String
+  siteId        String
+  collectionId  String
+  webflowItemId String
+  /// Locale CMS si fournie par l’API ("" = défaut site — évite NULL dans l’unicité PG).
+  cmsLocaleId   String    @default("")
+  name          String
+  slug          String?
+  isDraft       Boolean   @default(false)
+  isArchived    Boolean   @default(false)
+  /// Absent d’une sync complète réussie (conservé, non hard-delete).
+  missingAt     DateTime?
+  lastModifiedAt DateTime?
+  syncedAt      DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([workspaceId, kind, collectionId, webflowItemId, cmsLocaleId])
+  @@index([workspaceId, kind])
+  @@index([workspaceId, kind, missingAt])
   @@index([collectionId])
 }
 

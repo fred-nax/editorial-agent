@@ -13,6 +13,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { EditorialRapprochementPanel } from "@/components/EditorialRapprochementPanel";
+import {
+  WebflowRefsFields,
+  type WebflowRefsSelection,
+} from "@/components/cms/WebflowRefsFields";
 import { TopicStatusBadge } from "@/components/dashboard/status-badge";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
 import { useWorkspaceOptional } from "@/components/workspace";
@@ -64,6 +68,8 @@ export type TopicListItem = {
   sourceName?: string | null;
   sourcePublishedOn?: string | null;
   sourceKind?: string | null;
+  webflowCategoryItemId?: string | null;
+  webflowAuthorItemId?: string | null;
   createdAt: Date | string;
   /** Génération associée la plus pertinente (terminée de préférence). */
   articleId?: string | null;
@@ -102,6 +108,11 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
   const [editSubject, setEditSubject] = useState("");
   const [editAngle, setEditAngle] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editWebflowRefs, setEditWebflowRefs] = useState<WebflowRefsSelection>({
+    categoryItemId: "",
+    authorItemId: "",
+  });
+  const isWebflowWorkspace = workspaceCtx?.active?.cmsProvider === "webflow";
   const [editPriority, setEditPriority] = useState("0");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -143,6 +154,10 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
     setEditSubject(topic.subject);
     setEditAngle(topic.angle ?? "");
     setEditNotes(topic.notes ?? "");
+    setEditWebflowRefs({
+      categoryItemId: topic.webflowCategoryItemId?.trim() ?? "",
+      authorItemId: topic.webflowAuthorItemId?.trim() ?? "",
+    });
     setEditPriority(
       topic.priority === 1 ? "1" : topic.priority === 0 ? "0" : "2"
     );
@@ -259,6 +274,12 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
           angle: editAngle.trim() || null,
           notes: editNotes.trim() || null,
           priority: Number(editPriority),
+          ...(isWebflowWorkspace
+            ? {
+                webflowCategoryItemId: editWebflowRefs.categoryItemId || null,
+                webflowAuthorItemId: editWebflowRefs.authorItemId || null,
+              }
+            : {}),
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -623,6 +644,16 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
                 className="border-[#E2E8F0] bg-white"
               />
             </div>
+
+            {isWebflowWorkspace && editTopic ? (
+              <WebflowRefsFields
+                value={editWebflowRefs}
+                onChange={setEditWebflowRefs}
+                initialCategoryItemId={editTopic.webflowCategoryItemId}
+                initialAuthorItemId={editTopic.webflowAuthorItemId}
+                disabled={editSaving}
+              />
+            ) : null}
 
             <div className="space-y-3 rounded-lg border border-[#E2E8F0] bg-slate-50/60 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">

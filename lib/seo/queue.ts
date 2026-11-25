@@ -70,6 +70,17 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
     `Origine : opportunité SEO ${opportunity.id}`,
   ].filter(Boolean);
 
+  const cmsDefaults =
+    workspace?.cmsProvider === "webflow"
+      ? await db.workspaceCmsSettings.findUnique({
+          where: { workspaceId: opportunity.workspaceId },
+          select: {
+            webflowDefaultCategoryItemId: true,
+            webflowDefaultAuthorItemId: true,
+          },
+        })
+      : null;
+
   const topic = await db.topic.create({
     data: {
       workspaceId: opportunity.workspaceId,
@@ -81,6 +92,8 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
       origin: "seo_opportunity",
       sourceTitle: opportunity.title,
       notes: notesParts.join("\n"),
+      webflowCategoryItemId: cmsDefaults?.webflowDefaultCategoryItemId ?? null,
+      webflowAuthorItemId: cmsDefaults?.webflowDefaultAuthorItemId ?? null,
     },
   });
 

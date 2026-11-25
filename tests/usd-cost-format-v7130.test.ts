@@ -29,9 +29,9 @@ describe("V7.13.0 — formatage coûts USD", () => {
   });
 
   it("distingue coût inconnu, zéro et négatif", () => {
-    assert.equal(formatEstimatedCost(null), "—");
-    assert.equal(formatEstimatedCost(undefined), "—");
-    assert.equal(formatEstimatedCost(Number.NaN), "—");
+    assert.equal(formatEstimatedCost(null), "Inconnu");
+    assert.equal(formatEstimatedCost(undefined), "Inconnu");
+    assert.equal(formatEstimatedCost(Number.NaN), "Inconnu");
     assert.equal(formatEstimatedCost(0), "$0.00");
     assert.equal(formatEstimatedCost(-0.045), "-$0.0450");
   });

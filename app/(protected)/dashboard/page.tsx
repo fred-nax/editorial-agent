@@ -170,7 +170,7 @@ export default async function DashboardPage() {
           {
             label: "Coût LLM estimé du mois",
             value: formatEstimatedCost(llmCostThisMonth._sum.estimatedCost),
-            hint: "Hors éventuels frais liés aux outils.",
+            hint: "Somme des estimations LLM connues — hors images, tools ; isolé à cet espace.",
           },
         ]}
       />

@@ -36,6 +36,8 @@ function toStored(topic: {
   sourceName: string | null;
   sourcePublishedOn: string | null;
   sourceKind: string | null;
+  webflowCategoryItemId?: string | null;
+  webflowAuthorItemId?: string | null;
 }): StoredTopic {
   return {
     id: topic.id,
@@ -51,6 +53,8 @@ function toStored(topic: {
     sourceName: topic.sourceName,
     sourcePublishedOn: topic.sourcePublishedOn,
     sourceKind: topic.sourceKind,
+    webflowCategoryItemId: topic.webflowCategoryItemId ?? null,
+    webflowAuthorItemId: topic.webflowAuthorItemId ?? null,
   };
 }
 
@@ -67,9 +71,30 @@ function topicStore(workspaceId: string): TopicStore {
       return found ? toStored(found) : null;
     },
     async create(data) {
+      let webflowCategoryItemId = data.webflowCategoryItemId ?? null;
+      let webflowAuthorItemId = data.webflowAuthorItemId ?? null;
+      // Conversions veille/SEO : défauts workspace si aucune sélection.
+      if (!webflowCategoryItemId || !webflowAuthorItemId) {
+        const settings = await db.workspaceCmsSettings.findUnique({
+          where: { workspaceId },
+          select: {
+            webflowDefaultCategoryItemId: true,
+            webflowDefaultAuthorItemId: true,
+          },
+        });
+        if (!webflowCategoryItemId) {
+          webflowCategoryItemId =
+            settings?.webflowDefaultCategoryItemId ?? null;
+        }
+        if (!webflowAuthorItemId) {
+          webflowAuthorItemId = settings?.webflowDefaultAuthorItemId ?? null;
+        }
+      }
       const topic = await db.topic.create({
         data: {
           ...data,
+          webflowCategoryItemId,
+          webflowAuthorItemId,
           workspaceId,
           status: "pending",
         },

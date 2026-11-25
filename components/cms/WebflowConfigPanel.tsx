@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { WebflowReferencesSection } from "@/components/cms/WebflowReferencesSection";
 import type { PublicSettingsView } from "@/components/settings/types";
 import {
   WEBFLOW_OPTIONAL_EDITORIAL_FIELDS,
@@ -586,9 +587,13 @@ export function WebflowConfigPanel({
             </Button>
           </div>
 
+          {initial.connectionConfigured && collectionId ? (
+            <WebflowReferencesSection />
+          ) : null}
+
           <p className="text-xs text-slate-500">
-            Lecture seule : aucune création, publication ni modification de
-            collection Webflow dans cette version.
+            Les brouillons CMS sont créés en staged uniquement — aucune
+            publication automatique.
           </p>
         </div>
       ) : null}

@@ -43,6 +43,8 @@ export default async function NewArticlePage({
         angle?: string;
         notes?: string;
         preferredTitle?: string;
+        webflowCategoryItemId?: string | null;
+        webflowAuthorItemId?: string | null;
       }
     | undefined;
 
@@ -56,6 +58,8 @@ export default async function NewArticlePage({
         angle: topic.angle ?? undefined,
         notes: topic.notes ?? undefined,
         preferredTitle: preferredTitleParam || undefined,
+        webflowCategoryItemId: topic.webflowCategoryItemId,
+        webflowAuthorItemId: topic.webflowAuthorItemId,
       };
     }
   } else if (preferredTitleParam) {

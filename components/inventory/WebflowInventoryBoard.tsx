@@ -51,6 +51,12 @@ type InventoryItem = {
   excerpt: string | null;
   metaTitle: string | null;
   metaDescription: string | null;
+  categoryRef: string | null;
+  authorRef: string | null;
+  categoryName?: string | null;
+  authorName?: string | null;
+  categoryUnavailable?: boolean;
+  authorUnavailable?: boolean;
   lastUpdatedAt: string | null;
   lastPublishedAt: string | null;
   isLive: boolean;
@@ -273,6 +279,7 @@ export function WebflowInventoryBoard() {
             <thead className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs tracking-wide text-[#64748B] uppercase">
               <tr>
                 <th className="px-4 py-3 font-medium">Titre</th>
+                <th className="px-4 py-3 font-medium">Catégorie / Auteur</th>
                 <th className="px-4 py-3 font-medium">Statut</th>
                 <th className="px-4 py-3 font-medium">Publié</th>
                 <th className="px-4 py-3 font-medium">Modifié</th>
@@ -298,6 +305,22 @@ export function WebflowInventoryBoard() {
                           : ""}
                       </p>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-[#64748B]">
+                    <p>
+                      {item.categoryName
+                        ? `${item.categoryName}${item.categoryUnavailable ? " (indisponible)" : ""}`
+                        : item.categoryRef
+                          ? `${item.categoryRef.slice(0, 8)}…`
+                          : "—"}
+                    </p>
+                    <p className="mt-1">
+                      {item.authorName
+                        ? `${item.authorName}${item.authorUnavailable ? " (indisponible)" : ""}`
+                        : item.authorRef
+                          ? `${item.authorRef.slice(0, 8)}…`
+                          : "—"}
+                    </p>
                   </td>
                   <td className="px-4 py-3">
                     <InventoryStatusBadge

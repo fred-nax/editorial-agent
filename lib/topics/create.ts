@@ -28,7 +28,26 @@ export type TopicCreateData = {
   sourceName: string | null;
   sourcePublishedOn: string | null;
   sourceKind: string | null;
+  webflowCategoryItemId?: string | null;
+  webflowAuthorItemId?: string | null;
 };
+
+function optionalWebflowItemId(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new TopicCreateError("Identifiant de référence Webflow invalide.", 400);
+  }
+  const cleaned = value.replace(/\u0000/g, "").trim();
+  if (!cleaned) {
+    return null;
+  }
+  if (cleaned.length < 8 || cleaned.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(cleaned)) {
+    throw new TopicCreateError("Identifiant de référence Webflow invalide.", 400);
+  }
+  return cleaned;
+}
 
 export type StoredTopic = TopicCreateData & {
   id: string;
@@ -155,6 +174,8 @@ export function parseTopicCreate(value: unknown): TopicCreateData {
       : null,
     sourcePublishedOn: fromWatch ? calendarDate(body.sourcePublishedOn) : null,
     sourceKind,
+    webflowCategoryItemId: optionalWebflowItemId(body.webflowCategoryItemId),
+    webflowAuthorItemId: optionalWebflowItemId(body.webflowAuthorItemId),
   };
 }
 

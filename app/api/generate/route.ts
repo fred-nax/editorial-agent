@@ -131,9 +131,24 @@ export async function POST(request: Request) {
 
       subject = topic.subject;
       resolvedTopicId = topic.id;
-      // Depuis la file : réutiliser angle/notes du sujet si le client n'envoie rien.
+      // Depuis la file : réutiliser angle/notes/refs du sujet si le client n'envoie rien.
       if (!editorialContext) {
         editorialContext = editorialContextFromTopic(topic);
+      } else if (
+        !editorialContext.webflowCategoryItemId &&
+        !editorialContext.webflowAuthorItemId
+      ) {
+        editorialContext = {
+          ...editorialContext,
+          webflowCategoryItemId:
+            topic.webflowCategoryItemId ??
+            editorialContext.webflowCategoryItemId ??
+            null,
+          webflowAuthorItemId:
+            topic.webflowAuthorItemId ??
+            editorialContext.webflowAuthorItemId ??
+            null,
+        };
       }
     } else {
       subject = parseSubject(body.subject);

@@ -238,6 +238,8 @@ export async function processArticleGeneration(
           generationMessage === subject ? undefined : generationMessage,
         cmsDestination: generation.cmsDestination ?? "wordpress",
         workspaceId,
+        webflowCategoryItemId: storedEditorial?.webflowCategoryItemId ?? null,
+        webflowAuthorItemId: storedEditorial?.webflowAuthorItemId ?? null,
         onProgress: async (progress) => {
           await updateGenerationProgress(id, progress.stage, progress.message);
         },

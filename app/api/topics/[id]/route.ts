@@ -82,6 +82,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       category?: string | null;
       angle?: string | null;
       status?: "archived";
+      webflowCategoryItemId?: string | null;
+      webflowAuthorItemId?: string | null;
     } = {};
 
     if (body.status !== undefined) {
@@ -105,7 +107,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       body.priority !== undefined ||
       body.notes !== undefined ||
       body.category !== undefined ||
-      body.angle !== undefined;
+      body.angle !== undefined ||
+      body.webflowCategoryItemId !== undefined ||
+      body.webflowAuthorItemId !== undefined;
 
     if (wantsFieldUpdate && existing.status !== "pending") {
       return NextResponse.json(
@@ -159,6 +163,40 @@ export async function PATCH(request: Request, context: RouteContext) {
     const angle = parseOptionalText(body.angle, "angle", 240);
     if (angle !== undefined) {
       data.angle = angle;
+    }
+
+    if (body.webflowCategoryItemId !== undefined) {
+      if (
+        body.webflowCategoryItemId !== null &&
+        typeof body.webflowCategoryItemId !== "string"
+      ) {
+        return NextResponse.json(
+          { error: "Identifiant de catégorie Webflow invalide." },
+          { status: 400 }
+        );
+      }
+      const raw =
+        typeof body.webflowCategoryItemId === "string"
+          ? body.webflowCategoryItemId.trim()
+          : null;
+      data.webflowCategoryItemId = raw || null;
+    }
+
+    if (body.webflowAuthorItemId !== undefined) {
+      if (
+        body.webflowAuthorItemId !== null &&
+        typeof body.webflowAuthorItemId !== "string"
+      ) {
+        return NextResponse.json(
+          { error: "Identifiant d’auteur Webflow invalide." },
+          { status: 400 }
+        );
+      }
+      const raw =
+        typeof body.webflowAuthorItemId === "string"
+          ? body.webflowAuthorItemId.trim()
+          : null;
+      data.webflowAuthorItemId = raw || null;
     }
 
     if (Object.keys(data).length === 0) {

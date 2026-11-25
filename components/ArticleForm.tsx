@@ -14,6 +14,10 @@ import { EditorialRapprochementPanel } from "@/components/EditorialRapprochement
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
 import {
+  WebflowRefsFields,
+  type WebflowRefsSelection,
+} from "@/components/cms/WebflowRefsFields";
+import {
   ActiveWorkspaceIndicator,
   useWorkspaceOptional,
   type WorkspaceView,
@@ -128,6 +132,8 @@ export type ArticleFormInitial = {
   angle?: string;
   notes?: string;
   preferredTitle?: string;
+  webflowCategoryItemId?: string | null;
+  webflowAuthorItemId?: string | null;
 };
 
 function resolveDefaultLanguage(code: string | null | undefined): string {
@@ -172,6 +178,10 @@ export function ArticleForm({
   const [objectiveCustom, setObjectiveCustom] = useState("");
   const [seoKeywords, setSeoKeywords] = useState("");
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [webflowRefs, setWebflowRefs] = useState<WebflowRefsSelection>({
+    categoryItemId: initial?.webflowCategoryItemId?.trim() ?? "",
+    authorItemId: initial?.webflowAuthorItemId?.trim() ?? "",
+  });
   const [generateFeaturedImage, setGenerateFeaturedImage] = useState(false);
   const [featuredStyle, setFeaturedStyle] = useState("photographic");
   const [featuredAspect, setFeaturedAspect] = useState("3:2");
@@ -492,6 +502,14 @@ export function ArticleForm({
     if (titlePreference) {
       payloadBody.preferredTitle = titlePreference;
     }
+    if (cmsDestination === "webflow") {
+      if (webflowRefs.categoryItemId) {
+        payloadBody.webflowCategoryItemId = webflowRefs.categoryItemId;
+      }
+      if (webflowRefs.authorItemId) {
+        payloadBody.webflowAuthorItemId = webflowRefs.authorItemId;
+      }
+    }
     if (wantFeatured) {
       payloadBody.featuredImage = {
         enabled: true,
@@ -510,6 +528,12 @@ export function ArticleForm({
             subject: value,
             angle: angle.trim() || null,
             notes: notes.trim() || null,
+            ...(cmsDestination === "webflow"
+              ? {
+                  webflowCategoryItemId: webflowRefs.categoryItemId || null,
+                  webflowAuthorItemId: webflowRefs.authorItemId || null,
+                }
+              : {}),
           }),
         });
         const syncPayload = (await syncResponse.json()) as { error?: string };
@@ -799,6 +823,16 @@ export function ArticleForm({
           </Dialog>
         </div>
       )}
+
+      {cmsDestination === "webflow" && isFull ? (
+        <WebflowRefsFields
+          value={webflowRefs}
+          onChange={setWebflowRefs}
+          initialCategoryItemId={initial?.webflowCategoryItemId}
+          initialAuthorItemId={initial?.webflowAuthorItemId}
+          disabled={busy}
+        />
+      ) : null}
 
       <div className="space-y-2">
         <Label htmlFor={`${formId}-angle`} className="text-[#0F172A]">

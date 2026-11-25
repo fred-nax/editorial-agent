@@ -25,6 +25,9 @@ export type WorkspaceCmsSettingsRow = {
   webflowSiteId: string | null;
   webflowCollectionId: string | null;
   webflowFieldMappingJson: string | null;
+  webflowDefaultCategoryItemId: string | null;
+  webflowDefaultAuthorItemId: string | null;
+  webflowReferencesSyncedAt: Date | null;
   defaultLanguage: string | null;
 };
 
@@ -165,6 +168,9 @@ export async function loadWorkspaceCmsSettings(
       webflowSiteId: null,
       webflowCollectionId: null,
       webflowFieldMappingJson: null,
+      webflowDefaultCategoryItemId: null,
+      webflowDefaultAuthorItemId: null,
+      webflowReferencesSyncedAt: null,
       defaultLanguage: row?.defaultLanguage ?? workspace.defaultLanguage,
     };
   }
@@ -202,6 +208,9 @@ export async function loadWorkspaceCmsSettings(
       row?.webflowFieldMappingJson,
       allowWebflowLegacy ? legacy?.webflowFieldMappingJson : null
     ),
+    webflowDefaultCategoryItemId: row?.webflowDefaultCategoryItemId ?? null,
+    webflowDefaultAuthorItemId: row?.webflowDefaultAuthorItemId ?? null,
+    webflowReferencesSyncedAt: row?.webflowReferencesSyncedAt ?? null,
     defaultLanguage: row?.defaultLanguage ?? workspace.defaultLanguage,
   };
 }

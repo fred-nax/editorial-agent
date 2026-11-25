@@ -49,7 +49,7 @@ type ListItemsResponse = {
   }>;
 };
 
-function fieldSlugFor(
+export function fieldSlugFor(
   mapping: WebflowFieldMapping,
   editorial: keyof WebflowFieldMapping
 ): string | null {
@@ -58,14 +58,21 @@ function fieldSlugFor(
   return slug || null;
 }
 
+export type WebflowDraftReferenceIds = {
+  /** Identifiant item Webflow (champ Reference) — jamais issu du LLM. */
+  categoryItemId?: string | null;
+  authorItemId?: string | null;
+};
+
 /**
  * Construit fieldData Webflow à partir du mapping enregistré (slugs dynamiques).
  * V7.10.1 : six champs obligatoires + reading_time optionnel calculé localement.
- * Pas d’image / catégorie / auteur inventés.
+ * V7.13.1 : category / author Reference injectés côté serveur (IDs validés).
  */
 export function buildWebflowFieldData(
   input: WebflowDraftCreateInput,
-  mapping: WebflowFieldMapping
+  mapping: WebflowFieldMapping,
+  refs?: WebflowDraftReferenceIds | null
 ): Record<string, string | number> {
   assertValidWebflowDraftPayload(input);
 
@@ -95,6 +102,28 @@ export function buildWebflowFieldData(
   const readingSlug = fieldSlugFor(mapping, "reading_time");
   if (readingSlug) {
     fieldData[readingSlug] = estimateReadingTimeMinutes(input.content);
+  }
+
+  const categorySlug = fieldSlugFor(mapping, "category");
+  const categoryType = mapping.category?.fieldType?.trim() || "Reference";
+  if (categorySlug && refs?.categoryItemId?.trim()) {
+    if (categoryType === "MultiReference") {
+      throw new Error(
+        "Champ category MultiReference non pris en charge (V7.13.1)."
+      );
+    }
+    fieldData[categorySlug] = refs.categoryItemId.trim();
+  }
+
+  const authorSlug = fieldSlugFor(mapping, "author");
+  const authorType = mapping.author?.fieldType?.trim() || "Reference";
+  if (authorSlug && refs?.authorItemId?.trim()) {
+    if (authorType === "MultiReference") {
+      throw new Error(
+        "Champ author MultiReference non pris en charge (V7.13.1)."
+      );
+    }
+    fieldData[authorSlug] = refs.authorItemId.trim();
   }
 
   return fieldData;
@@ -139,6 +168,7 @@ export async function createWebflowCollectionDraft(options: {
   collectionId: string;
   mapping: WebflowFieldMapping;
   input: WebflowDraftCreateInput;
+  refs?: WebflowDraftReferenceIds | null;
   /**
    * Si true et qu’un item avec le même slug existe déjà, refuse une 2ᵉ création
    * (prévention doublons / reprises ambiguës).
@@ -150,7 +180,11 @@ export async function createWebflowCollectionDraft(options: {
     throw new Error("Collection Webflow manquante pour la création.");
   }
 
-  const fieldData = buildWebflowFieldData(options.input, options.mapping);
+  const fieldData = buildWebflowFieldData(
+    options.input,
+    options.mapping,
+    options.refs
+  );
   const slugField = fieldSlugFor(options.mapping, "slug");
   if (!slugField) {
     throw new Error("Mapping slug Webflow manquant.");

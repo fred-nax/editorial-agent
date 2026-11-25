@@ -53,6 +53,9 @@ export type EditorialContext = {
   language: LanguageCode | null;
   /** Titre éditorial souhaité (préférence V7.2, jamais une obligation absolue). */
   preferredTitle: string | null;
+  /** Références Webflow figées au lancement (item IDs Reference). */
+  webflowCategoryItemId?: string | null;
+  webflowAuthorItemId?: string | null;
 };
 
 const AUDIENCE_SET = new Set<string>(AUDIENCE_OPTIONS);
@@ -176,6 +179,8 @@ export function emptyEditorialContext(): EditorialContext {
     notes: null,
     language: null,
     preferredTitle: null,
+    webflowCategoryItemId: null,
+    webflowAuthorItemId: null,
   };
 }
 
@@ -192,7 +197,9 @@ export function hasEditorialContext(
       value.seoKeywords ||
       value.notes ||
       value.language ||
-      value.preferredTitle
+      value.preferredTitle ||
+      value.webflowCategoryItemId ||
+      value.webflowAuthorItemId
   );
 }
 
@@ -206,6 +213,23 @@ export function languageLabel(code: string | null | undefined): string | null {
 export function formatLanguagePreference(code: LanguageCode): string {
   const label = languageLabel(code) ?? code;
   return `Langue souhaitée : ${label} (${code}).`;
+}
+
+function optionalWebflowItemId(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new Error("Identifiant de référence Webflow invalide.");
+  }
+  const cleaned = value.replace(/\u0000/g, "").trim();
+  if (!cleaned) {
+    return null;
+  }
+  if (cleaned.length < 8 || cleaned.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(cleaned)) {
+    throw new Error("Identifiant de référence Webflow invalide.");
+  }
+  return cleaned;
 }
 
 export function parseEditorialContext(
@@ -229,14 +253,18 @@ export function parseEditorialContext(
     notes: cleanText(body.notes, MAX_EDITORIAL_NOTES_LENGTH),
     language: optionalLanguage(body.language),
     preferredTitle: cleanText(body.preferredTitle, MAX_PREFERRED_TITLE_LENGTH),
+    webflowCategoryItemId: optionalWebflowItemId(body.webflowCategoryItemId),
+    webflowAuthorItemId: optionalWebflowItemId(body.webflowAuthorItemId),
   };
   return hasEditorialContext(context) ? context : null;
 }
 
-/** Réutilise angle / notes d’un Topic sans confondre category et public cible. */
+/** Réutilise angle / notes / refs Webflow d’un Topic sans confondre category et public. */
 export function editorialContextFromTopic(topic: {
   angle?: string | null;
   notes?: string | null;
+  webflowCategoryItemId?: string | null;
+  webflowAuthorItemId?: string | null;
 }): EditorialContext | null {
   const context: EditorialContext = {
     angle: cleanText(topic.angle ?? null, MAX_EDITORIAL_ANGLE_LENGTH),
@@ -246,6 +274,10 @@ export function editorialContextFromTopic(topic: {
     notes: cleanText(topic.notes ?? null, MAX_EDITORIAL_NOTES_LENGTH),
     language: null,
     preferredTitle: null,
+    webflowCategoryItemId: optionalWebflowItemId(
+      topic.webflowCategoryItemId ?? null
+    ),
+    webflowAuthorItemId: optionalWebflowItemId(topic.webflowAuthorItemId ?? null),
   };
   return hasEditorialContext(context) ? context : null;
 }
@@ -265,6 +297,8 @@ export function parseStoredEditorialContext(
       seoKeywords: record.seoKeywords,
       notes: record.notes,
       language: record.language,
+      webflowCategoryItemId: record.webflowCategoryItemId,
+      webflowAuthorItemId: record.webflowAuthorItemId,
       preferredTitle: record.preferredTitle,
     });
   } catch {
@@ -356,6 +390,18 @@ export function editorialContextLines(
   }
   if (context.notes) {
     lines.push({ label: "Consignes complémentaires", value: context.notes });
+  }
+  if (context.webflowCategoryItemId) {
+    lines.push({
+      label: "Catégorie Webflow",
+      value: context.webflowCategoryItemId,
+    });
+  }
+  if (context.webflowAuthorItemId) {
+    lines.push({
+      label: "Auteur Webflow",
+      value: context.webflowAuthorItemId,
+    });
   }
   return lines;
 }

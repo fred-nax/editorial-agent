@@ -83,6 +83,9 @@ export type RunAgentSessionOptions = {
    * Jamais lu depuis le cookie UI.
    */
   workspaceId?: string;
+  /** Références Webflow figées au lancement (validées serveur avant OpenAI). */
+  webflowCategoryItemId?: string | null;
+  webflowAuthorItemId?: string | null;
 };
 
 export type RunAgentSessionCmsResult = {
@@ -412,12 +415,84 @@ export async function runAgentSession(
   const editorialAgent =
     await resolveEditorialAgentForDestination(cmsDestination);
 
+  let webflowCategoryItemId: string | null = null;
+  let webflowAuthorItemId: string | null = null;
+
   if (cmsDestination === "webflow") {
     const readiness = await getWebflowGenerationReadiness();
     if (!readiness.ok) {
       throw new Error(
         `Webflow non prêt pour la génération : ${readiness.reasons.join(" ")}`
       );
+    }
+
+    // Validation des références CMS avant tout appel OpenAI payant.
+    if (options.workspaceId) {
+      const { resolveWebflowConfig } = await import(
+        "@/lib/settings/app-settings"
+      );
+      const { resolveWebflowRefsWithDefaults } = await import(
+        "@/lib/webflow/references-validate"
+      );
+      const { loadWorkspaceCmsSettings, getWorkspaceByIdOrSlug } = await import(
+        "@/lib/workspace"
+      );
+      const { createWebflowClient } = await import("@/lib/webflow/client");
+      const { discoverWebflowReferenceTargets } = await import(
+        "@/lib/webflow/references-discover"
+      );
+      const config = await resolveWebflowConfig();
+      const workspace = await getWorkspaceByIdOrSlug(options.workspaceId);
+      const settings = workspace
+        ? await loadWorkspaceCmsSettings(workspace)
+        : null;
+      let categoryRequired = false;
+      let authorRequired = false;
+      if (config?.apiToken && config.siteId && config.collectionId) {
+        try {
+          const client = createWebflowClient({ apiToken: config.apiToken });
+          const discovery = await discoverWebflowReferenceTargets({
+            client,
+            siteId: config.siteId,
+            blogCollectionId: config.collectionId,
+            mapping: config.fieldMapping ?? {},
+          });
+          categoryRequired = Boolean(
+            discovery.targets.find((t) => t.kind === "category")?.isRequired
+          );
+          authorRequired = Boolean(
+            discovery.targets.find((t) => t.kind === "author")?.isRequired
+          );
+        } catch {
+          // Découverte échouée : validation des IDs sélectionnés reste stricte.
+        }
+      }
+      try {
+        const validated = await resolveWebflowRefsWithDefaults({
+          workspaceId: options.workspaceId,
+          mapping: config?.fieldMapping ?? {},
+          categoryItemId: options.webflowCategoryItemId,
+          authorItemId: options.webflowAuthorItemId,
+          defaultCategoryItemId: settings?.webflowDefaultCategoryItemId,
+          defaultAuthorItemId: settings?.webflowDefaultAuthorItemId,
+          categoryRequired,
+          authorRequired,
+        });
+        webflowCategoryItemId = validated.categoryItemId;
+        webflowAuthorItemId = validated.authorItemId;
+        if (validated.categoryName) {
+          log(onLog, `Catégorie Webflow : ${validated.categoryName}`);
+        }
+        if (validated.authorName) {
+          log(onLog, `Auteur Webflow : ${validated.authorName}`);
+        }
+      } catch (error) {
+        throw new Error(
+          error instanceof Error
+            ? error.message
+            : "Références Webflow invalides."
+        );
+      }
     }
   }
 
@@ -956,7 +1031,11 @@ export async function runAgentSession(
             log(onLog, `Meta title : ${args.meta_title}`);
             log(onLog, `Meta description : ${args.meta_description}`);
 
-            const cmsResult = await getCmsConnector("webflow").createDraft(args);
+            const cmsResult = await getCmsConnector("webflow").createDraft({
+              ...args,
+              webflowCategoryItemId,
+              webflowAuthorItemId,
+            });
             if (!cmsResult.webflow) {
               throw new Error("Réponse CMS Webflow incomplète.");
             }

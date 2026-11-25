@@ -45,6 +45,8 @@ describe("indications éditoriales", () => {
       seoKeywords: "agent IA, PME",
       notes: "Évoquer les coûts.",
       preferredTitle: null,
+      webflowCategoryItemId: null,
+      webflowAuthorItemId: null,
     });
     assert.equal(hasEditorialContext(context), true);
   });
@@ -174,6 +176,8 @@ describe("indications éditoriales", () => {
       notes: "Notes file",
       language: null,
       preferredTitle: null,
+      webflowCategoryItemId: null,
+      webflowAuthorItemId: null,
     });
   });
 
@@ -196,6 +200,8 @@ describe("indications éditoriales", () => {
         notes: null,
         language: null,
         preferredTitle: null,
+        webflowCategoryItemId: null,
+        webflowAuthorItemId: null,
       }
     );
     assert.deepEqual(
@@ -215,6 +221,8 @@ describe("indications éditoriales", () => {
         notes: null,
         language: "es",
         preferredTitle: null,
+        webflowCategoryItemId: null,
+        webflowAuthorItemId: null,
       }
     );
   });

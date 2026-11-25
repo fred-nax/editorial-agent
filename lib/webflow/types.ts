@@ -84,6 +84,8 @@ export type WebflowCollectionField = {
   type: string;
   isRequired: boolean;
   isEditable: boolean;
+  /** Collection cible d’un champ Reference (issu de validations API). */
+  referencedCollectionId?: string | null;
 };
 
 export type WebflowCollectionDetails = WebflowCollectionSummary & {

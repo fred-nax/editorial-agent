@@ -165,7 +165,7 @@ describe("historique détail UX", () => {
     assert.match(usage, /Tokens totaux/);
     assert.match(usage, /Modèle/);
     assert.match(usage, /Durée de génération/);
-    assert.match(usage, /Hors éventuels frais liés aux outils/);
+    assert.match(usage, /Estimation LLM|Coût LLM inconnu/);
     assert.match(usage, /grid-cols-2/);
     assert.match(copy, /navigator\.clipboard\.writeText/);
     assert.doesNotMatch(`${usage}\n${copy}`, /fetch\(|openai|createWordPressDraft/);
