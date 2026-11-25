@@ -84,6 +84,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }
 
+  if (validated.value.customThemeId) {
+    const theme = await db.customTheme.findFirst({
+      where: {
+        id: validated.value.customThemeId,
+        ...workspaceWhere(workspaceId),
+      },
+      select: { id: true },
+    });
+    if (!theme) {
+      return NextResponse.json(
+        { error: "Thématique introuvable." },
+        { status: 404 }
+      );
+    }
+  }
+
   const config = await db.researchConfig.create({
     data: {
       workspaceId,

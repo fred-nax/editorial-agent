@@ -16,6 +16,11 @@ import {
   isRapprochementKind,
   type EditorialMatch,
 } from "@/lib/topics/editorial-similarity-types";
+import {
+  assertWordPressOnlyModule,
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,10 +32,25 @@ function unauthorized() {
 /**
  * Analyse IA facultative : déclenchée explicitement par l’utilisateur.
  * Réutilise d’abord le rapprochement local, puis affine les candidats.
+ * Inventaire WordPress uniquement — pas de compensation depuis un autre espace.
  */
 export async function POST(request: Request) {
   if (!(await requireAuth())) {
     return unauthorized();
+  }
+
+  let workspace;
+  try {
+    workspace = await resolveActiveWorkspace();
+    assertWordPressOnlyModule(workspace.cmsProvider);
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
 
   let payload: unknown;
@@ -55,6 +75,7 @@ export async function POST(request: Request) {
     const local = await checkEditorialRapprochement({
       subject: parsed.subject,
       angle: parsed.angle,
+      workspaceId: workspace.id,
     });
 
     let candidates = local.matches;

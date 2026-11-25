@@ -368,6 +368,32 @@ export async function POST(request: Request) {
   }
 
   const config = validated.value;
+
+  if (config.configId) {
+    const ownedConfig = await db.researchConfig.findFirst({
+      where: { id: config.configId, ...workspaceWhere(workspaceId) },
+      select: { id: true },
+    });
+    if (!ownedConfig) {
+      return NextResponse.json(
+        { error: "Configuration de recherche introuvable." },
+        { status: 404 }
+      );
+    }
+  }
+  if (config.customThemeId) {
+    const ownedTheme = await db.customTheme.findFirst({
+      where: { id: config.customThemeId, ...workspaceWhere(workspaceId) },
+      select: { id: true },
+    });
+    if (!ownedTheme) {
+      return NextResponse.json(
+        { error: "Thématique introuvable." },
+        { status: 404 }
+      );
+    }
+  }
+
   const snapshot = JSON.parse(
     JSON.stringify(snapshotFromValidated(config))
   ) as Prisma.InputJsonValue;

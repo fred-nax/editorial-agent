@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { logInfo } from "@/lib/logger";
+import { assertWorkspaceId, workspaceWhere } from "@/lib/workspace";
 
 export type SeoResetPreview = {
   opportunityCount: number;
@@ -25,21 +26,32 @@ export type SeoResetResult = {
 type CountClient = {
   seoOpportunity: {
     count: (args?: {
-      where?: { topicId?: { not: null } };
+      where?: {
+        workspaceId?: string;
+        topicId?: { not: null };
+      };
     }) => Promise<number>;
   };
   opportunitySearchRun: {
-    count: (args?: { where?: { status?: string } }) => Promise<number>;
+    count: (args?: {
+      where?: { workspaceId?: string; status?: string };
+    }) => Promise<number>;
   };
 };
 
 type ResetTx = {
   opportunitySearchRun: {
-    count: (args: { where: { status: string } }) => Promise<number>;
-    deleteMany: (args?: Record<string, never>) => Promise<{ count: number }>;
+    count: (args: {
+      where: { workspaceId: string; status: string };
+    }) => Promise<number>;
+    deleteMany: (args: {
+      where: { workspaceId: string };
+    }) => Promise<{ count: number }>;
   };
   seoOpportunity: {
-    deleteMany: (args?: Record<string, never>) => Promise<{ count: number }>;
+    deleteMany: (args: {
+      where: { workspaceId: string };
+    }) => Promise<{ count: number }>;
   };
 };
 
@@ -55,19 +67,25 @@ export function blockReasonIfRunning(runningSearchCount: number): string | null 
 }
 
 /**
- * Aperçu avant réinitialisation.
+ * Aperçu avant réinitialisation (scopé à un espace éditorial).
  * Ne lit que SeoOpportunity + OpportunitySearchRun.
  */
 export async function previewSeoSearchReset(
+  workspaceId: string,
   client: CountClient = db as unknown as CountClient
 ): Promise<SeoResetPreview> {
+  const scopedId = assertWorkspaceId(workspaceId);
+  const scope = workspaceWhere(scopedId);
+
   const [opportunityCount, searchRunCount, runningSearchCount, linkedTopicRefs] =
     await Promise.all([
-      client.seoOpportunity.count(),
-      client.opportunitySearchRun.count(),
-      client.opportunitySearchRun.count({ where: { status: "running" } }),
+      client.seoOpportunity.count({ where: scope }),
+      client.opportunitySearchRun.count({ where: scope }),
+      client.opportunitySearchRun.count({
+        where: { ...scope, status: "running" },
+      }),
       client.seoOpportunity.count({
-        where: { topicId: { not: null } },
+        where: { ...scope, topicId: { not: null } },
       }),
     ]);
 
@@ -83,15 +101,19 @@ export async function previewSeoSearchReset(
 }
 
 /**
- * Supprime uniquement les opportunités SEO et les runs de recherche.
+ * Supprime uniquement les opportunités SEO et les runs de recherche de l’espace.
  * Transaction sécurisée — aucune cascade vers Topic, ResearchConfig, CustomTheme, WordPress.
  */
 export async function resetSeoSearches(
+  workspaceId: string,
   client: ResetClient = db as unknown as ResetClient
 ): Promise<SeoResetResult> {
+  const scopedId = assertWorkspaceId(workspaceId);
+  const scope = workspaceWhere(scopedId);
+
   const result = await client.$transaction(async (tx) => {
     const running = await tx.opportunitySearchRun.count({
-      where: { status: "running" },
+      where: { ...scope, status: "running" },
     });
     const blocked = blockReasonIfRunning(running);
     if (blocked) {
@@ -102,8 +124,12 @@ export async function resetSeoSearches(
 
     // Pas de FK Prisma entre SeoOpportunity.searchRunId et OpportunitySearchRun :
     // on efface d’abord les opportunités, puis les runs.
-    const deletedOpportunities = await tx.seoOpportunity.deleteMany({});
-    const deletedSearchRuns = await tx.opportunitySearchRun.deleteMany({});
+    const deletedOpportunities = await tx.seoOpportunity.deleteMany({
+      where: scope,
+    });
+    const deletedSearchRuns = await tx.opportunitySearchRun.deleteMany({
+      where: scope,
+    });
 
     return {
       deletedOpportunities: deletedOpportunities.count,
@@ -112,6 +138,7 @@ export async function resetSeoSearches(
   });
 
   logInfo("seo-reset", "seo searches reset", {
+    workspaceId: scopedId,
     deletedOpportunities: result.deletedOpportunities,
     deletedSearchRuns: result.deletedSearchRuns,
   });

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { deleteGoogleConnection } from "@/lib/google/connection";
 import { revokeGoogleToken } from "@/lib/google/oauth";
+import { requireWordPressGoogleWorkspace } from "@/lib/google/workspace-guard";
 import { requireAuth } from "@/lib/require-auth";
+import { WorkspaceContextError } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -9,6 +11,18 @@ export async function POST() {
   const session = await requireAuth();
   if (!session) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+  }
+
+  try {
+    await requireWordPressGoogleWorkspace();
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
 
   const { accessToken, refreshToken } = await deleteGoogleConnection();

@@ -7,7 +7,9 @@ import {
   resetSeoSearches,
 } from "../lib/seo/reset-searches";
 
-describe("V7.5 — réinitialisation recherches SEO", () => {
+const WS = "ws_wordpress_naxialis";
+
+describe("V7.5 / V7.11.3 — réinitialisation recherches SEO", () => {
   it("refuse lorsqu’une recherche est en cours", () => {
     assert.match(
       blockReasonIfRunning(1) ?? "",
@@ -16,10 +18,14 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
     assert.equal(blockReasonIfRunning(0), null);
   });
 
-  it("prévisualise les volumes et bloque si running", async () => {
+  it("prévisualise les volumes scopés et bloque si running", async () => {
+    const seen: unknown[] = [];
     const client = {
       seoOpportunity: {
-        async count(args?: { where?: { topicId?: { not: null } } }) {
+        async count(args?: {
+          where?: { workspaceId?: string; topicId?: { not: null } };
+        }) {
+          seen.push(args?.where);
           if (args?.where?.topicId) {
             return 2;
           }
@@ -27,7 +33,10 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
         },
       },
       opportunitySearchRun: {
-        async count(args?: { where?: { status?: string } }) {
+        async count(args?: {
+          where?: { workspaceId?: string; status?: string };
+        }) {
+          seen.push(args?.where);
           if (args?.where?.status === "running") {
             return 1;
           }
@@ -36,40 +45,50 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
       },
     };
 
-    const preview = await previewSeoSearchReset(client);
+    const preview = await previewSeoSearchReset(WS, client);
     assert.equal(preview.opportunityCount, 12);
     assert.equal(preview.searchRunCount, 4);
     assert.equal(preview.runningSearchCount, 1);
     assert.equal(preview.linkedTopicRefs, 2);
     assert.equal(preview.canReset, false);
     assert.match(preview.blockReason ?? "", /encore en cours/i);
+    assert.ok(seen.every((where) => (where as { workspaceId: string }).workspaceId === WS));
   });
 
-  it("supprime opportunités puis runs dans une transaction", async () => {
+  it("supprime opportunités puis runs dans une transaction scopée", async () => {
     const calls: string[] = [];
     const client = {
       async $transaction<T>(fn: (tx: {
         opportunitySearchRun: {
-          count: (args: { where: { status: string } }) => Promise<number>;
-          deleteMany: () => Promise<{ count: number }>;
+          count: (args: {
+            where: { workspaceId: string; status: string };
+          }) => Promise<number>;
+          deleteMany: (args: {
+            where: { workspaceId: string };
+          }) => Promise<{ count: number }>;
         };
         seoOpportunity: {
-          deleteMany: () => Promise<{ count: number }>;
+          deleteMany: (args: {
+            where: { workspaceId: string };
+          }) => Promise<{ count: number }>;
         };
       }) => Promise<T>) {
         return fn({
           opportunitySearchRun: {
-            async count() {
+            async count(args) {
+              assert.equal(args.where.workspaceId, WS);
               calls.push("count-running");
               return 0;
             },
-            async deleteMany() {
+            async deleteMany(args) {
+              assert.equal(args.where.workspaceId, WS);
               calls.push("delete-runs");
               return { count: 3 };
             },
           },
           seoOpportunity: {
-            async deleteMany() {
+            async deleteMany(args) {
+              assert.equal(args.where.workspaceId, WS);
               calls.push("delete-opportunities");
               return { count: 11 };
             },
@@ -78,7 +97,7 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
       },
     };
 
-    const result = await resetSeoSearches(client);
+    const result = await resetSeoSearches(WS, client);
     assert.deepEqual(calls, [
       "count-running",
       "delete-opportunities",
@@ -96,11 +115,17 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
     const client = {
       async $transaction<T>(fn: (tx: {
         opportunitySearchRun: {
-          count: (args: { where: { status: string } }) => Promise<number>;
-          deleteMany: () => Promise<{ count: number }>;
+          count: (args: {
+            where: { workspaceId: string; status: string };
+          }) => Promise<number>;
+          deleteMany: (args: {
+            where: { workspaceId: string };
+          }) => Promise<{ count: number }>;
         };
         seoOpportunity: {
-          deleteMany: () => Promise<{ count: number }>;
+          deleteMany: (args: {
+            where: { workspaceId: string };
+          }) => Promise<{ count: number }>;
         };
       }) => Promise<T>) {
         return fn({
@@ -122,12 +147,17 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
     };
 
     await assert.rejects(
-      () => resetSeoSearches(client),
+      () => resetSeoSearches(WS, client),
       /Réinitialisation refusée|encore en cours/i
     );
   });
 
-  it("API reset authentifiée, confirm obligatoire, hors Topic/WP", async () => {
+  it("refuse un workspaceId vide", async () => {
+    await assert.rejects(() => previewSeoSearchReset(""), /workspaceId/);
+    await assert.rejects(() => resetSeoSearches("   "), /workspaceId/);
+  });
+
+  it("API reset authentifiée, scopée workspace, confirm obligatoire", async () => {
     const route = await readFile(
       "app/api/opportunities/reset/route.ts",
       "utf8"
@@ -141,13 +171,15 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
     const schema = await readFile("prisma/schema.prisma", "utf8");
 
     assert.match(route, /requireAuth/);
+    assert.match(route, /resolveActiveWorkspace/);
+    assert.match(route, /assertModuleAllowedForWorkspace/);
+    assert.match(route, /previewSeoSearchReset\(workspace\.id\)/);
+    assert.match(route, /resetSeoSearches\(workspace\.id\)/);
     assert.match(route, /confirm === true/);
-    assert.match(route, /previewSeoSearchReset/);
-    assert.match(route, /resetSeoSearches/);
     assert.match(lib, /\$transaction/);
-    assert.match(lib, /seoOpportunity\.deleteMany/);
-    assert.match(lib, /opportunitySearchRun\.deleteMany/);
-    assert.match(lib, /logInfo/);
+    assert.match(lib, /workspaceWhere/);
+    assert.match(lib, /deleteMany\(\{\s*where: scope/);
+    assert.doesNotMatch(lib, /deleteMany\(\{\}\)/);
     assert.doesNotMatch(lib, /topic\.delete/i);
     assert.doesNotMatch(lib, /researchConfig\.delete/i);
     assert.doesNotMatch(lib, /customTheme\.delete/i);
@@ -159,7 +191,6 @@ describe("V7.5 — réinitialisation recherches SEO", () => {
     assert.match(ui, /searchRunCount/);
     assert.match(board, /SeoResetMenu/);
 
-    // Contrats schéma : références souples, pas de cascade Topic
     assert.match(schema, /topicId\s+String\?/);
     assert.match(schema, /searchRunId\s+String\?/);
     assert.doesNotMatch(

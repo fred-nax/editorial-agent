@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireWordPressGoogleWorkspace } from "@/lib/google/workspace-guard";
 import {
   enqueueGoogleSync,
   getGoogleSyncStatus,
@@ -8,6 +9,7 @@ import {
   type GoogleSyncMode,
 } from "@/lib/google/sync";
 import { requireAuth } from "@/lib/require-auth";
+import { WorkspaceContextError } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -16,6 +18,17 @@ export async function GET() {
   const session = await requireAuth();
   if (!session) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+  }
+  try {
+    await requireWordPressGoogleWorkspace();
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
   await recoverStaleGoogleSyncs();
   const status = await getGoogleSyncStatus();
@@ -26,6 +39,18 @@ export async function POST(request: Request) {
   const session = await requireAuth();
   if (!session) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+  }
+
+  try {
+    await requireWordPressGoogleWorkspace();
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
 
   await recoverStaleGoogleSyncs();

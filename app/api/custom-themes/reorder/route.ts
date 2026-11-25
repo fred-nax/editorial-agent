@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/require-auth";
 import { reorderThemes } from "@/lib/seo/theme-catalog";
+import {
+  resolveActiveWorkspace,
+  WorkspaceContextError,
+} from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +16,19 @@ function unauthorized() {
 export async function POST(request: Request) {
   if (!(await requireAuth())) {
     return unauthorized();
+  }
+
+  let workspaceId: string;
+  try {
+    workspaceId = (await resolveActiveWorkspace()).id;
+  } catch (error) {
+    if (error instanceof WorkspaceContextError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status }
+      );
+    }
+    throw error;
   }
 
   let body: { orderedIds?: unknown };
@@ -33,7 +50,7 @@ export async function POST(request: Request) {
   );
 
   try {
-    const themes = await reorderThemes(orderedIds);
+    const themes = await reorderThemes(orderedIds, workspaceId);
     return NextResponse.json({ themes });
   } catch (error) {
     return NextResponse.json(
