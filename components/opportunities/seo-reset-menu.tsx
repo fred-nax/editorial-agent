@@ -212,7 +212,7 @@ export function SeoResetMenu({
               ) : null}
               <p className="text-slate-600">
                 Conservés : configurations de recherche, thématiques, inventaire
-                WordPress, file éditoriale, articles et médias.
+                CMS, file éditoriale, articles et médias.
               </p>
               {!preview.canReset && preview.blockReason ? (
                 <p className="font-medium text-amber-800">{preview.blockReason}</p>

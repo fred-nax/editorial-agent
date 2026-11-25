@@ -321,25 +321,35 @@ export function OpportunityDetailPanel({
             {similarPosts.length > 0 ? (
               <div>
                 <p className="text-xs font-medium text-slate-600">
-                  Articles WP similaires
+                  Contenus CMS / opportunités proches
                 </p>
                 <ul className="mt-1.5 space-y-1.5 text-sm text-slate-700">
-                  {similarPosts.map((post) => (
-                    <li key={post.wpPostId}>
-                      <a
-                        href={post.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="underline break-words"
-                      >
-                        {post.title}
-                      </a>
-                      <span className="text-slate-500">
-                        {" "}
-                        · {Math.round(post.score * 100)} % — {post.reason}
-                      </span>
-                    </li>
-                  ))}
+                  {similarPosts.map((post) => {
+                    const key =
+                      post.cmsExternalId ??
+                      (post.wpPostId != null ? String(post.wpPostId) : post.title);
+                    const hasUrl = /^https?:\/\//i.test(post.url ?? "");
+                    return (
+                      <li key={key}>
+                        {hasUrl ? (
+                          <a
+                            href={post.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline break-words"
+                          >
+                            {post.title}
+                          </a>
+                        ) : (
+                          <span className="break-words">{post.title}</span>
+                        )}
+                        <span className="text-slate-500">
+                          {" "}
+                          · {Math.round(post.score * 100)} % — {post.reason}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : null}

@@ -38,8 +38,13 @@ export type RawOpportunityCandidate = {
 };
 
 export type SimilarPostMatch = {
-  wpPostId: number;
+  /** Présent pour les articles WordPress historiques ; null pour Webflow / opportunités. */
+  wpPostId: number | null;
+  /** Identifiant CMS ou `opportunity:{id}` pour une opportunité déjà enregistrée. */
+  cmsExternalId?: string;
+  cmsProvider?: "wordpress" | "webflow";
   title: string;
+  /** URL publique si connue ; chaîne vide sinon (jamais inventée). */
   url: string;
   slug: string;
   score: number;

@@ -9,6 +9,7 @@ import {
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
 import { defaultDomainQuotas } from "@/lib/seo/domains";
+import { countWorkspaceInventoryForOpportunities } from "@/lib/seo/duplicates";
 import { enqueueOpportunitySearch } from "@/lib/seo/opportunity-search";
 import {
   snapshotFromValidated,
@@ -144,7 +145,7 @@ export async function GET(request: Request) {
       total,
       lastSearch,
       runningSearch,
-      inventoryCount,
+      inventory,
       recentRuns,
       customThemes,
       savedConfigs,
@@ -161,7 +162,7 @@ export async function GET(request: Request) {
         where: { ...workspaceWhere(workspaceId), status: "running" },
         orderBy: { startedAt: "desc" },
       }),
-      db.wordPressPost.count({ where: workspaceWhere(workspaceId) }),
+      countWorkspaceInventoryForOpportunities(workspaceId),
       db.opportunitySearchRun.findMany({
         where: workspaceWhere(workspaceId),
         orderBy: { startedAt: "desc" },
@@ -182,6 +183,7 @@ export async function GET(request: Request) {
         where: { ...workspaceWhere(workspaceId), status: "new" },
       }),
     ]);
+    const inventoryCount = inventory.count;
 
     const pageCount = Math.max(1, Math.ceil(total / pageSize) || 1);
     if (page > pageCount) {
@@ -206,6 +208,13 @@ export async function GET(request: Request) {
       lastSearch,
       runningSearch,
       inventoryCount,
+      cmsProvider: workspace.cmsProvider,
+      defaultLanguage: workspace.defaultLanguage,
+      googleDataAvailable: false,
+      inventorySourceNote:
+        workspace.cmsProvider === "webflow"
+          ? "Inventaire Webflow local (brouillons et publiés). Aucune donnée Google Search Console ni inventaire WordPress."
+          : "Inventaire WordPress local. Les idées ne viennent pas de Google Search Console.",
       recentRuns,
       customThemes,
       savedConfigs,
@@ -277,17 +286,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const inventoryCount = await db.wordPressPost.count({
-    where: workspaceWhere(workspaceId),
-  });
-  if (inventoryCount === 0) {
-    return NextResponse.json(
-      {
-        error:
-          "Inventaire WordPress vide. Synchronisez WordPress avant de rechercher.",
-      },
-      { status: 400 }
-    );
+  const inventory = await countWorkspaceInventoryForOpportunities(workspaceId);
+  if (inventory.count === 0) {
+    const emptyMessage =
+      inventory.cmsProvider === "webflow"
+        ? "Inventaire Webflow vide. Synchronisez la collection CMS de cet espace avant de rechercher."
+        : "Inventaire WordPress vide. Synchronisez WordPress avant de rechercher.";
+    return NextResponse.json({ error: emptyMessage }, { status: 400 });
   }
 
   let body: Record<string, unknown> = {};

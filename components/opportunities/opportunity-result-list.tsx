@@ -146,7 +146,7 @@ export function OpportunityResultList({
                   ) : null}
                   {duplicate ? (
                     <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-800">
-                      Risque WP : {item.duplicateRisk}
+                      Risque doublon : {item.duplicateRisk}
                     </span>
                   ) : null}
                 </div>

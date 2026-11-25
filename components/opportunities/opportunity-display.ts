@@ -5,7 +5,9 @@ export type OpportunitySource = {
 };
 
 export type SimilarPost = {
-  wpPostId: number;
+  wpPostId: number | null;
+  cmsExternalId?: string;
+  cmsProvider?: "wordpress" | "webflow";
   title: string;
   url: string;
   slug: string;

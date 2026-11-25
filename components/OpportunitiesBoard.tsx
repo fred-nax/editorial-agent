@@ -18,6 +18,7 @@ import {
   type ManagedTheme,
 } from "@/components/opportunities/theme-manager-dialog";
 import { WordPressSyncMenu } from "@/components/opportunities/wordpress-sync-menu";
+import { useWorkspaceOptional } from "@/components/workspace";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -32,6 +33,7 @@ import {
   type ResearchConfiguration,
   type ResearchGoal,
 } from "@/lib/seo/research-config";
+import { toPublicOpportunitySearchError } from "@/lib/seo/public-error";
 
 type SyncRun = {
   id: string;
@@ -105,6 +107,9 @@ type ListPayload = {
   lastSearch: SearchRun | null;
   runningSearch: SearchRun | null;
   inventoryCount: number;
+  cmsProvider?: "wordpress" | "webflow";
+  defaultLanguage?: string;
+  inventorySourceNote?: string;
   recentRuns?: SearchRun[];
   customThemes?: CustomTheme[];
   savedConfigs?: SavedConfig[];
@@ -201,8 +206,18 @@ function seoSearchOverlayCopy(
 }
 
 export function OpportunitiesBoard() {
+  const workspaceCtx = useWorkspaceOptional();
+  const cmsProvider =
+    workspaceCtx?.active?.cmsProvider === "webflow" ? "webflow" : "wordpress";
+  const inventoryLabel = cmsProvider === "webflow" ? "Webflow" : "WordPress";
+  const inventorySyncPath =
+    cmsProvider === "webflow"
+      ? "/api/webflow-inventory/sync"
+      : "/api/wordpress-inventory/sync";
+
   const [opportunities, setOpportunities] = useState<SeoOpportunityItem[]>([]);
   const [inventoryCount, setInventoryCount] = useState(0);
+  const [inventoryNote, setInventoryNote] = useState<string | null>(null);
   const [diagnostic, setDiagnostic] = useState<InventoryDiagnostic | null>(null);
   const [lastSync, setLastSync] = useState<SyncRun | null>(null);
   const [runningSync, setRunningSync] = useState<SyncRun | null>(null);
@@ -243,7 +258,8 @@ export function OpportunitiesBoard() {
   });
 
   const loadInventory = useCallback(async () => {
-    const response = await fetch("/api/wordpress-inventory/sync");
+    const fetchFn = workspaceCtx?.workspaceFetch ?? fetch;
+    const response = await fetchFn(inventorySyncPath);
     const payload = await parseResponseJson<InventoryPayload>(
       response,
       "Impossible de charger l’inventaire"
@@ -252,7 +268,7 @@ export function OpportunitiesBoard() {
     setLastSync(payload.lastSync);
     setRunningSync(payload.running);
     setDiagnostic(payload.diagnostic ?? null);
-  }, []);
+  }, [inventorySyncPath, workspaceCtx?.workspaceFetch]);
 
   const loadOpportunities = useCallback(async () => {
     const params = new URLSearchParams();
@@ -276,7 +292,8 @@ export function OpportunitiesBoard() {
     if (runIdFilter) {
       params.set("runId", runIdFilter);
     }
-    const response = await fetch(`/api/opportunities?${params.toString()}`);
+    const fetchFn = workspaceCtx?.workspaceFetch ?? fetch;
+    const response = await fetchFn(`/api/opportunities?${params.toString()}`);
     const payload = await parseResponseJson<ListPayload>(
       response,
       "Impossible de charger les opportunités"
@@ -301,6 +318,7 @@ export function OpportunitiesBoard() {
     setLastSearch(payload.lastSearch);
     setRunningSearch(payload.runningSearch);
     setInventoryCount(payload.inventoryCount ?? 0);
+    setInventoryNote(payload.inventorySourceNote ?? null);
     setRecentRuns(payload.recentRuns ?? []);
     setSavedConfigs(payload.savedConfigs ?? []);
     setCustomThemes(payload.customThemes ?? []);
@@ -319,6 +337,7 @@ export function OpportunitiesBoard() {
     trendType,
     urgency,
     runIdFilter,
+    workspaceCtx?.workspaceFetch,
   ]);
 
   const refresh = useCallback(async () => {
@@ -388,7 +407,11 @@ export function OpportunitiesBoard() {
         );
       } else if (lastSearch.status === "failed") {
         setMessage(null);
-        setError(lastSearch.error ?? "Recherche échouée.");
+        setError(
+          toPublicOpportunitySearchError(
+            lastSearch.error ?? "Recherche échouée."
+          )
+        );
       } else {
         setMessage(null);
       }
@@ -425,10 +448,13 @@ export function OpportunitiesBoard() {
         : "Synchronisation incrémentale démarrée…"
     );
     try {
-      const response = await fetch("/api/wordpress-inventory/sync", {
+      const fetchFn = workspaceCtx?.workspaceFetch ?? fetch;
+      const response = await fetchFn(inventorySyncPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({
+          mode: cmsProvider === "webflow" ? "full" : mode,
+        }),
       });
       const payload = (await response.json()) as {
         error?: string;
@@ -456,7 +482,8 @@ export function OpportunitiesBoard() {
     setError(null);
     setMessage("Recherche démarrée…");
     try {
-      const response = await fetch("/api/opportunities", {
+      const fetchFn = workspaceCtx?.workspaceFetch ?? fetch;
+      const response = await fetchFn("/api/opportunities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config ?? {}),
@@ -486,7 +513,8 @@ export function OpportunitiesBoard() {
     setPendingId(id);
     setError(null);
     try {
-      const response = await fetch(`/api/opportunities/${id}`, {
+      const fetchFn = workspaceCtx?.workspaceFetch ?? fetch;
+      const response = await fetchFn(`/api/opportunities/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "queue" }),
@@ -515,7 +543,8 @@ export function OpportunitiesBoard() {
     setPendingId(id);
     setError(null);
     try {
-      const response = await fetch(`/api/opportunities/${id}`, {
+      const fetchFn = workspaceCtx?.workspaceFetch ?? fetch;
+      const response = await fetchFn(`/api/opportunities/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "dismiss" }),
@@ -587,15 +616,19 @@ export function OpportunitiesBoard() {
             <OpportunityHelpDialog />
           </div>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            Recherche multithématique, inventaire WP en lecture seule, scoring
-            éditorial et qualification de tendance sur preuves sourcées. Aucune
-            publication WordPress depuis ce module.
+            Recherche multithématique, inventaire {inventoryLabel} en lecture
+            seule, scoring éditorial et qualification de tendance sur preuves
+            sourcées. Aucune publication CMS depuis ce module
+            {cmsProvider === "webflow"
+              ? " · pas de données Google Search Console pour Webflow dans cette version"
+              : ""}
+            .
           </p>
         </div>
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           {wpSynced ? (
             <span className="order-last inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 sm:order-none">
-              WP synchronisé
+              {inventoryLabel} synchronisé
             </span>
           ) : null}
           <WordPressSyncMenu
@@ -700,7 +733,9 @@ export function OpportunitiesBoard() {
 
       <div className="rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-xs text-slate-500">
         <p>
-          <span className="font-medium text-slate-700">Inventaire WP :</span>{" "}
+          <span className="font-medium text-slate-700">
+            Inventaire {inventoryLabel} :
+          </span>{" "}
           {inventoryCount}
           {" · "}
           Annoncés {diagnostic?.expectedTotal ?? "—"} / récupérés{" "}
@@ -719,6 +754,9 @@ export function OpportunitiesBoard() {
               }`
             : "Jamais"}
         </p>
+        {inventoryNote ? (
+          <p className="mt-1 text-slate-600">{inventoryNote}</p>
+        ) : null}
         {diagnostic?.note ? (
           <p className="mt-1 text-slate-600">{diagnostic.note}</p>
         ) : null}

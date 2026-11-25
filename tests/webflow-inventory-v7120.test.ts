@@ -41,7 +41,7 @@ function createDb() {
 describe("V7.12.0 — inventaire Webflow (source + normalisation)", () => {
   it("active le module inventory Webflow sans activer opportunités", () => {
     assert.equal(isWebflowModuleEnabled("inventory"), true);
-    assert.equal(isWebflowModuleEnabled("opportunities"), false);
+    assert.equal(isWebflowModuleEnabled("opportunities"), true);
     assert.equal(isWebflowModuleEnabled("featured_image"), false);
   });
 

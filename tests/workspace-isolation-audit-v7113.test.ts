@@ -195,7 +195,7 @@ describe("V7.11.3 — binding cookie / header / modules", () => {
     );
   });
 
-  it("modules Webflow refusés (opportunities / analytics) ; rapprochements autorisés V7.12.1", () => {
+  it("modules Webflow : opportunities + rapprochements autorisés ; analytics refusé", () => {
     const wf = {
       id: WORKSPACE_IDS.webflow,
       slug: "webflow-ai-studio-01",
@@ -206,9 +206,8 @@ describe("V7.11.3 — binding cookie / header / modules", () => {
       defaultLanguage: "en-US",
       enabled: true,
     };
-    assert.throws(
-      () => assertModuleAllowedForWorkspace(wf, "opportunities"),
-      (e: unknown) => e instanceof WorkspaceContextError && e.status === 501
+    assert.doesNotThrow(() =>
+      assertModuleAllowedForWorkspace(wf, "opportunities")
     );
     assert.throws(
       () => assertModuleAllowedForWorkspace(wf, "analytics"),

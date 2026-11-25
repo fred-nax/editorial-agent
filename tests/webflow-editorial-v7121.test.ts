@@ -244,7 +244,7 @@ describe("V7.12.1 — contexte agent + isolation source", () => {
   it("active le module rapprochements Webflow sans opportunités", () => {
     assert.equal(isWebflowModuleEnabled("rapprochements"), true);
     assert.equal(isWebflowModuleEnabled("inventory"), true);
-    assert.equal(isWebflowModuleEnabled("opportunities"), false);
+    assert.equal(isWebflowModuleEnabled("opportunities"), true);
   });
 
   it("routes et prompt n’utilisent pas WordPress en fallback Webflow", () => {

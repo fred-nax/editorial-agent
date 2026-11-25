@@ -84,7 +84,7 @@ describe("V7.11.1 — espaces éditoriaux (socle)", () => {
     assert.equal(isWebflowModuleEnabled("history"), true);
     assert.equal(isWebflowModuleEnabled("inventory"), true);
     assert.equal(isWebflowModuleEnabled("analytics"), false);
-    assert.equal(isWebflowModuleEnabled("opportunities"), false);
+    assert.equal(isWebflowModuleEnabled("opportunities"), true);
     assert.equal(isWebflowModuleEnabled("veille"), true);
     assert.equal(isWebflowModuleEnabled("featured_image"), false);
 
@@ -108,10 +108,8 @@ describe("V7.11.1 — espaces éditoriaux (socle)", () => {
     assert.doesNotThrow(() =>
       assertModuleAllowedForWorkspace(workspaceWebflow, "generation")
     );
-    assert.throws(
-      () => assertModuleAllowedForWorkspace(workspaceWebflow, "opportunities"),
-      (error: unknown) =>
-        error instanceof WorkspaceContextError && error.status === 501
+    assert.doesNotThrow(() =>
+      assertModuleAllowedForWorkspace(workspaceWebflow, "opportunities")
     );
   });
 

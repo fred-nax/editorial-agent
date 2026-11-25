@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { getWorkspaceByIdOrSlug } from "../workspace";
 import { scoreToTopicPriority } from "./priority";
 
 export { scoreToTopicPriority } from "./priority";
@@ -6,6 +7,7 @@ export { scoreToTopicPriority } from "./priority";
 /**
  * Ajoute une opportunité à la file Topic sans lancer la génération.
  * Idempotent si déjà added_to_queue avec topicId.
+ * Conserve le workspaceId de l’opportunité (pas de conversion croisée).
  */
 export async function addOpportunityToTopicQueue(opportunityId: string) {
   const opportunity = await db.seoOpportunity.findUnique({
@@ -48,15 +50,24 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
     };
   }
 
+  const workspace = await getWorkspaceByIdOrSlug(opportunity.workspaceId);
+  const language =
+    workspace?.defaultLanguage ??
+    (workspace?.cmsProvider === "webflow" ? "en-US" : "fr");
+
   const notesParts = [
     opportunity.rationale ? `Justification : ${opportunity.rationale}` : null,
     opportunity.searchIntent
       ? `Intention : ${opportunity.searchIntent}`
       : null,
+    opportunity.angle ? `Angle : ${opportunity.angle}` : null,
+    `Thématique : ${opportunity.theme}`,
+    `Langue espace : ${language}`,
     `Score priorité : ${opportunity.scoreTotal}/100`,
     opportunity.duplicateRisk
-      ? `Risque doublon : ${opportunity.duplicateRisk}`
+      ? `Risque doublon (lexical) : ${opportunity.duplicateRisk}`
       : null,
+    `Origine : opportunité SEO ${opportunity.id}`,
   ].filter(Boolean);
 
   const topic = await db.topic.create({
@@ -67,6 +78,8 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
       priority: scoreToTopicPriority(opportunity.scoreTotal),
       category: opportunity.theme,
       angle: opportunity.angle,
+      origin: "seo_opportunity",
+      sourceTitle: opportunity.title,
       notes: notesParts.join("\n"),
     },
   });

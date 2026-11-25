@@ -27,11 +27,11 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
     assert.ok(WORKSPACE_SWITCH_STORAGE_KEY.includes("v7112"));
   });
 
-  it("autorise veille et inventaire Webflow ; refuse opportunités / images", () => {
+  it("autorise veille, inventaire et opportunités Webflow ; refuse images / analytics", () => {
     assert.equal(isWebflowModuleEnabled("veille"), true);
     assert.equal(isWebflowModuleEnabled("topics"), true);
     assert.equal(isWebflowModuleEnabled("inventory"), true);
-    assert.equal(isWebflowModuleEnabled("opportunities"), false);
+    assert.equal(isWebflowModuleEnabled("opportunities"), true);
     assert.equal(isWebflowModuleEnabled("featured_image"), false);
     assert.equal(isWebflowModuleEnabled("analytics"), false);
     assert.match(webflowEmptyState("opportunities").reason, /inventaire/i);
@@ -142,10 +142,12 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
     assert.match(route, /assertGenerationWorkspaceConsistency/);
   });
 
-  it("opportunités Webflow empty state ; veille isolée activée", () => {
+  it("opportunités Webflow activées (fallback empty state conservé) ; veille isolée", () => {
     const opp = read("app/(protected)/opportunities/page.tsx");
+    assert.match(opp, /OpportunitiesBoard/);
     assert.match(opp, /WorkspaceEmptyState/);
     assert.match(opp, /opportunities/);
+    assert.equal(isWebflowModuleEnabled("opportunities"), true);
     const veille = read("app/(protected)/veille/page.tsx");
     assert.match(veille, /assertModuleAllowedForWorkspace/);
     assert.match(veille, /EditorialWatch/);
