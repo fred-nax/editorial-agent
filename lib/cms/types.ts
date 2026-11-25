@@ -30,6 +30,8 @@ export type CmsDraftInput = {
   meta_title?: string;
   meta_description?: string;
   categoryIds?: number[];
+  /** Auteur WP numérique — uniquement si attribution autorisée (sinon omis). */
+  authorId?: number;
   /** Références Webflow (item IDs) validées serveur — jamais du LLM. */
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;

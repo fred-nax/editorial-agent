@@ -30,6 +30,9 @@ export type TopicCreateData = {
   sourceKind: string | null;
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;
+  wpCategorizationMode?: string | null;
+  wpCategoryIds?: string | null;
+  wpAuthorId?: number | null;
 };
 
 function optionalWebflowItemId(value: unknown): string | null {
@@ -47,6 +50,64 @@ function optionalWebflowItemId(value: unknown): string | null {
     throw new TopicCreateError("Identifiant de référence Webflow invalide.", 400);
   }
   return cleaned;
+}
+
+function optionalWpMode(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (value !== "automatic" && value !== "manual") {
+    throw new TopicCreateError("Mode de catégorisation WordPress invalide.", 400);
+  }
+  return value;
+}
+
+function optionalWpCategoryIdsJson(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value) as unknown;
+          } catch {
+            throw new TopicCreateError(
+              "Liste de catégories WordPress invalide.",
+              400
+            );
+          }
+        })()
+      : null;
+  if (!Array.isArray(list)) {
+    throw new TopicCreateError("Liste de catégories WordPress invalide.", 400);
+  }
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  for (const entry of list) {
+    const id = Number(entry);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) {
+      throw new TopicCreateError(
+        "Identifiant de catégorie WordPress invalide.",
+        400
+      );
+    }
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids.length > 0 ? JSON.stringify(ids) : null;
+}
+
+function optionalWpAuthorId(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new TopicCreateError("Identifiant d’auteur WordPress invalide.", 400);
+  }
+  return id;
 }
 
 export type StoredTopic = TopicCreateData & {
@@ -176,6 +237,9 @@ export function parseTopicCreate(value: unknown): TopicCreateData {
     sourceKind,
     webflowCategoryItemId: optionalWebflowItemId(body.webflowCategoryItemId),
     webflowAuthorItemId: optionalWebflowItemId(body.webflowAuthorItemId),
+    wpCategorizationMode: optionalWpMode(body.wpCategorizationMode),
+    wpCategoryIds: optionalWpCategoryIdsJson(body.wpCategoryIds),
+    wpAuthorId: optionalWpAuthorId(body.wpAuthorId),
   };
 }
 

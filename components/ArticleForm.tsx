@@ -18,6 +18,10 @@ import {
   type WebflowRefsSelection,
 } from "@/components/cms/WebflowRefsFields";
 import {
+  WordPressRefsFields,
+  type WordPressRefsSelection,
+} from "@/components/cms/WordPressRefsFields";
+import {
   ActiveWorkspaceIndicator,
   useWorkspaceOptional,
   type WorkspaceView,
@@ -134,6 +138,9 @@ export type ArticleFormInitial = {
   preferredTitle?: string;
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;
+  wpCategorizationMode?: "automatic" | "manual" | null;
+  wpCategoryIds?: number[] | null;
+  wpAuthorId?: number | null;
 };
 
 function resolveDefaultLanguage(code: string | null | undefined): string {
@@ -181,6 +188,12 @@ export function ArticleForm({
   const [webflowRefs, setWebflowRefs] = useState<WebflowRefsSelection>({
     categoryItemId: initial?.webflowCategoryItemId?.trim() ?? "",
     authorItemId: initial?.webflowAuthorItemId?.trim() ?? "",
+  });
+  const [wpRefs, setWpRefs] = useState<WordPressRefsSelection>({
+    mode:
+      initial?.wpCategorizationMode === "manual" ? "manual" : "automatic",
+    categoryIds: initial?.wpCategoryIds ?? [],
+    authorId: initial?.wpAuthorId ?? null,
   });
   const [generateFeaturedImage, setGenerateFeaturedImage] = useState(false);
   const [featuredStyle, setFeaturedStyle] = useState("photographic");
@@ -510,6 +523,15 @@ export function ArticleForm({
         payloadBody.webflowAuthorItemId = webflowRefs.authorItemId;
       }
     }
+    if (cmsDestination === "wordpress") {
+      payloadBody.wpCategorizationMode = wpRefs.mode;
+      if (wpRefs.mode === "manual") {
+        payloadBody.wpCategoryIds = wpRefs.categoryIds;
+      }
+      if (wpRefs.authorId != null) {
+        payloadBody.wpAuthorId = wpRefs.authorId;
+      }
+    }
     if (wantFeatured) {
       payloadBody.featuredImage = {
         enabled: true,
@@ -532,6 +554,14 @@ export function ArticleForm({
               ? {
                   webflowCategoryItemId: webflowRefs.categoryItemId || null,
                   webflowAuthorItemId: webflowRefs.authorItemId || null,
+                }
+              : {}),
+            ...(cmsDestination === "wordpress"
+              ? {
+                  wpCategorizationMode: wpRefs.mode,
+                  wpCategoryIds:
+                    wpRefs.mode === "manual" ? wpRefs.categoryIds : null,
+                  wpAuthorId: wpRefs.authorId,
                 }
               : {}),
           }),
@@ -830,6 +860,17 @@ export function ArticleForm({
           onChange={setWebflowRefs}
           initialCategoryItemId={initial?.webflowCategoryItemId}
           initialAuthorItemId={initial?.webflowAuthorItemId}
+          disabled={busy}
+        />
+      ) : null}
+
+      {cmsDestination === "wordpress" && isFull ? (
+        <WordPressRefsFields
+          value={wpRefs}
+          onChange={setWpRefs}
+          initialMode={initial?.wpCategorizationMode}
+          initialCategoryIds={initial?.wpCategoryIds}
+          initialAuthorId={initial?.wpAuthorId}
           disabled={busy}
         />
       ) : null}

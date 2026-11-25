@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { WordPressReferencesSection } from "@/components/cms/WordPressReferencesSection";
 import type { PublicSettingsView } from "@/components/settings/types";
 
 type Props = {
@@ -271,6 +272,8 @@ export function EditorialSettingsSection({ settings, onUpdated }: Props) {
           {saving ? "Enregistrement…" : "Enregistrer la sélection"}
         </Button>
       </div>
+
+      <WordPressReferencesSection />
     </section>
   );
 }

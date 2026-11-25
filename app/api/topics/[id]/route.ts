@@ -84,6 +84,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       status?: "archived";
       webflowCategoryItemId?: string | null;
       webflowAuthorItemId?: string | null;
+      wpCategorizationMode?: string | null;
+      wpCategoryIds?: string | null;
+      wpAuthorId?: number | null;
     } = {};
 
     if (body.status !== undefined) {
@@ -109,7 +112,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       body.category !== undefined ||
       body.angle !== undefined ||
       body.webflowCategoryItemId !== undefined ||
-      body.webflowAuthorItemId !== undefined;
+      body.webflowAuthorItemId !== undefined ||
+      body.wpCategorizationMode !== undefined ||
+      body.wpCategoryIds !== undefined ||
+      body.wpAuthorId !== undefined;
 
     if (wantsFieldUpdate && existing.status !== "pending") {
       return NextResponse.json(
@@ -197,6 +203,77 @@ export async function PATCH(request: Request, context: RouteContext) {
           ? body.webflowAuthorItemId.trim()
           : null;
       data.webflowAuthorItemId = raw || null;
+    }
+
+    if (body.wpCategorizationMode !== undefined) {
+      if (
+        body.wpCategorizationMode !== null &&
+        body.wpCategorizationMode !== "automatic" &&
+        body.wpCategorizationMode !== "manual"
+      ) {
+        return NextResponse.json(
+          { error: "Mode de catégorisation WordPress invalide." },
+          { status: 400 }
+        );
+      }
+      data.wpCategorizationMode =
+        body.wpCategorizationMode === "manual" ||
+        body.wpCategorizationMode === "automatic"
+          ? body.wpCategorizationMode
+          : null;
+    }
+
+    if (body.wpCategoryIds !== undefined) {
+      if (body.wpCategoryIds === null || body.wpCategoryIds === "") {
+        data.wpCategoryIds = null;
+      } else {
+        const list = Array.isArray(body.wpCategoryIds)
+          ? body.wpCategoryIds
+          : typeof body.wpCategoryIds === "string"
+            ? (() => {
+                try {
+                  return JSON.parse(body.wpCategoryIds) as unknown;
+                } catch {
+                  return null;
+                }
+              })()
+            : null;
+        if (!Array.isArray(list)) {
+          return NextResponse.json(
+            { error: "Liste de catégories WordPress invalide." },
+            { status: 400 }
+          );
+        }
+        const ids: number[] = [];
+        const seen = new Set<number>();
+        for (const entry of list) {
+          const id = Number(entry);
+          if (!Number.isInteger(id) || id <= 0 || seen.has(id)) {
+            return NextResponse.json(
+              { error: "Identifiant de catégorie WordPress invalide." },
+              { status: 400 }
+            );
+          }
+          seen.add(id);
+          ids.push(id);
+        }
+        data.wpCategoryIds = ids.length > 0 ? JSON.stringify(ids) : null;
+      }
+    }
+
+    if (body.wpAuthorId !== undefined) {
+      if (body.wpAuthorId === null || body.wpAuthorId === "") {
+        data.wpAuthorId = null;
+      } else {
+        const id = Number(body.wpAuthorId);
+        if (!Number.isInteger(id) || id <= 0) {
+          return NextResponse.json(
+            { error: "Identifiant d’auteur WordPress invalide." },
+            { status: 400 }
+          );
+        }
+        data.wpAuthorId = id;
+      }
     }
 
     if (Object.keys(data).length === 0) {

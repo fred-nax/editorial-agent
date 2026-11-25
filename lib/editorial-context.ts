@@ -56,6 +56,12 @@ export type EditorialContext = {
   /** Références Webflow figées au lancement (item IDs Reference). */
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;
+  /** Mode catégorisation WP : automatic | manual. */
+  wpCategorizationMode?: "automatic" | "manual" | null;
+  /** IDs catégories WP manuelles figées. */
+  wpCategoryIds?: number[] | null;
+  /** Auteur WP figé (null = compte API). */
+  wpAuthorId?: number | null;
 };
 
 const AUDIENCE_SET = new Set<string>(AUDIENCE_OPTIONS);
@@ -181,6 +187,9 @@ export function emptyEditorialContext(): EditorialContext {
     preferredTitle: null,
     webflowCategoryItemId: null,
     webflowAuthorItemId: null,
+    wpCategorizationMode: null,
+    wpCategoryIds: null,
+    wpAuthorId: null,
   };
 }
 
@@ -199,7 +208,10 @@ export function hasEditorialContext(
       value.language ||
       value.preferredTitle ||
       value.webflowCategoryItemId ||
-      value.webflowAuthorItemId
+      value.webflowAuthorItemId ||
+      value.wpCategorizationMode === "manual" ||
+      (value.wpCategoryIds && value.wpCategoryIds.length > 0) ||
+      value.wpAuthorId != null
   );
 }
 
@@ -232,6 +244,49 @@ function optionalWebflowItemId(value: unknown): string | null {
   return cleaned;
 }
 
+function optionalWpCategorizationMode(
+  value: unknown
+): "automatic" | "manual" | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (value === "automatic" || value === "manual") {
+    return value;
+  }
+  throw new Error("Mode de catégorisation WordPress invalide.");
+}
+
+function optionalWpCategoryIds(value: unknown): number[] | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("Liste de catégories WordPress invalide.");
+  }
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  for (const entry of value) {
+    const id = Number(entry);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) {
+      throw new Error("Identifiant de catégorie WordPress invalide.");
+    }
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function optionalWpAuthorId(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("Identifiant d’auteur WordPress invalide.");
+  }
+  return id;
+}
+
 export function parseEditorialContext(
   body: Record<string, unknown>
 ): EditorialContext | null {
@@ -255,17 +310,34 @@ export function parseEditorialContext(
     preferredTitle: cleanText(body.preferredTitle, MAX_PREFERRED_TITLE_LENGTH),
     webflowCategoryItemId: optionalWebflowItemId(body.webflowCategoryItemId),
     webflowAuthorItemId: optionalWebflowItemId(body.webflowAuthorItemId),
+    wpCategorizationMode: optionalWpCategorizationMode(body.wpCategorizationMode),
+    wpCategoryIds: optionalWpCategoryIds(body.wpCategoryIds),
+    wpAuthorId: optionalWpAuthorId(body.wpAuthorId),
   };
   return hasEditorialContext(context) ? context : null;
 }
 
-/** Réutilise angle / notes / refs Webflow d’un Topic sans confondre category et public. */
+/** Réutilise angle / notes / refs CMS d’un Topic sans confondre category et public. */
 export function editorialContextFromTopic(topic: {
   angle?: string | null;
   notes?: string | null;
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;
+  wpCategorizationMode?: string | null;
+  wpCategoryIds?: string | number[] | null;
+  wpAuthorId?: number | null;
 }): EditorialContext | null {
+  let wpCategoryIds: number[] | null = null;
+  if (typeof topic.wpCategoryIds === "string") {
+    try {
+      wpCategoryIds = optionalWpCategoryIds(JSON.parse(topic.wpCategoryIds));
+    } catch {
+      wpCategoryIds = null;
+    }
+  } else if (Array.isArray(topic.wpCategoryIds)) {
+    wpCategoryIds = optionalWpCategoryIds(topic.wpCategoryIds);
+  }
+
   const context: EditorialContext = {
     angle: cleanText(topic.angle ?? null, MAX_EDITORIAL_ANGLE_LENGTH),
     audience: null,
@@ -278,6 +350,11 @@ export function editorialContextFromTopic(topic: {
       topic.webflowCategoryItemId ?? null
     ),
     webflowAuthorItemId: optionalWebflowItemId(topic.webflowAuthorItemId ?? null),
+    wpCategorizationMode: optionalWpCategorizationMode(
+      topic.wpCategorizationMode ?? null
+    ),
+    wpCategoryIds,
+    wpAuthorId: optionalWpAuthorId(topic.wpAuthorId ?? null),
   };
   return hasEditorialContext(context) ? context : null;
 }
@@ -300,6 +377,9 @@ export function parseStoredEditorialContext(
       webflowCategoryItemId: record.webflowCategoryItemId,
       webflowAuthorItemId: record.webflowAuthorItemId,
       preferredTitle: record.preferredTitle,
+      wpCategorizationMode: record.wpCategorizationMode,
+      wpCategoryIds: record.wpCategoryIds,
+      wpAuthorId: record.wpAuthorId,
     });
   } catch {
     return null;
@@ -401,6 +481,25 @@ export function editorialContextLines(
     lines.push({
       label: "Auteur Webflow",
       value: context.webflowAuthorItemId,
+    });
+  }
+  if (context.wpCategorizationMode) {
+    lines.push({
+      label: "Catégorisation WordPress",
+      value:
+        context.wpCategorizationMode === "manual" ? "Manuelle" : "Automatique",
+    });
+  }
+  if (context.wpCategoryIds && context.wpCategoryIds.length > 0) {
+    lines.push({
+      label: "Catégories WordPress",
+      value: context.wpCategoryIds.join(", "),
+    });
+  }
+  if (context.wpAuthorId != null) {
+    lines.push({
+      label: "Auteur WordPress",
+      value: String(context.wpAuthorId),
     });
   }
   return lines;

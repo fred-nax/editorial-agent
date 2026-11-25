@@ -86,6 +86,12 @@ export type RunAgentSessionOptions = {
   /** Références Webflow figées au lancement (validées serveur avant OpenAI). */
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;
+  /** Mode catégorisation WP figé : automatic | manual. */
+  wpCategorizationMode?: string | null;
+  /** IDs catégories WP manuelles figées (mode manual). */
+  wpCategoryIds?: number[] | null;
+  /** Auteur WP figé (null = compte API historique). */
+  wpAuthorId?: number | null;
 };
 
 export type RunAgentSessionCmsResult = {
@@ -515,28 +521,105 @@ export async function runAgentSession(
 
   let detectedCategories: Array<{ categoryId: number; name: string }> = [];
   let categoryIds: number[] = [];
+  let wpAuthorIdForDraft: number | undefined;
+  let wpCategoryLogLabel = "Catégories détectées";
 
   if (cmsDestination === "wordpress" && wordpressCredentials) {
     const categoryConfig = await resolveWordPressCategoryConfig();
     const effectiveWpOrigin = normalizeWpOrigin(wordpressCredentials.url);
-    const dynamicCategoryMode = isDynamicCategoryMode(
-      categoryConfig,
-      effectiveWpOrigin
-    );
-    detectedCategories = resolveCategoriesForSubject({
-      subject: trimmedSubject,
-      isNaxialisLegacy: identity.isNaxialisLegacy,
-      config: categoryConfig,
-      effectiveWpOrigin,
-    });
-    categoryIds = sanitizeCategoryIdsForWordPress({
-      ids: detectedCategories.map((category) => category.categoryId),
-      allowedIds: categoryConfig?.allowedIds ?? [],
-      categories: categoryConfig?.categories ?? [],
-      categoriesOrigin: categoryConfig?.origin ?? null,
-      effectiveWpOrigin,
-      dynamicMode: dynamicCategoryMode,
-    });
+    const wpMode =
+      options.wpCategorizationMode === "manual" ? "manual" : "automatic";
+
+    if (wpMode === "manual") {
+      wpCategoryLogLabel = "Catégories manuelles";
+      // Validation avant tout appel OpenAI payant (manual).
+      if (options.workspaceId) {
+        const { validateWordPressReferenceSelection, loadWordPressReferenceDefaults } =
+          await import("@/lib/wordpress/references-validate");
+        const defaults = await loadWordPressReferenceDefaults(options.workspaceId);
+        try {
+          const validated = await validateWordPressReferenceSelection({
+            workspaceId: options.workspaceId,
+            siteOrigin: effectiveWpOrigin,
+            mode: "manual",
+            categoryIds: options.wpCategoryIds ?? [],
+            authorId: options.wpAuthorId ?? null,
+            authorCapability: defaults.authorCapability,
+            apiUserId: defaults.apiUserId,
+            allowEmptyManualCategories: true,
+          });
+          categoryIds = validated.categoryIds;
+          detectedCategories = validated.categoryNames;
+          if (validated.injectAuthor && validated.authorId != null) {
+            wpAuthorIdForDraft = validated.authorId;
+          }
+          if (validated.authorName && validated.injectAuthor) {
+            log(onLog, `Auteur WordPress : ${validated.authorName}`);
+          }
+        } catch (error) {
+          throw new Error(
+            error instanceof Error
+              ? error.message
+              : "Références WordPress invalides."
+          );
+        }
+      } else {
+        throw new Error(
+          "Mode manuel WordPress : workspaceId requis pour valider les catégories."
+        );
+      }
+    } else {
+      // Mode automatique historique — resolveCategoriesForSubject inchangé.
+      const dynamicCategoryMode = isDynamicCategoryMode(
+        categoryConfig,
+        effectiveWpOrigin
+      );
+      detectedCategories = resolveCategoriesForSubject({
+        subject: trimmedSubject,
+        isNaxialisLegacy: identity.isNaxialisLegacy,
+        config: categoryConfig,
+        effectiveWpOrigin,
+      });
+      categoryIds = sanitizeCategoryIdsForWordPress({
+        ids: detectedCategories.map((category) => category.categoryId),
+        allowedIds: categoryConfig?.allowedIds ?? [],
+        categories: categoryConfig?.categories ?? [],
+        categoriesOrigin: categoryConfig?.origin ?? null,
+        effectiveWpOrigin,
+        dynamicMode: dynamicCategoryMode,
+      });
+
+      // Auteur optionnel même en mode automatique (indépendant du mode catégorisation).
+      if (options.workspaceId && options.wpAuthorId != null) {
+        const { validateWordPressReferenceSelection, loadWordPressReferenceDefaults } =
+          await import("@/lib/wordpress/references-validate");
+        const defaults = await loadWordPressReferenceDefaults(options.workspaceId);
+        try {
+          const validated = await validateWordPressReferenceSelection({
+            workspaceId: options.workspaceId,
+            siteOrigin: effectiveWpOrigin,
+            mode: "automatic",
+            categoryIds: [],
+            authorId: options.wpAuthorId,
+            authorCapability: defaults.authorCapability,
+            apiUserId: defaults.apiUserId,
+            allowEmptyManualCategories: true,
+          });
+          if (validated.injectAuthor && validated.authorId != null) {
+            wpAuthorIdForDraft = validated.authorId;
+            if (validated.authorName) {
+              log(onLog, `Auteur WordPress : ${validated.authorName}`);
+            }
+          }
+        } catch (error) {
+          throw new Error(
+            error instanceof Error
+              ? error.message
+              : "Auteur WordPress invalide."
+          );
+        }
+      }
+    }
   }
 
   await emitProgress(
@@ -551,9 +634,17 @@ export async function runAgentSession(
   if (detectedCategories.length > 0) {
     log(
       onLog,
-      `Catégories détectées : ${detectedCategories
+      `${wpCategoryLogLabel} : ${detectedCategories
         .map((category) => `${category.name} (${category.categoryId})`)
         .join(", ")}`
+    );
+  } else if (
+    cmsDestination === "wordpress" &&
+    options.wpCategorizationMode === "manual"
+  ) {
+    log(
+      onLog,
+      "Catégories manuelles : aucune (WordPress appliquera sa catégorie par défaut / Uncategorized)."
     );
   }
 
@@ -927,6 +1018,9 @@ export async function runAgentSession(
             ).createDraft({
               ...args,
               categoryIds,
+              ...(wpAuthorIdForDraft != null
+                ? { authorId: wpAuthorIdForDraft }
+                : {}),
             });
             if (!cmsResult.wordpress) {
               throw new Error("Réponse CMS WordPress incomplète.");

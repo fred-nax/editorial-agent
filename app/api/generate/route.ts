@@ -134,21 +134,38 @@ export async function POST(request: Request) {
       // Depuis la file : réutiliser angle/notes/refs du sujet si le client n'envoie rien.
       if (!editorialContext) {
         editorialContext = editorialContextFromTopic(topic);
-      } else if (
-        !editorialContext.webflowCategoryItemId &&
-        !editorialContext.webflowAuthorItemId
-      ) {
-        editorialContext = {
-          ...editorialContext,
-          webflowCategoryItemId:
-            topic.webflowCategoryItemId ??
-            editorialContext.webflowCategoryItemId ??
-            null,
-          webflowAuthorItemId:
-            topic.webflowAuthorItemId ??
-            editorialContext.webflowAuthorItemId ??
-            null,
-        };
+      } else {
+        const needsWebflowMerge =
+          !editorialContext.webflowCategoryItemId &&
+          !editorialContext.webflowAuthorItemId;
+        const needsWpMerge =
+          !editorialContext.wpCategorizationMode &&
+          !(editorialContext.wpCategoryIds && editorialContext.wpCategoryIds.length > 0) &&
+          editorialContext.wpAuthorId == null;
+        if (needsWebflowMerge || needsWpMerge) {
+          const fromTopic = editorialContextFromTopic(topic);
+          editorialContext = {
+            ...editorialContext,
+            webflowCategoryItemId:
+              editorialContext.webflowCategoryItemId ??
+              fromTopic?.webflowCategoryItemId ??
+              null,
+            webflowAuthorItemId:
+              editorialContext.webflowAuthorItemId ??
+              fromTopic?.webflowAuthorItemId ??
+              null,
+            wpCategorizationMode:
+              editorialContext.wpCategorizationMode ??
+              fromTopic?.wpCategorizationMode ??
+              null,
+            wpCategoryIds:
+              editorialContext.wpCategoryIds ??
+              fromTopic?.wpCategoryIds ??
+              null,
+            wpAuthorId:
+              editorialContext.wpAuthorId ?? fromTopic?.wpAuthorId ?? null,
+          };
+        }
       }
     } else {
       subject = parseSubject(body.subject);

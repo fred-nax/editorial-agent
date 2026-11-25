@@ -8,6 +8,7 @@ import {
   FeaturedImageUnavailable,
 } from "@/components/articles/FeaturedImagePanel";
 import { WebflowDraftRefsPanel } from "@/components/articles/WebflowDraftRefsPanel";
+import { WordPressDraftRefsPanel } from "@/components/articles/WordPressDraftRefsPanel";
 import { ArticlePerformancesPanel } from "@/components/articles/ArticlePerformancesPanel";
 import { EditorialContextPanel } from "@/components/EditorialContextPanel";
 import { GenerationLiveRefresh } from "@/components/GenerationLiveRefresh";
@@ -192,6 +193,12 @@ export default async function ArticleDetailPage({
       article.status === "completed" &&
       article.cmsExternalId?.trim() ? (
         <WebflowDraftRefsPanel generationId={article.id} />
+      ) : null}
+
+      {!isWebflow &&
+      article.status === "completed" &&
+      article.wpPostId != null ? (
+        <WordPressDraftRefsPanel generationId={article.id} />
       ) : null}
 
       <ArticleDetailTabs

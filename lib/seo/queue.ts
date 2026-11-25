@@ -70,16 +70,26 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
     `Origine : opportunité SEO ${opportunity.id}`,
   ].filter(Boolean);
 
-  const cmsDefaults =
-    workspace?.cmsProvider === "webflow"
-      ? await db.workspaceCmsSettings.findUnique({
-          where: { workspaceId: opportunity.workspaceId },
-          select: {
-            webflowDefaultCategoryItemId: true,
-            webflowDefaultAuthorItemId: true,
-          },
-        })
-      : null;
+  const cmsDefaults = workspace
+    ? await db.workspaceCmsSettings.findUnique({
+        where: { workspaceId: opportunity.workspaceId },
+        select: {
+          webflowDefaultCategoryItemId: true,
+          webflowDefaultAuthorItemId: true,
+          wpCategorizationMode: true,
+          wpManualDefaultCategoryIds: true,
+          wpDefaultAuthorId: true,
+        },
+      })
+    : null;
+
+  const isWebflow = workspace?.cmsProvider === "webflow";
+  const isWordPress = workspace?.cmsProvider === "wordpress";
+  const wpMode = isWordPress
+    ? cmsDefaults?.wpCategorizationMode === "manual"
+      ? "manual"
+      : "automatic"
+    : null;
 
   const topic = await db.topic.create({
     data: {
@@ -92,8 +102,18 @@ export async function addOpportunityToTopicQueue(opportunityId: string) {
       origin: "seo_opportunity",
       sourceTitle: opportunity.title,
       notes: notesParts.join("\n"),
-      webflowCategoryItemId: cmsDefaults?.webflowDefaultCategoryItemId ?? null,
-      webflowAuthorItemId: cmsDefaults?.webflowDefaultAuthorItemId ?? null,
+      webflowCategoryItemId: isWebflow
+        ? cmsDefaults?.webflowDefaultCategoryItemId ?? null
+        : null,
+      webflowAuthorItemId: isWebflow
+        ? cmsDefaults?.webflowDefaultAuthorItemId ?? null
+        : null,
+      wpCategorizationMode: wpMode,
+      wpCategoryIds:
+        wpMode === "manual"
+          ? cmsDefaults?.wpManualDefaultCategoryIds ?? null
+          : null,
+      wpAuthorId: isWordPress ? cmsDefaults?.wpDefaultAuthorId ?? null : null,
     },
   });
 

@@ -15,8 +15,6 @@ import {
 } from "@/lib/settings/wp-url";
 import {
   assertCategoryIdsBelongToSite,
-  categoryConfigOriginFromWpUrl,
-  fetchAllWordPressCategories,
   parseAllowedCategoryIds,
   parseSyncedCategoriesJson,
   type SyncedWpCategory,
@@ -834,29 +832,20 @@ export async function syncWordPressCategories(): Promise<PublicAppSettings> {
     throw new Error("WordPress non configuré.");
   }
 
-  const categories = await fetchAllWordPressCategories(wordpress);
-  const origin = categoryConfigOriginFromWpUrl(wordpress.url);
-  const row = await loadRow();
-  const previousAllowed = parseAllowedCategoryIds(row?.wpAllowedCategoryIds);
-  const known = new Set(categories.map((item) => item.id));
-  const retainedAllowed = previousAllowed.filter((id) => known.has(id));
-  let defaultId = row?.wpDefaultCategoryId ?? null;
-  if (defaultId && !known.has(defaultId)) {
-    defaultId = null;
-  }
-  if (defaultId && retainedAllowed.length > 0 && !retainedAllowed.includes(defaultId)) {
-    // Conservé uniquement s'il reste dans les autorisées ou si aucune autorisée.
-    defaultId = null;
-  }
-
-  await upsertRow({
-    wpCategoriesJson: JSON.stringify(categories),
-    wpAllowedCategoryIds:
-      retainedAllowed.length > 0 ? JSON.stringify(retainedAllowed) : null,
-    wpDefaultCategoryId: defaultId,
-    wpCategoriesSyncedAt: new Date(),
-    wpCategoriesOrigin: origin,
+  // V7.13.2 — sync catalogue WordPressCmsReference + dual-write legacy JSON.
+  const { syncWordPressCmsReferences } = await import(
+    "@/lib/wordpress/references-sync"
+  );
+  const { WORKSPACE_IDS } = await import("@/lib/workspace");
+  const result = await syncWordPressCmsReferences({
+    workspaceId: WORKSPACE_IDS.wordpress,
+    credentials: wordpress,
   });
+  if (!result.ok) {
+    throw new Error(
+      result.issues[0] ?? "Synchronisation des catégories WordPress impossible."
+    );
+  }
 
   return getPublicAppSettings();
 }

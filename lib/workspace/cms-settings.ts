@@ -20,6 +20,14 @@ export type WorkspaceCmsSettingsRow = {
   wpDefaultCategoryId: number | null;
   wpCategoriesSyncedAt: Date | null;
   wpCategoriesOrigin: string | null;
+  wpCategorizationMode: string | null;
+  wpManualDefaultCategoryIds: string | null;
+  wpDefaultAuthorId: number | null;
+  wpAuthorsSyncedAt: Date | null;
+  wpAuthorCapability: string | null;
+  wpApiUserId: number | null;
+  wpApiUserName: string | null;
+  wpApiUserSlug: string | null;
   wpSeoPlugin: string | null;
   webflowApiTokenEncrypted: string | null;
   webflowSiteId: string | null;
@@ -160,6 +168,14 @@ export async function loadWorkspaceCmsSettings(
         row?.wpCategoriesOrigin,
         allowWpLegacy ? legacy?.wpCategoriesOrigin : null
       ),
+      wpCategorizationMode: row?.wpCategorizationMode ?? "automatic",
+      wpManualDefaultCategoryIds: row?.wpManualDefaultCategoryIds ?? null,
+      wpDefaultAuthorId: row?.wpDefaultAuthorId ?? null,
+      wpAuthorsSyncedAt: row?.wpAuthorsSyncedAt ?? null,
+      wpAuthorCapability: row?.wpAuthorCapability ?? null,
+      wpApiUserId: row?.wpApiUserId ?? null,
+      wpApiUserName: row?.wpApiUserName ?? null,
+      wpApiUserSlug: row?.wpApiUserSlug ?? null,
       wpSeoPlugin: prefer(
         row?.wpSeoPlugin,
         allowWpLegacy ? legacy?.wpSeoPlugin : null
@@ -191,6 +207,14 @@ export async function loadWorkspaceCmsSettings(
     wpDefaultCategoryId: null,
     wpCategoriesSyncedAt: null,
     wpCategoriesOrigin: null,
+    wpCategorizationMode: null,
+    wpManualDefaultCategoryIds: null,
+    wpDefaultAuthorId: null,
+    wpAuthorsSyncedAt: null,
+    wpAuthorCapability: null,
+    wpApiUserId: null,
+    wpApiUserName: null,
+    wpApiUserSlug: null,
     wpSeoPlugin: null,
     webflowApiTokenEncrypted: prefer(
       row?.webflowApiTokenEncrypted,

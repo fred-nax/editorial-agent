@@ -18,6 +18,11 @@ export type WordPressDraftInput = {
   meta_title?: string;
   meta_description?: string;
   categoryIds?: number[];
+  /**
+   * Auteur WP explicite — uniquement si attribution autorisée.
+   * Absent = comportement historique (compte API).
+   */
+  authorId?: number;
 };
 
 export type WordPressDraftResult = {
@@ -104,6 +109,7 @@ export async function createWordPressDraft(
     meta_title = "",
     meta_description = "",
     categoryIds = [],
+    authorId,
   }: WordPressDraftInput,
   credentials?: WordPressConfig
 ): Promise<WordPressDraftResult> {
@@ -120,6 +126,14 @@ export async function createWordPressDraft(
     status: "draft" as const,
     categories: categoryIds,
   };
+
+  if (
+    typeof authorId === "number" &&
+    Number.isInteger(authorId) &&
+    authorId > 0
+  ) {
+    payload.author = authorId;
+  }
 
   if (adapter.restMeta) {
     payload.meta = adapter.restMeta;

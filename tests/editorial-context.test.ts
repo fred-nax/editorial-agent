@@ -47,6 +47,9 @@ describe("indications éditoriales", () => {
       preferredTitle: null,
       webflowCategoryItemId: null,
       webflowAuthorItemId: null,
+      wpCategorizationMode: null,
+      wpCategoryIds: null,
+      wpAuthorId: null,
     });
     assert.equal(hasEditorialContext(context), true);
   });
@@ -178,6 +181,9 @@ describe("indications éditoriales", () => {
       preferredTitle: null,
       webflowCategoryItemId: null,
       webflowAuthorItemId: null,
+      wpCategorizationMode: null,
+      wpCategoryIds: null,
+      wpAuthorId: null,
     });
   });
 
@@ -202,6 +208,9 @@ describe("indications éditoriales", () => {
         preferredTitle: null,
         webflowCategoryItemId: null,
         webflowAuthorItemId: null,
+        wpCategorizationMode: null,
+        wpCategoryIds: null,
+        wpAuthorId: null,
       }
     );
     assert.deepEqual(
@@ -223,7 +232,22 @@ describe("indications éditoriales", () => {
         preferredTitle: null,
         webflowCategoryItemId: null,
         webflowAuthorItemId: null,
+        wpCategorizationMode: null,
+        wpCategoryIds: null,
+        wpAuthorId: null,
       }
     );
+  });
+
+  it("fige les références WordPress manuelles", () => {
+    const context = parseEditorialContext({
+      wpCategorizationMode: "manual",
+      wpCategoryIds: [10, 20],
+      wpAuthorId: 3,
+    });
+    assert.equal(context?.wpCategorizationMode, "manual");
+    assert.deepEqual(context?.wpCategoryIds, [10, 20]);
+    assert.equal(context?.wpAuthorId, 3);
+    assert.equal(hasEditorialContext(context), true);
   });
 });

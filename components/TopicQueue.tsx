@@ -17,6 +17,11 @@ import {
   WebflowRefsFields,
   type WebflowRefsSelection,
 } from "@/components/cms/WebflowRefsFields";
+import {
+  WordPressRefsFields,
+  type WordPressRefsSelection,
+} from "@/components/cms/WordPressRefsFields";
+import { parseWpCategoryIdsJson } from "@/lib/wordpress/references-types";
 import { TopicStatusBadge } from "@/components/dashboard/status-badge";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
 import { useWorkspaceOptional } from "@/components/workspace";
@@ -70,6 +75,9 @@ export type TopicListItem = {
   sourceKind?: string | null;
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;
+  wpCategorizationMode?: string | null;
+  wpCategoryIds?: string | null;
+  wpAuthorId?: number | null;
   createdAt: Date | string;
   /** Génération associée la plus pertinente (terminée de préférence). */
   articleId?: string | null;
@@ -112,7 +120,14 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
     categoryItemId: "",
     authorItemId: "",
   });
+  const [editWpRefs, setEditWpRefs] = useState<WordPressRefsSelection>({
+    mode: "automatic",
+    categoryIds: [],
+    authorId: null,
+  });
   const isWebflowWorkspace = workspaceCtx?.active?.cmsProvider === "webflow";
+  const isWordPressWorkspace =
+    workspaceCtx?.active?.cmsProvider === "wordpress";
   const [editPriority, setEditPriority] = useState("0");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -157,6 +172,11 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
     setEditWebflowRefs({
       categoryItemId: topic.webflowCategoryItemId?.trim() ?? "",
       authorItemId: topic.webflowAuthorItemId?.trim() ?? "",
+    });
+    setEditWpRefs({
+      mode: topic.wpCategorizationMode === "manual" ? "manual" : "automatic",
+      categoryIds: parseWpCategoryIdsJson(topic.wpCategoryIds),
+      authorId: topic.wpAuthorId ?? null,
     });
     setEditPriority(
       topic.priority === 1 ? "1" : topic.priority === 0 ? "0" : "2"
@@ -278,6 +298,14 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
             ? {
                 webflowCategoryItemId: editWebflowRefs.categoryItemId || null,
                 webflowAuthorItemId: editWebflowRefs.authorItemId || null,
+              }
+            : {}),
+          ...(isWordPressWorkspace
+            ? {
+                wpCategorizationMode: editWpRefs.mode,
+                wpCategoryIds:
+                  editWpRefs.mode === "manual" ? editWpRefs.categoryIds : null,
+                wpAuthorId: editWpRefs.authorId,
               }
             : {}),
         }),
@@ -651,6 +679,23 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
                 onChange={setEditWebflowRefs}
                 initialCategoryItemId={editTopic.webflowCategoryItemId}
                 initialAuthorItemId={editTopic.webflowAuthorItemId}
+                disabled={editSaving}
+              />
+            ) : null}
+
+            {isWordPressWorkspace && editTopic ? (
+              <WordPressRefsFields
+                value={editWpRefs}
+                onChange={setEditWpRefs}
+                initialMode={
+                  editTopic.wpCategorizationMode === "manual"
+                    ? "manual"
+                    : "automatic"
+                }
+                initialCategoryIds={parseWpCategoryIdsJson(
+                  editTopic.wpCategoryIds
+                )}
+                initialAuthorId={editTopic.wpAuthorId}
                 disabled={editSaving}
               />
             ) : null}

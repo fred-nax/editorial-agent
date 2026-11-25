@@ -240,6 +240,9 @@ export async function processArticleGeneration(
         workspaceId,
         webflowCategoryItemId: storedEditorial?.webflowCategoryItemId ?? null,
         webflowAuthorItemId: storedEditorial?.webflowAuthorItemId ?? null,
+        wpCategorizationMode: storedEditorial?.wpCategorizationMode ?? null,
+        wpCategoryIds: storedEditorial?.wpCategoryIds ?? null,
+        wpAuthorId: storedEditorial?.wpAuthorId ?? null,
         onProgress: async (progress) => {
           await updateGenerationProgress(id, progress.stage, progress.message);
         },

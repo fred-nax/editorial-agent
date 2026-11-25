@@ -38,6 +38,9 @@ function toStored(topic: {
   sourceKind: string | null;
   webflowCategoryItemId?: string | null;
   webflowAuthorItemId?: string | null;
+  wpCategorizationMode?: string | null;
+  wpCategoryIds?: string | null;
+  wpAuthorId?: number | null;
 }): StoredTopic {
   return {
     id: topic.id,
@@ -55,6 +58,9 @@ function toStored(topic: {
     sourceKind: topic.sourceKind,
     webflowCategoryItemId: topic.webflowCategoryItemId ?? null,
     webflowAuthorItemId: topic.webflowAuthorItemId ?? null,
+    wpCategorizationMode: topic.wpCategorizationMode ?? null,
+    wpCategoryIds: topic.wpCategoryIds ?? null,
+    wpAuthorId: topic.wpAuthorId ?? null,
   };
 }
 
@@ -73,28 +79,44 @@ function topicStore(workspaceId: string): TopicStore {
     async create(data) {
       let webflowCategoryItemId = data.webflowCategoryItemId ?? null;
       let webflowAuthorItemId = data.webflowAuthorItemId ?? null;
+      let wpCategorizationMode = data.wpCategorizationMode ?? null;
+      let wpCategoryIds = data.wpCategoryIds ?? null;
+      let wpAuthorId = data.wpAuthorId ?? null;
       // Conversions veille/SEO : défauts workspace si aucune sélection.
-      if (!webflowCategoryItemId || !webflowAuthorItemId) {
-        const settings = await db.workspaceCmsSettings.findUnique({
-          where: { workspaceId },
-          select: {
-            webflowDefaultCategoryItemId: true,
-            webflowDefaultAuthorItemId: true,
-          },
-        });
-        if (!webflowCategoryItemId) {
-          webflowCategoryItemId =
-            settings?.webflowDefaultCategoryItemId ?? null;
-        }
-        if (!webflowAuthorItemId) {
-          webflowAuthorItemId = settings?.webflowDefaultAuthorItemId ?? null;
-        }
+      const settings = await db.workspaceCmsSettings.findUnique({
+        where: { workspaceId },
+        select: {
+          webflowDefaultCategoryItemId: true,
+          webflowDefaultAuthorItemId: true,
+          wpCategorizationMode: true,
+          wpManualDefaultCategoryIds: true,
+          wpDefaultAuthorId: true,
+        },
+      });
+      if (!webflowCategoryItemId) {
+        webflowCategoryItemId =
+          settings?.webflowDefaultCategoryItemId ?? null;
+      }
+      if (!webflowAuthorItemId) {
+        webflowAuthorItemId = settings?.webflowDefaultAuthorItemId ?? null;
+      }
+      if (!wpCategorizationMode) {
+        wpCategorizationMode = settings?.wpCategorizationMode ?? "automatic";
+      }
+      if (!wpCategoryIds && wpCategorizationMode === "manual") {
+        wpCategoryIds = settings?.wpManualDefaultCategoryIds ?? null;
+      }
+      if (wpAuthorId == null) {
+        wpAuthorId = settings?.wpDefaultAuthorId ?? null;
       }
       const topic = await db.topic.create({
         data: {
           ...data,
           webflowCategoryItemId,
           webflowAuthorItemId,
+          wpCategorizationMode,
+          wpCategoryIds,
+          wpAuthorId,
           workspaceId,
           status: "pending",
         },

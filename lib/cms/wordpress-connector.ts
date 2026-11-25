@@ -33,6 +33,7 @@ export function createWordPressConnector(
           meta_title: input.meta_title,
           meta_description: input.meta_description,
           categoryIds: input.categoryIds,
+          authorId: input.authorId,
         },
         credentials
       );

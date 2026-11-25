@@ -29,6 +29,8 @@ export type SyncedWpCategory = {
   slug: string;
   count: number;
   description: string;
+  /** Parent WP category id (0/null = racine). */
+  parent?: number | null;
 };
 
 export type WordPressCategoryConfig = {
@@ -59,6 +61,7 @@ type WpRestCategory = {
   slug?: string;
   count?: number;
   description?: string;
+  parent?: number;
 };
 
 /** Termes trop génériques pour justifier une attribution à eux seuls. */
@@ -144,6 +147,7 @@ export function parseSyncedCategoriesJson(
       if (!Number.isInteger(id) || id <= 0) {
         continue;
       }
+      const parentRaw = Number(row.parent);
       out.push({
         id,
         name: normalizeWordPressCategoryText(
@@ -154,6 +158,8 @@ export function parseSyncedCategoriesJson(
         description: normalizeWordPressCategoryText(
           typeof row.description === "string" ? row.description : ""
         ),
+        parent:
+          Number.isInteger(parentRaw) && parentRaw > 0 ? parentRaw : null,
       });
     }
     return out;
@@ -682,6 +688,7 @@ export async function fetchAllWordPressCategories(
       if (!Number.isInteger(id) || id <= 0) {
         continue;
       }
+      const parentRaw = Number(item.parent);
       collected.push({
         id,
         name: normalizeWordPressCategoryText(
@@ -692,6 +699,8 @@ export async function fetchAllWordPressCategories(
         description: normalizeWordPressCategoryText(
           typeof item.description === "string" ? item.description : ""
         ),
+        parent:
+          Number.isInteger(parentRaw) && parentRaw > 0 ? parentRaw : null,
       });
     }
 

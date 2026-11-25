@@ -88,6 +88,7 @@ model EditorialWorkspace {
   wordpressSyncRuns WordPressSyncRun[]
   webflowCmsItems       WebflowCmsItem[]
   webflowCmsReferences  WebflowCmsReference[]
+  wordpressCmsReferences WordPressCmsReference[]
   webflowSyncRuns       WebflowSyncRun[]
   customThemes          CustomTheme[]
   researchConfigs   ResearchConfig[]
@@ -125,6 +126,18 @@ model WorkspaceCmsSettings {
   wpCategoriesSyncedAt     DateTime?
   wpCategoriesOrigin       String?
   wpSeoPlugin              String?
+  /// Mode catégorisation WP : automatic (historique) | manual.
+  wpCategorizationMode     String?  @default("automatic")
+  /// IDs catégories défaut pour nouveaux sujets en mode manuel (JSON number[]).
+  wpManualDefaultCategoryIds String?
+  /// Auteur WP par défaut (ID numérique) lorsque l’attribution est autorisée.
+  wpDefaultAuthorId        Int?
+  wpAuthorsSyncedAt        DateTime?
+  /// self_only | can_list_authors | can_assign | unknown
+  wpAuthorCapability       String?
+  wpApiUserId              Int?
+  wpApiUserName            String?
+  wpApiUserSlug            String?
   /// Webflow
   webflowApiTokenEncrypted String?
   webflowSiteId            String?
@@ -258,6 +271,12 @@ model Topic {
   /// Références Webflow figées pour la file (item IDs), isolées du libellé `category`.
   webflowCategoryItemId String?
   webflowAuthorItemId   String?
+  /// Mode catégorisation WP figé : automatic | manual (null = automatic historique).
+  wpCategorizationMode  String?
+  /// IDs catégories WP manuelles (JSON number[]), isolés du libellé `category`.
+  wpCategoryIds         String?
+  /// Auteur WP figé (ID numérique). Null = compte API historique.
+  wpAuthorId            Int?
   angle     String?
   /// "veille" pour un sujet issu de la veille. Null pour un sujet manuel ou SEO.
   origin            String?
@@ -413,6 +432,35 @@ model WebflowCmsReference {
   @@index([workspaceId, kind])
   @@index([workspaceId, kind, missingAt])
   @@index([collectionId])
+}
+
+/// Catalogue catégories / auteurs WordPress (IDs numériques WP — jamais Webflow).
+model WordPressCmsReference {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   EditorialWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  /// category | author
+  kind        String
+  /// Origin WP normalisée (anti-contamination inter-sites).
+  siteOrigin  String
+  /// ID numérique WordPress (catégorie ou utilisateur).
+  wpId        Int
+  name        String
+  slug        String?
+  /// Parent catégorie (wpId parent) — null pour auteurs / racines.
+  parentWpId  Int?
+  description String?
+  count       Int?
+  /// Absent d’une sync complète réussie (conservé, non hard-delete).
+  missingAt   DateTime?
+  syncedAt    DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workspaceId, kind, siteOrigin, wpId])
+  @@index([workspaceId, kind])
+  @@index([workspaceId, kind, missingAt])
+  @@index([siteOrigin])
 }
 
 model WebflowSyncRun {
@@ -613,6 +661,16 @@ model AppSettings {
   wpCategoriesSyncedAt   DateTime?
   /// Origin WP du snapshot de catégories (anti-contamination inter-sites).
   wpCategoriesOrigin     String?
+  /// Mode catégorisation WP : automatic | manual (défaut automatic).
+  wpCategorizationMode   String?  @default("automatic")
+  /// IDs catégories défaut mode manuel (JSON number[]).
+  wpManualDefaultCategoryIds String?
+  wpDefaultAuthorId      Int?
+  wpAuthorsSyncedAt      DateTime?
+  wpAuthorCapability     String?
+  wpApiUserId            Int?
+  wpApiUserName          String?
+  wpApiUserSlug          String?
   /// Plugin SEO WordPress : slim_seo (défaut) | yoast_seo.
   wpSeoPlugin            String?
   /// Agent OpenAI dédié Webflow (OPENAI_WEBFLOW_AGENT_ID). Jamais de repli WP.

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ArticleForm } from "@/components/ArticleForm";
+import { parseWpCategoryIdsJson } from "@/lib/wordpress/references-types";
 import {
   loadTopicInActiveWorkspace,
   resolveActiveWorkspace,
@@ -45,6 +46,9 @@ export default async function NewArticlePage({
         preferredTitle?: string;
         webflowCategoryItemId?: string | null;
         webflowAuthorItemId?: string | null;
+        wpCategorizationMode?: "automatic" | "manual" | null;
+        wpCategoryIds?: number[] | null;
+        wpAuthorId?: number | null;
       }
     | undefined;
 
@@ -60,6 +64,10 @@ export default async function NewArticlePage({
         preferredTitle: preferredTitleParam || undefined,
         webflowCategoryItemId: topic.webflowCategoryItemId,
         webflowAuthorItemId: topic.webflowAuthorItemId,
+        wpCategorizationMode:
+          topic.wpCategorizationMode === "manual" ? "manual" : "automatic",
+        wpCategoryIds: parseWpCategoryIdsJson(topic.wpCategoryIds),
+        wpAuthorId: topic.wpAuthorId,
       };
     }
   } else if (preferredTitleParam) {
