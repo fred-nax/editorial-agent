@@ -11,6 +11,9 @@ export type FeaturedImagePublic = {
   status: string;
   wpMediaId: number | null;
   wpMediaUrl: string | null;
+  webflowAssetId: string | null;
+  webflowAssetUrl: string | null;
+  cmsTransferStatus: string | null;
   error: string | null;
   fileUrl: string;
   createdAt: string;
@@ -30,6 +33,9 @@ export function toFeaturedImagePublic(row: {
   status: string;
   wpMediaId: number | null;
   wpMediaUrl: string | null;
+  webflowAssetId?: string | null;
+  webflowAssetUrl?: string | null;
+  cmsTransferStatus?: string | null;
   error: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -47,6 +53,9 @@ export function toFeaturedImagePublic(row: {
     status: row.status,
     wpMediaId: row.wpMediaId,
     wpMediaUrl: row.wpMediaUrl,
+    webflowAssetId: row.webflowAssetId ?? null,
+    webflowAssetUrl: row.webflowAssetUrl ?? null,
+    cmsTransferStatus: row.cmsTransferStatus ?? null,
     error: row.error,
     fileUrl: `/api/articles/${row.generationId}/featured-image/file?imageId=${row.id}`,
     createdAt: row.createdAt.toISOString(),

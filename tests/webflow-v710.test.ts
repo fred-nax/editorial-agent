@@ -113,7 +113,13 @@ describe("V7.10.0 — Webflow Data API lecture seule", () => {
     );
     assert.throws(
       () => assertWebflowAllowedRequest("POST", "/sites"),
-      /autorisés/i
+      /autorisé/i
+    );
+    assert.doesNotThrow(() =>
+      assertWebflowAllowedRequest("POST", "/sites/x/assets")
+    );
+    assert.doesNotThrow(() =>
+      assertWebflowAllowedRequest("PATCH", "/collections/x/items/y")
     );
     assert.doesNotThrow(() => assertWebflowAllowedRequest("GET", "/sites"));
     assert.doesNotThrow(() =>
@@ -371,11 +377,11 @@ describe("V7.10.0 — Webflow Data API lecture seule", () => {
     assert.doesNotMatch(tools, /create_webflow_draft/);
   });
 
-  it("client refuse POST hors création d’items brouillon", async () => {
+  it("client refuse POST hors création d’items / assets", async () => {
     const client = createWebflowClient({ apiToken: "wf_test_token_ok" });
     await assert.rejects(
       () => client.request({ method: "POST", path: "/sites" }),
-      /autorisés/i
+      /autorisé/i
     );
     await assert.rejects(
       () =>

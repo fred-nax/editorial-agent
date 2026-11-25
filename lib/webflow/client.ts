@@ -1,7 +1,7 @@
 /**
- * Client HTTP Webflow Data API V2 (V7.10.1).
- * GET lecture + POST création d’items brouillon uniquement.
- * Interdit : live, publish, delete, PATCH, PUT.
+ * Client HTTP Webflow Data API V2.
+ * Lecture + POST brouillon items + POST assets + PATCH item staged.
+ * Interdit : live write, publish, delete, unpublish.
  */
 
 import {
@@ -18,26 +18,30 @@ export type WebflowClientOptions = {
   fetchImpl?: typeof fetch;
 };
 
+export type WebflowHttpMethod = "GET" | "POST" | "PATCH";
+
 export type WebflowRequestOptions = {
-  method?: "GET" | "POST";
+  method?: WebflowHttpMethod;
   path: string;
   query?: Record<string, string | undefined>;
   body?: Record<string, unknown>;
 };
 
-const COLLECTION_ITEMS_PATH =
-  /^\/collections\/[^/]+\/items\/?$/i;
+const COLLECTION_ITEMS_CREATE_PATH = /^\/collections\/[^/]+\/items\/?$/i;
+const COLLECTION_ITEM_PATH = /^\/collections\/[^/]+\/items\/[^/]+\/?$/i;
+const SITE_ASSETS_PATH = /^\/sites\/[^/]+\/assets\/?$/i;
+const SITE_ASSETS_LIST_PATH = /^\/sites\/[^/]+\/assets\/?$/i;
 
 /** Garde-fou chemins / méthodes Webflow autorisés. */
 export function assertWebflowAllowedRequest(
-  method: "GET" | "POST",
+  method: WebflowHttpMethod,
   path: string
 ): void {
   const normalized = path.startsWith("/") ? path : `/${path}`;
 
   // Lecture inventaire : GET …/items/live autorisé (V7.12.0).
   // Toute écriture /publish ou mutation live reste interdite.
-  if (/\/(live|publish)(\/|$)/i.test(normalized)) {
+  if (/\/(live|publish|unpublish)(\/|$)/i.test(normalized)) {
     if (
       method === "GET" &&
       /\/collections\/[^/]+\/items\/live\/?$/i.test(normalized)
@@ -46,18 +50,24 @@ export function assertWebflowAllowedRequest(
     }
     throw new WebflowApiError(
       "bad_request",
-      "Endpoints Webflow live/publish interdits (sauf GET …/items/live lecture seule)."
+      "Endpoints Webflow live/publish/unpublish interdits (sauf GET …/items/live lecture seule)."
     );
   }
   if (method === "GET") {
     return;
   }
-  if (method === "POST" && COLLECTION_ITEMS_PATH.test(normalized)) {
+  if (method === "POST" && COLLECTION_ITEMS_CREATE_PATH.test(normalized)) {
+    return;
+  }
+  if (method === "POST" && SITE_ASSETS_PATH.test(normalized)) {
+    return;
+  }
+  if (method === "PATCH" && COLLECTION_ITEM_PATH.test(normalized)) {
     return;
   }
   throw new WebflowApiError(
     "bad_request",
-    "Seuls GET et POST /collections/{id}/items (brouillon) sont autorisés."
+    "Méthode/chemin Webflow non autorisé (brouillon, assets metadata, PATCH item staged uniquement)."
   );
 }
 
@@ -82,7 +92,7 @@ export function createWebflowClient(options: WebflowClientOptions) {
     const method = req.method ?? "GET";
     assertWebflowAllowedRequest(method, req.path);
 
-    if (method === "POST") {
+    if (method === "POST" && COLLECTION_ITEMS_CREATE_PATH.test(req.path)) {
       const body = req.body ?? {};
       if (body.isDraft !== true || body.isArchived !== false) {
         throw new WebflowApiError(
@@ -90,10 +100,13 @@ export function createWebflowClient(options: WebflowClientOptions) {
           "Création Webflow : isDraft=true et isArchived=false sont obligatoires."
         );
       }
+    }
+
+    if (method === "PATCH" && COLLECTION_ITEM_PATH.test(req.path)) {
       if (/\/(live|publish)/i.test(req.path)) {
         throw new WebflowApiError(
           "bad_request",
-          "Publication Webflow interdite."
+          "PATCH live/publish Webflow interdit."
         );
       }
     }
@@ -120,11 +133,14 @@ export function createWebflowClient(options: WebflowClientOptions) {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "application/json",
-          ...(method === "POST"
+          ...(method === "POST" || method === "PATCH"
             ? { "Content-Type": "application/json" }
             : {}),
         },
-        body: method === "POST" ? JSON.stringify(req.body ?? {}) : undefined,
+        body:
+          method === "POST" || method === "PATCH"
+            ? JSON.stringify(req.body ?? {})
+            : undefined,
         signal: controller.signal,
       });
 
@@ -153,7 +169,6 @@ export function createWebflowClient(options: WebflowClientOptions) {
         throw mapped;
       }
 
-      // 202 Accepted possible pour create item
       if (response.status === 204) {
         return {} as T;
       }
@@ -194,3 +209,6 @@ export function createWebflowClient(options: WebflowClientOptions) {
 }
 
 export type WebflowClient = ReturnType<typeof createWebflowClient>;
+
+/** Exposé pour tests de chemins assets. */
+export const WEBFLOW_SITE_ASSETS_LIST_PATH = SITE_ASSETS_LIST_PATH;

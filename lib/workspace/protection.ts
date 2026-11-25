@@ -31,6 +31,7 @@ const WEBFLOW_ENABLED_MODULES = new Set<WebflowModuleCapability>([
   "inventory",
   "rapprochements",
   "opportunities",
+  "featured_image",
 ]);
 
 export function isWebflowModuleEnabled(
@@ -68,7 +69,7 @@ export function webflowEmptyState(module: WebflowModuleCapability): {
     inventory:
       "Inventaire CMS Webflow : synchronisez la collection configurée. Aucun inventaire WordPress n’est réutilisé.",
     featured_image:
-      "Images à la une non disponibles pour Webflow dans cette version.",
+      "Images à la une Webflow : génération locale puis transfert Assets + association brouillon staged. Permissions assets:read/assets:write et mapping image/ALT requis. Aucune publication automatique.",
     rapprochements:
       "Rapprochements éditoriaux Webflow : synchronisez l’inventaire CMS de l’espace. Aucun inventaire WordPress n’est réutilisé.",
     opportunities:

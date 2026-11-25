@@ -27,12 +27,13 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
     assert.ok(WORKSPACE_SWITCH_STORAGE_KEY.includes("v7112"));
   });
 
-  it("autorise veille, inventaire et opportunités Webflow ; refuse images / analytics", () => {
+  it("autorise veille, inventaire, opportunités et images Webflow ; refuse analytics", () => {
     assert.equal(isWebflowModuleEnabled("veille"), true);
     assert.equal(isWebflowModuleEnabled("topics"), true);
     assert.equal(isWebflowModuleEnabled("inventory"), true);
     assert.equal(isWebflowModuleEnabled("opportunities"), true);
-    assert.equal(isWebflowModuleEnabled("featured_image"), false);
+    // V7.13.0 : images à la une Webflow activées
+    assert.equal(isWebflowModuleEnabled("featured_image"), true);
     assert.equal(isWebflowModuleEnabled("analytics"), false);
     assert.match(webflowEmptyState("opportunities").reason, /inventaire/i);
     assert.match(webflowEmptyState("analytics").reason, /WordPress/i);
@@ -98,6 +99,8 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
     assert.match(selector, /switchWorkspace/);
     assert.match(selector, /providerLabel\(workspace\.cmsProvider\)/);
     assert.match(selector, /siteCaption\(workspace\)/);
+    assert.match(selector, /CmsProviderIcon/);
+    assert.doesNotMatch(selector, /Globe2|LayoutTemplate/);
     // Pas de répétition name + provider sur la même ligne principale.
     assert.doesNotMatch(selector, /\{active\.name\}/);
     const sidebar = read("components/Sidebar.tsx");

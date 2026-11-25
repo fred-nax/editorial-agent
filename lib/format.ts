@@ -13,26 +13,27 @@ export function formatCost(value: number | null | undefined): string {
 }
 
 /**
- * Affichage compact du coût LLM estimé (USD).
- * 0.149378 → "0,149 $"
- * 0.0072   → "< 0,01 $"
- * null     → "—"
+ * Affichage du coût LLM estimé (USD), préfixe `$`.
+ * - null / NaN → "—" (inconnu, distinct de zéro)
+ * - 0 → "$0.00"
+ * - |x| < 1 → 4 décimales ($0.0024, $0.0450, $0.1248)
+ * - |x| ≥ 1 → 2 décimales ($1.25)
+ * Ne masque plus les petits montants sous un plafond opaque.
  */
 export function formatEstimatedCost(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "—";
   }
 
-  if (value > 0 && value < 0.01) {
-    return "< 0,01 $";
+  if (value === 0) {
+    return "$0.00";
   }
 
-  const formatted = new Intl.NumberFormat("fr-FR", {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  }).format(value);
-
-  return `${formatted} $`;
+  const abs = Math.abs(value);
+  const decimals = abs < 1 ? 4 : 2;
+  const formatted = abs.toFixed(decimals);
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${formatted}`;
 }
 
 export function formatTokenCount(value: number | null | undefined): string {

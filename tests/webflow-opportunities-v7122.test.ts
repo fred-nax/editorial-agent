@@ -13,10 +13,11 @@ function read(path: string): string {
 }
 
 describe("V7.12.2 — Opportunités SEO Webflow (source)", () => {
-  it("active le module opportunities sans analytics / images / Google", () => {
+  it("active le module opportunities sans analytics / Google", () => {
     assert.equal(isWebflowModuleEnabled("opportunities"), true);
     assert.equal(isWebflowModuleEnabled("analytics"), false);
-    assert.equal(isWebflowModuleEnabled("featured_image"), false);
+    // Images Webflow (V7.13.0) n’impactent pas le module opportunités
+    assert.equal(isWebflowModuleEnabled("featured_image"), true);
 
     const wf = {
       id: WORKSPACE_IDS.webflow,

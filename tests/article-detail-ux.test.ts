@@ -67,19 +67,21 @@ describe("historique détail UX", () => {
     assert.equal(moveArticleDetailTab("article", "Tab"), "article");
   });
 
-  it("masque image et performances pour Webflow", () => {
+  it("masque performances pour Webflow ; conserve Image à la une (V7.13.0)", () => {
     const webflowTabs = getArticleDetailTabs("webflow");
     assert.deepEqual(
       webflowTabs.map((tab) => tab.id),
-      ["report", "article", "usage"]
+      ["report", "article", "usage", "featured"]
     );
     assert.equal(
-      moveArticleDetailTab("usage", "ArrowRight", webflowTabs),
+      moveArticleDetailTab("featured", "ArrowRight", webflowTabs),
       "report"
     );
     const page = source("app/(protected)/articles/[id]/page.tsx");
     assert.match(page, /getArticleDetailTabs/);
     assert.match(page, /cmsDestination=\{cmsDestination\}/);
+    assert.match(page, /cmsDestination === "webflow"/);
+    assert.match(page, /FeaturedImagePanel/);
   });
 
   it("affiche le rapport lorsqu'une trace existe", () => {
@@ -149,7 +151,7 @@ describe("historique détail UX", () => {
     assert.equal(displayField(""), "—");
     assert.equal(displayField("extrait présent"), "extrait présent");
     assert.equal(displayMetric(null), "—");
-    assert.equal(displayMetric("0,149 $"), "0,149 $");
+    assert.equal(displayMetric("$0.1494"), "$0.1494");
   });
 
   it("présente le coût, les tokens et la copie de session", () => {

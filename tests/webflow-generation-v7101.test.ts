@@ -247,7 +247,9 @@ describe("V7.10.1 — génération Webflow brouillon", () => {
 
     const route = read("app/api/generate/route.ts");
     assert.match(route, /getWebflowGenerationReadiness/);
-    assert.match(route, /image à la une n’est pas disponible/i);
+    // V7.13.0 : image à la une autorisée pour Webflow (transfert séparé)
+    assert.doesNotMatch(route, /image à la une n’est pas disponible/i);
+    assert.match(route, /image à la une autorisée pour Webflow/i);
 
     const wordpress = read("lib/wordpress.ts");
     assert.match(wordpress, /status:\s*"draft"/);

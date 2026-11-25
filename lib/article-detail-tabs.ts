@@ -10,14 +10,12 @@ export type ArticleDetailTabId = (typeof ARTICLE_DETAIL_TABS)[number]["id"];
 
 export type ArticleDetailTab = (typeof ARTICLE_DETAIL_TABS)[number];
 
-/** Onglets visibles selon la destination CMS (Webflow : pas d’image / perf SEO). */
+/** Onglets visibles selon la destination CMS (Webflow : pas de perf SEO GSC). */
 export function getArticleDetailTabs(
   cmsDestination?: string | null
 ): readonly ArticleDetailTab[] {
   if (cmsDestination === "webflow") {
-    return ARTICLE_DETAIL_TABS.filter(
-      (tab) => tab.id !== "featured" && tab.id !== "performances"
-    );
+    return ARTICLE_DETAIL_TABS.filter((tab) => tab.id !== "performances");
   }
   return ARTICLE_DETAIL_TABS;
 }

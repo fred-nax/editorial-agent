@@ -39,6 +39,23 @@ export {
   type WebflowGenerationReadiness,
 } from "@/lib/webflow/readiness";
 export {
+  getWebflowFeaturedImageReadiness,
+  type WebflowFeaturedImageReadiness,
+} from "@/lib/webflow/featured-image-readiness";
+export {
+  assertFeaturedImageFileForWebflow,
+  assertTrustedWebflowUploadUrl,
+  md5Hex,
+  probeWebflowAssetsRead,
+  uploadWebflowSiteAsset,
+} from "@/lib/webflow/assets";
+export {
+  assertWebflowDraftItemForFeaturedImage,
+  buildWebflowImageFieldValue,
+  patchWebflowDraftItemFeaturedImage,
+  resolveFeaturedImageFieldSlugs,
+} from "@/lib/webflow/featured-image-attach";
+export {
   listAllWebflowCollectionItems,
   type WebflowCmsItemRemote,
   type WebflowListItemsPage,

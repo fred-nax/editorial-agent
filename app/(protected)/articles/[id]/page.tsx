@@ -32,6 +32,7 @@ import {
   getArticleDetailTabs,
   type ArticleDetailTabId,
 } from "@/lib/article-detail-tabs";
+import { resolveWebflowConfig } from "@/lib/settings/app-settings";
 import {
   loadGenerationMetaInActiveWorkspace,
   requireGenerationInActiveWorkspace,
@@ -71,10 +72,10 @@ export default async function ArticleDetailPage({
   const cmsDestination = article.cmsDestination ?? "wordpress";
   const isWebflow = cmsDestination === "webflow";
   const canManageFeaturedImage =
-    !isWebflow &&
     article.status === "completed" &&
-    typeof article.wpPostId === "number" &&
-    article.wpPostId > 0;
+    (isWebflow
+      ? Boolean(article.cmsExternalId?.trim())
+      : typeof article.wpPostId === "number" && article.wpPostId > 0);
 
   const latestFeaturedImage = canManageFeaturedImage
     ? await db.articleFeaturedImage.findFirst({
@@ -85,6 +86,11 @@ export default async function ArticleDetailPage({
         orderBy: { createdAt: "desc" },
       })
     : null;
+
+  const webflowFreeze =
+    isWebflow && canManageFeaturedImage
+      ? await resolveWebflowConfig()
+      : null;
 
   const editorial = parseStoredEditorialContext(article.editorialContext);
   const publicError = toPublicGenerationError(article.error);
@@ -226,10 +232,14 @@ export default async function ArticleDetailPage({
           />
         }
         featured={
-          isWebflow ? undefined : canManageFeaturedImage ? (
+          canManageFeaturedImage ? (
             <FeaturedImagePanel
               generationId={article.id}
               wpUrl={article.wpUrl}
+              cmsDestination={cmsDestination}
+              cmsExternalId={article.cmsExternalId}
+              frozenSiteId={webflowFreeze?.siteId ?? null}
+              frozenCollectionId={webflowFreeze?.collectionId ?? null}
               initialImage={
                 latestFeaturedImage
                   ? toFeaturedImagePublic(latestFeaturedImage)
@@ -237,7 +247,7 @@ export default async function ArticleDetailPage({
               }
             />
           ) : (
-            <FeaturedImageUnavailable />
+            <FeaturedImageUnavailable cmsDestination={cmsDestination} />
           )
         }
         performances={

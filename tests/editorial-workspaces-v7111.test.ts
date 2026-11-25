@@ -86,7 +86,8 @@ describe("V7.11.1 — espaces éditoriaux (socle)", () => {
     assert.equal(isWebflowModuleEnabled("analytics"), false);
     assert.equal(isWebflowModuleEnabled("opportunities"), true);
     assert.equal(isWebflowModuleEnabled("veille"), true);
-    assert.equal(isWebflowModuleEnabled("featured_image"), false);
+    // V7.13.0 : featured_image Webflow activé (Assets + brouillon staged)
+    assert.equal(isWebflowModuleEnabled("featured_image"), true);
 
     const analyticsEmpty = webflowEmptyState("analytics");
     assert.equal(analyticsEmpty.empty, true);

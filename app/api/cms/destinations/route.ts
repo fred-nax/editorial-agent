@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listCmsDestinations } from "@/lib/cms";
 import { listPublicEditorialAgentStatuses } from "@/lib/agent/registry";
+import { getWebflowFeaturedImageReadiness } from "@/lib/webflow/featured-image-readiness";
 import { getWebflowGenerationReadiness } from "@/lib/webflow/readiness";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -17,11 +18,13 @@ export async function GET() {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
-  const [destinations, agents, webflowReadiness] = await Promise.all([
-    Promise.resolve(listCmsDestinations()),
-    listPublicEditorialAgentStatuses(),
-    getWebflowGenerationReadiness({ verifyRemoteSchema: true }),
-  ]);
+  const [destinations, agents, webflowReadiness, featuredImageReadiness] =
+    await Promise.all([
+      Promise.resolve(listCmsDestinations()),
+      listPublicEditorialAgentStatuses(),
+      getWebflowGenerationReadiness({ verifyRemoteSchema: true }),
+      getWebflowFeaturedImageReadiness({ probeAssets: true }),
+    ]);
 
   const enriched = destinations.map((destination) => {
     if (destination.id !== "webflow") {
@@ -57,6 +60,17 @@ export async function GET() {
       agentConfigured: webflowReadiness.agentConfigured,
       mappingComplete: webflowReadiness.mappingComplete,
       mappingValid: webflowReadiness.mappingValid,
+    },
+    webflowFeaturedImages: {
+      ready: featuredImageReadiness.ready,
+      reasons: featuredImageReadiness.reasons,
+      tokenConfigured: featuredImageReadiness.tokenConfigured,
+      featuredImageMapped: featuredImageReadiness.featuredImageMapped,
+      altTextMapped: featuredImageReadiness.altTextMapped,
+      assetsReadOk: featuredImageReadiness.assetsReadOk,
+      // Distinguer token valide ≠ permissions Assets.
+      note:
+        "Un token sites/cms valide ne garantit pas assets:read/assets:write. Aucun asset n’est créé lors du diagnostic.",
     },
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   CheckCircle2,
   ImageIcon,
@@ -45,14 +45,39 @@ type FeaturedImagePanelProps = {
   generationId: string;
   wpUrl: string | null;
   initialImage: FeaturedImagePublic | null;
+  cmsDestination?: string | null;
+  cmsExternalId?: string | null;
+  frozenSiteId?: string | null;
+  frozenCollectionId?: string | null;
 };
 
 type BusyState = "idle" | "generating" | "uploading" | "savingAlt";
+
+function isWebflowCms(destination?: string | null): boolean {
+  return destination === "webflow";
+}
+
+function transferStatusLabel(image: FeaturedImagePublic | null): string | null {
+  if (!image?.cmsTransferStatus) {
+    return null;
+  }
+  switch (image.cmsTransferStatus) {
+    case "file_uploaded":
+      return "Asset Webflow créé — association au brouillon en attente";
+    case "associated":
+      return "Associée au brouillon Webflow";
+    case "association_failed":
+      return "Asset conservé — reprise de l’association possible";
+    default:
+      return image.cmsTransferStatus;
+  }
+}
 
 function workflowStatusLabel(input: {
   busy: BusyState;
   image: FeaturedImagePublic | null;
   error: string | null;
+  webflow: boolean;
 }): { label: string; variant: "outline" | "secondary" | "destructive" } {
   if (input.busy === "generating" || input.image?.status === "generating") {
     return { label: "Génération de l’image en cours", variant: "secondary" };
@@ -74,8 +99,30 @@ function workflowStatusLabel(input: {
   }
   if (input.image.status === "attached") {
     return {
-      label: "Image associée au brouillon WordPress",
+      label: input.webflow
+        ? "Image associée au brouillon Webflow"
+        : "Image associée au brouillon WordPress",
       variant: "secondary",
+    };
+  }
+  if (
+    input.webflow &&
+    input.image.cmsTransferStatus === "association_failed" &&
+    input.image.webflowAssetId
+  ) {
+    return {
+      label: "Asset prêt — association à reprendre",
+      variant: "destructive",
+    };
+  }
+  if (
+    input.webflow &&
+    input.image.webflowAssetId &&
+    input.image.status !== "attached"
+  ) {
+    return {
+      label: "Asset Webflow prêt (non associé)",
+      variant: "outline",
     };
   }
   if (input.image.status === "failed" || input.error) {
@@ -88,7 +135,13 @@ export function FeaturedImagePanel({
   generationId,
   wpUrl,
   initialImage,
+  cmsDestination,
+  cmsExternalId,
+  frozenSiteId,
+  frozenCollectionId,
 }: FeaturedImagePanelProps) {
+  const webflow = isWebflowCms(cmsDestination);
+  const uploadLockRef = useRef(false);
   const [style, setStyle] = useState<string>(
     initialImage?.style ?? "photographic"
   );
@@ -102,18 +155,36 @@ export function FeaturedImagePanel({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [draftLink, setDraftLink] = useState<string | null>(
-    initialImage?.status === "attached" ? wpUrl : null
+    !webflow && initialImage?.status === "attached" ? wpUrl : null
   );
 
   const autoBusy =
     image?.status === "pending" || image?.status === "generating";
   const disabled = busy !== "idle" || autoBusy;
-  const workflow = workflowStatusLabel({ busy, image, error });
+  const workflow = workflowStatusLabel({ busy, image, error, webflow });
   const showPreview =
     Boolean(image) &&
     image!.status !== "pending" &&
     image!.status !== "generating" &&
     image!.status !== "failed";
+  const cmsLabel = webflow ? "Webflow" : "WordPress";
+  const transferLabel = transferStatusLabel(image);
+  const canResumeAssociation =
+    webflow &&
+    Boolean(image?.webflowAssetId) &&
+    image?.status !== "attached";
+  const uploadButtonLabel = (() => {
+    if (busy === "uploading") {
+      return "Transfert…";
+    }
+    if (image?.status === "attached") {
+      return "Déjà envoyée";
+    }
+    if (canResumeAssociation) {
+      return "Reprendre l’association Webflow";
+    }
+    return webflow ? "Transférer vers Webflow" : "Envoyer à WordPress";
+  })();
 
   async function generate(regenerate: boolean) {
     if (regenerate) {
@@ -152,7 +223,11 @@ export function FeaturedImagePanel({
       setImage(data.image);
       setAltText(data.image.altText ?? "");
       setDraftLink(null);
-      setSuccess("Image générée. Vérifiez le texte ALT avant l’envoi.");
+      setSuccess(
+        webflow
+          ? "Image générée. Vérifiez le texte ALT avant le transfert Webflow (action séparée)."
+          : "Image générée. Vérifiez le texte ALT avant l’envoi."
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "La génération a échoué."
@@ -199,29 +274,58 @@ export function FeaturedImagePanel({
   }
 
   async function upload(confirmReplace = false) {
-    if (!image) {
+    if (!image || uploadLockRef.current) {
       return;
     }
+
+    const confirmMessage = webflow
+      ? canResumeAssociation
+        ? "Reprendre uniquement l’association de l’asset déjà transféré au brouillon Webflow ? Aucune nouvelle génération OpenAI."
+        : "Transférer cette image vers Webflow Assets et l’associer au brouillon CMS ? Aucune publication automatique."
+      : "Envoyer cette image à la une vers le brouillon WordPress ?";
+    if (!confirmReplace) {
+      const ok = window.confirm(confirmMessage);
+      if (!ok) {
+        return;
+      }
+    }
+
+    uploadLockRef.current = true;
     setBusy("uploading");
     setError(null);
     setSuccess(null);
 
     try {
+      const body: Record<string, unknown> = {
+        imageId: image.id,
+        altText,
+        confirmReplace,
+      };
+      if (webflow) {
+        if (frozenSiteId) {
+          body.frozenSiteId = frozenSiteId;
+        }
+        if (frozenCollectionId) {
+          body.frozenCollectionId = frozenCollectionId;
+        }
+      }
+
       const response = await fetch(
         `/api/articles/${generationId}/featured-image/upload`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageId: image.id,
-            altText,
-            confirmReplace,
-          }),
+          body: JSON.stringify(body),
         }
       );
       const data = (await response.json()) as {
         image?: FeaturedImagePublic;
         wordpress?: { link?: string };
+        webflow?: {
+          assetId?: string;
+          assetUrl?: string;
+          associated?: boolean;
+        };
         error?: string;
         code?: string;
       };
@@ -230,6 +334,7 @@ export function FeaturedImagePanel({
         const ok = window.confirm(
           "Ce brouillon a déjà une image à la une. Remplacer l’image existante ?"
         );
+        uploadLockRef.current = false;
         setBusy("idle");
         if (ok) {
           await upload(true);
@@ -238,19 +343,45 @@ export function FeaturedImagePanel({
       }
 
       if (!response.ok || !data.image) {
-        throw new Error(data.error || "L’envoi WordPress a échoué.");
+        throw new Error(
+          data.error ||
+            (webflow
+              ? "Le transfert Webflow a échoué."
+              : "L’envoi WordPress a échoué.")
+        );
       }
 
       setImage(data.image);
       setAltText(data.image.altText ?? "");
-      const link = data.wordpress?.link || wpUrl;
-      setDraftLink(link);
-      setSuccess("Image associée au brouillon WordPress.");
+
+      if (webflow) {
+        const associated =
+          data.webflow?.associated === true ||
+          data.image.status === "attached";
+        if (associated) {
+          setSuccess("Image associée au brouillon Webflow (staged).");
+        } else if (data.image.webflowAssetId) {
+          setSuccess(
+            "Asset Webflow créé. L’association au brouillon n’est pas confirmée — vous pouvez reprendre sans régénérer."
+          );
+        } else {
+          setSuccess("Transfert Webflow terminé.");
+        }
+      } else {
+        const link = data.wordpress?.link || wpUrl;
+        setDraftLink(link);
+        setSuccess("Image associée au brouillon WordPress.");
+      }
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "L’envoi WordPress a échoué."
+        err instanceof Error
+          ? err.message
+          : webflow
+            ? "Le transfert Webflow a échoué."
+            : "L’envoi WordPress a échoué."
       );
     } finally {
+      uploadLockRef.current = false;
       setBusy("idle");
     }
   }
@@ -269,7 +400,14 @@ export function FeaturedImagePanel({
               <span className="font-medium text-foreground">
                 {FEATURED_IMAGE_MODEL}
               </span>
-              .
+              {webflow ? (
+                <>
+                  {" "}
+                  · Destination{" "}
+                  <span className="font-medium text-foreground">Webflow</span>
+                  {cmsExternalId ? ` · brouillon ${cmsExternalId}` : ""}.
+                </>
+              ) : null}
             </CardDescription>
           </div>
           <Badge variant={workflow.variant}>{workflow.label}</Badge>
@@ -286,7 +424,7 @@ export function FeaturedImagePanel({
         {image?.status === "pending" ? (
           <p className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
             Image demandée avec l’article. Elle sera générée automatiquement
-            après la création du brouillon WordPress.
+            après la création du brouillon {cmsLabel}.
           </p>
         ) : null}
 
@@ -401,6 +539,9 @@ export function FeaturedImagePanel({
               <span>
                 {image.size} · {image.model}
               </span>
+              {transferLabel ? (
+                <Badge variant="outline">{transferLabel}</Badge>
+              ) : null}
             </div>
 
             <div className="overflow-hidden rounded-lg ring-1 ring-foreground/10">
@@ -454,6 +595,26 @@ export function FeaturedImagePanel({
               </div>
             </div>
 
+            {webflow && image.webflowAssetId ? (
+              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                <p>
+                  Asset distant :{" "}
+                  <span className="font-medium text-foreground">
+                    {image.webflowAssetId}
+                  </span>
+                </p>
+                {image.webflowAssetUrl ? (
+                  <p className="mt-1 break-all">URL : {image.webflowAssetUrl}</p>
+                ) : null}
+                {image.status !== "attached" ? (
+                  <p className="mt-1 text-amber-800">
+                    Image transférée mais non présentée comme associée tant que
+                    l’association au brouillon n’est pas confirmée.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -467,13 +628,9 @@ export function FeaturedImagePanel({
                 ) : (
                   <Upload data-icon="inline-start" />
                 )}
-                {busy === "uploading"
-                  ? "Transfert…"
-                  : image.status === "attached"
-                    ? "Déjà envoyée"
-                    : "Envoyer à WordPress"}
+                {uploadButtonLabel}
               </Button>
-              {draftLink ? (
+              {!webflow && draftLink ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -499,7 +656,7 @@ export function FeaturedImagePanel({
           <div className="space-y-3 border-t border-border pt-4">
             <p className="text-sm text-amber-900" role="alert">
               {image.error ?? "Échec de génération de l’image."} L’article et le
-              brouillon WordPress restent disponibles. Vous pouvez régénérer
+              brouillon {cmsLabel} restent disponibles. Vous pouvez régénérer
               manuellement.
             </p>
           </div>
@@ -509,7 +666,12 @@ export function FeaturedImagePanel({
   );
 }
 
-export function FeaturedImageUnavailable() {
+export function FeaturedImageUnavailable({
+  cmsDestination,
+}: {
+  cmsDestination?: string | null;
+}) {
+  const webflow = isWebflowCms(cmsDestination);
   return (
     <Card>
       <CardHeader>
@@ -518,8 +680,9 @@ export function FeaturedImageUnavailable() {
           Image à la une
         </CardTitle>
         <CardDescription>
-          Disponible uniquement pour un article terminé avec un brouillon
-          WordPress valide.
+          {webflow
+            ? "Disponible uniquement pour un article terminé avec un brouillon Webflow valide (cmsExternalId)."
+            : "Disponible uniquement pour un article terminé avec un brouillon WordPress valide."}
         </CardDescription>
       </CardHeader>
       <CardContent>

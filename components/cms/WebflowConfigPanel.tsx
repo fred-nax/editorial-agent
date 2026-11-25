@@ -333,9 +333,19 @@ export function WebflowConfigPanel({
       const payload = (await response.json()) as {
         ok?: boolean;
         message?: string;
+        details?: {
+          featuredImagesReady?: boolean | null;
+          assetsReadOk?: boolean | number | null;
+          assetsProbeMessage?: string | null;
+        };
       };
       setTestOk(Boolean(payload.ok));
-      setTestMessage(payload.message ?? "Résultat du test indisponible.");
+      let message = payload.message ?? "Résultat du test indisponible.";
+      if (payload.ok && payload.details?.featuredImagesReady === false) {
+        message +=
+          " Attention : le token peut être valide pour sites/cms sans autoriser Assets (images à la une).";
+      }
+      setTestMessage(message);
       if (payload.ok) {
         await loadSites();
         if (siteId.trim()) {

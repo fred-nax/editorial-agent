@@ -87,7 +87,8 @@ export async function cancelPendingFeaturedImagesForFailedArticle(
 }
 
 /**
- * Traite une demande pending pour un article completed + wpPostId.
+ * Traite une demande pending pour un article completed
+ * (WordPress : wpPostId ; Webflow : cmsExternalId).
  * Claim atomique pending → generating pour éviter les doublons.
  */
 export async function processPendingFeaturedImageJob(
@@ -112,15 +113,20 @@ export async function processPendingFeaturedImageJob(
 
   const generation = await db.articleGeneration.findUnique({
     where: { id: row.generationId },
-    select: { status: true, wpPostId: true },
+    select: {
+      status: true,
+      wpPostId: true,
+      cmsDestination: true,
+      cmsExternalId: true,
+    },
   });
 
-  if (
-    !generation ||
-    generation.status !== "completed" ||
-    typeof generation.wpPostId !== "number" ||
-    generation.wpPostId <= 0
-  ) {
+  const isWebflow = generation?.cmsDestination === "webflow";
+  const hasDraft = isWebflow
+    ? Boolean(generation?.cmsExternalId?.trim())
+    : typeof generation?.wpPostId === "number" && generation.wpPostId > 0;
+
+  if (!generation || generation.status !== "completed" || !hasDraft) {
     await db.articleFeaturedImage.update({
       where: { id: imageId },
       data: {
@@ -222,10 +228,22 @@ export async function recoverFeaturedImageJobs(
   const requeueCandidates = await db.articleFeaturedImage.findMany({
     where: {
       status: "pending",
-      generation: {
-        status: "completed",
-        wpPostId: { not: null },
-      },
+      OR: [
+        {
+          generation: {
+            status: "completed",
+            cmsDestination: { not: "webflow" },
+            wpPostId: { not: null },
+          },
+        },
+        {
+          generation: {
+            status: "completed",
+            cmsDestination: "webflow",
+            cmsExternalId: { not: null },
+          },
+        },
+      ],
     },
     select: { id: true },
   });

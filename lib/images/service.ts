@@ -121,6 +121,12 @@ function cleanOptionalText(value: unknown, max: number): string | null {
   return cleaned;
 }
 
+function isWebflowGeneration(generation: {
+  cmsDestination: string | null;
+}): boolean {
+  return generation.cmsDestination === "webflow";
+}
+
 async function loadEligibleGeneration(
   generationId: string,
   workspaceId?: string
@@ -140,6 +146,16 @@ async function loadEligibleGeneration(
       "L’image à la une n’est disponible que pour un article terminé.",
       409
     );
+  }
+  if (isWebflowGeneration(generation)) {
+    const externalId = generation.cmsExternalId?.trim();
+    if (!externalId) {
+      throw new FeaturedImageServiceError(
+        "Un identifiant de brouillon Webflow (cmsExternalId) est requis.",
+        409
+      );
+    }
+    return generation;
   }
   if (
     typeof generation.wpPostId !== "number" ||
@@ -200,15 +216,20 @@ async function runImageGenerationCore(input: {
     );
     const editorial = parseStoredEditorialContext(generation.editorialContext);
     const size = sizeForAspect(input.aspectRatio);
+    // Webflow : ne jamais construire le prompt à partir des données WordPress.
     let identity;
-    try {
-      const connections = await resolveRuntimeConnections();
-      identity = resolveEditorialIdentity({
-        wpUrl: connections.wordpress.url,
-        siteName: connections.siteName,
-        clientName: connections.clientName,
-      });
-    } catch {
+    if (!isWebflowGeneration(generation)) {
+      try {
+        const connections = await resolveRuntimeConnections();
+        identity = resolveEditorialIdentity({
+          wpUrl: connections.wordpress.url,
+          siteName: connections.siteName,
+          clientName: connections.clientName,
+        });
+      } catch {
+        identity = undefined;
+      }
+    } else {
       identity = undefined;
     }
     const prompt = buildFeaturedImagePrompt({
@@ -616,6 +637,230 @@ export async function readFeaturedImageBytesForArticle(input: {
   }
   const bytes = await readFeaturedImageFile(row.relativePath);
   return { bytes, mimeType: row.mimeType || FEATURED_IMAGE_MIME };
+}
+
+/**
+ * Transfert Assets Webflow + association au brouillon staged.
+ * Reprend l’association seule si l’asset est déjà connu (pas de régénération OpenAI).
+ */
+export async function uploadFeaturedImageToWebflow(input: {
+  generationId: string;
+  imageId: string;
+  altText?: unknown;
+  workspaceId?: string;
+  /** Site / collection figés au lancement (anti changement d’espace). */
+  frozenSiteId?: string;
+  frozenCollectionId?: string;
+}): Promise<{
+  image: FeaturedImagePublic;
+  webflow: {
+    itemId: string;
+    assetId: string;
+    assetUrl: string;
+    associated: boolean;
+  };
+}> {
+  const lockKey = `upload-webflow:${input.generationId}`;
+  if (!tryAcquireFeaturedImageLock(lockKey)) {
+    throw new FeaturedImageServiceError(
+      "Un transfert Webflow est déjà en cours pour cet article.",
+      409,
+      "IN_PROGRESS"
+    );
+  }
+
+  try {
+    const generation = await loadEligibleGeneration(
+      input.generationId,
+      input.workspaceId
+    );
+    if (!isWebflowGeneration(generation)) {
+      throw new FeaturedImageServiceError(
+        "Cette génération n’est pas destinée à Webflow.",
+        409
+      );
+    }
+    const itemId = generation.cmsExternalId!.trim();
+
+    const { resolveWebflowConfig } = await import(
+      "@/lib/settings/app-settings"
+    );
+    const { createWebflowClient } = await import("@/lib/webflow/client");
+    const { uploadWebflowSiteAsset } = await import("@/lib/webflow/assets");
+    const {
+      assertWebflowDraftItemForFeaturedImage,
+      fetchWebflowCollectionItem,
+      patchWebflowDraftItemFeaturedImage,
+      resolveFeaturedImageFieldSlugs,
+    } = await import("@/lib/webflow/featured-image-attach");
+    const { WebflowApiError } = await import("@/lib/webflow/errors");
+
+    const config = await resolveWebflowConfig();
+    if (!config?.apiToken || !config.siteId || !config.collectionId) {
+      throw new FeaturedImageServiceError(
+        "Configuration Webflow incomplète (token, site ou collection).",
+        409
+      );
+    }
+    const siteId = (input.frozenSiteId ?? config.siteId).trim();
+    const collectionId = (
+      input.frozenCollectionId ?? config.collectionId
+    ).trim();
+    if (siteId !== config.siteId.trim() || collectionId !== config.collectionId.trim()) {
+      throw new FeaturedImageServiceError(
+        "Le site/collection figés ne correspondent plus à la configuration active.",
+        409,
+        "WORKSPACE_MISMATCH"
+      );
+    }
+    resolveFeaturedImageFieldSlugs(config.fieldMapping);
+
+    const row = await db.articleFeaturedImage.findFirst({
+      where: {
+        id: input.imageId,
+        generationId: input.generationId,
+        workspaceId: generation.workspaceId,
+      },
+    });
+    if (!row) {
+      throw new FeaturedImageServiceError("Image introuvable.", 404);
+    }
+    if (row.relativePath === "pending") {
+      throw new FeaturedImageServiceError("Fichier image indisponible.", 409);
+    }
+
+    const altText =
+      input.altText !== undefined
+        ? cleanOptionalText(input.altText, MAX_ALT_TEXT_LENGTH)
+        : row.altText;
+
+    if (altText !== row.altText) {
+      await db.articleFeaturedImage.update({
+        where: { id: row.id },
+        data: { altText },
+      });
+    }
+
+    const client = createWebflowClient({ apiToken: config.apiToken });
+    const remoteItem = await fetchWebflowCollectionItem(
+      client,
+      collectionId,
+      itemId
+    );
+    assertWebflowDraftItemForFeaturedImage(remoteItem, itemId);
+
+    await db.articleFeaturedImage.update({
+      where: { id: row.id },
+      data: { status: "uploading", error: null },
+    });
+
+    let assetId = row.webflowAssetId?.trim() || null;
+    let assetUrl = row.webflowAssetUrl?.trim() || null;
+
+    try {
+      if (!assetId || !assetUrl) {
+        const bytes = await readFeaturedImageFile(row.relativePath);
+        const uploaded = await uploadWebflowSiteAsset({
+          client,
+          siteId,
+          bytes,
+          fileName: `${row.id}.webp`,
+          mimeType: row.mimeType || FEATURED_IMAGE_MIME,
+          sizeLabel: row.size,
+        });
+        assetId = uploaded.assetId;
+        assetUrl = uploaded.hostedUrl;
+        await db.articleFeaturedImage.update({
+          where: { id: row.id },
+          data: {
+            webflowAssetId: assetId,
+            webflowAssetUrl: assetUrl,
+            cmsTransferStatus: "file_uploaded",
+          },
+        });
+      }
+
+      await patchWebflowDraftItemFeaturedImage({
+        client,
+        collectionId,
+        itemId,
+        mapping: config.fieldMapping,
+        assetId,
+        hostedUrl: assetUrl!,
+        altText,
+      });
+
+      const verified = await fetchWebflowCollectionItem(
+        client,
+        collectionId,
+        itemId
+      );
+      assertWebflowDraftItemForFeaturedImage(verified, itemId);
+
+      const finalRow = await db.articleFeaturedImage.update({
+        where: { id: row.id },
+        data: {
+          status: "attached",
+          webflowAssetId: assetId,
+          webflowAssetUrl: assetUrl,
+          cmsTransferStatus: "associated",
+          altText,
+          error: null,
+        },
+      });
+
+      return {
+        image: toFeaturedImagePublic(finalRow),
+        webflow: {
+          itemId,
+          assetId,
+          assetUrl: assetUrl!,
+          associated: true,
+        },
+      };
+    } catch (error) {
+      const message =
+        error instanceof FeaturedImageServiceError ||
+        error instanceof WebflowApiError
+          ? error.message
+          : "Échec du transfert Webflow.";
+      const status =
+        error instanceof FeaturedImageServiceError
+          ? error.status
+          : error instanceof WebflowApiError
+            ? error.status
+            : 502;
+      const code =
+        error instanceof FeaturedImageServiceError
+          ? error.code
+          : error instanceof WebflowApiError
+            ? error.code
+            : undefined;
+
+      await db.articleFeaturedImage.update({
+        where: { id: row.id },
+        data: {
+          // Asset conservé si déjà uploadé → reprise association sans OpenAI.
+          status: assetId ? "ready" : "failed",
+          webflowAssetId: assetId ?? row.webflowAssetId,
+          webflowAssetUrl: assetUrl ?? row.webflowAssetUrl,
+          cmsTransferStatus: assetId
+            ? "association_failed"
+            : row.cmsTransferStatus,
+          error: message,
+        },
+      });
+
+      throw new FeaturedImageServiceError(
+        message,
+        status ?? 502,
+        code,
+        error instanceof FeaturedImageServiceError ? error.payload : undefined
+      );
+    }
+  } finally {
+    releaseFeaturedImageLock(lockKey);
+  }
 }
 
 export { FEATURED_IMAGE_MODEL };

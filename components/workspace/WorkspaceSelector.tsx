@@ -1,28 +1,16 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, ChevronsUpDown, Globe2, LayoutTemplate } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { useWorkspace } from "./WorkspaceProvider";
 import type { WorkspaceView } from "./types";
+import { CmsProviderIcon } from "./CmsProviderIcon";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-function CmsGlyph({
-  provider,
-  className,
-}: {
-  provider: WorkspaceView["cmsProvider"];
-  className?: string;
-}) {
-  if (provider === "webflow") {
-    return <LayoutTemplate className={cn("size-4", className)} aria-hidden />;
-  }
-  return <Globe2 className={cn("size-4", className)} aria-hidden />;
-}
 
 function providerLabel(provider: WorkspaceView["cmsProvider"]): string {
   return provider === "webflow" ? "Webflow" : "WordPress";
@@ -137,7 +125,7 @@ export function WorkspaceSelector({
               />
             }
           >
-            <CmsGlyph provider={active.cmsProvider} className="size-5" />
+            <CmsProviderIcon provider={active.cmsProvider} size={26} />
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>
             {providerLabel(active.cmsProvider)} · {siteCaption(active)}
@@ -166,15 +154,11 @@ export function WorkspaceSelector({
                       : "text-[#0F172A] hover:bg-[#F8FAFC]"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md",
-                      workspace.cmsProvider === "webflow"
-                        ? "bg-violet-50 text-violet-800"
-                        : "bg-sky-50 text-sky-800"
-                    )}
-                  >
-                    <CmsGlyph provider={workspace.cmsProvider} />
+                  <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-white">
+                    <CmsProviderIcon
+                      provider={workspace.cmsProvider}
+                      size={24}
+                    />
                   </span>
                   <WorkspaceOptionRows workspace={workspace} />
                   {selected ? (
@@ -211,15 +195,8 @@ export function WorkspaceSelector({
           switching && "opacity-60"
         )}
       >
-        <span
-          className={cn(
-            "inline-flex size-8 shrink-0 items-center justify-center rounded-md",
-            active.cmsProvider === "webflow"
-              ? "bg-violet-50 text-violet-800"
-              : "bg-sky-50 text-sky-800"
-          )}
-        >
-          <CmsGlyph provider={active.cmsProvider} />
+        <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-white">
+          <CmsProviderIcon provider={active.cmsProvider} size={26} />
         </span>
         <WorkspaceOptionRows workspace={active} />
         <ChevronsUpDown className="size-4 shrink-0 text-[#64748B]" aria-hidden />
@@ -248,15 +225,11 @@ export function WorkspaceSelector({
                     : "text-[#0F172A] hover:bg-[#F8FAFC]"
                 )}
               >
-                <span
-                  className={cn(
-                    "mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md",
-                    workspace.cmsProvider === "webflow"
-                      ? "bg-violet-50 text-violet-800"
-                      : "bg-sky-50 text-sky-800"
-                  )}
-                >
-                  <CmsGlyph provider={workspace.cmsProvider} />
+                <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-white">
+                  <CmsProviderIcon
+                    provider={workspace.cmsProvider}
+                    size={24}
+                  />
                 </span>
                 <WorkspaceOptionRows workspace={workspace} />
                 {selected ? (

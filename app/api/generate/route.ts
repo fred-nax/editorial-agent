@@ -84,16 +84,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      // Image à la une WordPress non applicable aux générations Webflow (V7.10.1).
-      if (featuredImageRequest?.enabled) {
-        return NextResponse.json(
-          {
-            error:
-              "L’image à la une n’est pas disponible pour les générations Webflow dans cette version.",
-          },
-          { status: 400 }
-        );
-      }
+      // V7.13.0 : image à la une autorisée pour Webflow (génération locale ; transfert séparé).
     }
 
     try {

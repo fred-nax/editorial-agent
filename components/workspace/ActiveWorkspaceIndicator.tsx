@@ -1,8 +1,8 @@
 "use client";
 
-import { Globe2, LayoutTemplate } from "lucide-react";
 import { useWorkspaceOptional } from "./WorkspaceProvider";
 import type { WorkspaceView } from "./types";
+import { CmsProviderIcon } from "./CmsProviderIcon";
 import { cn } from "@/lib/utils";
 
 function providerLabel(provider: WorkspaceView["cmsProvider"]): string {
@@ -44,9 +44,6 @@ export function ActiveWorkspaceIndicator({
     return null;
   }
 
-  const isWebflow = workspace.cmsProvider === "webflow";
-  const Icon = isWebflow ? LayoutTemplate : Globe2;
-
   return (
     <div
       className={cn(
@@ -56,15 +53,8 @@ export function ActiveWorkspaceIndicator({
       role="status"
       aria-label={`Espace actif : ${providerLabel(workspace.cmsProvider)} — ${siteCaption(workspace)}`}
     >
-      <span
-        className={cn(
-          "inline-flex size-9 shrink-0 items-center justify-center rounded-md",
-          isWebflow
-            ? "bg-violet-50 text-violet-800"
-            : "bg-sky-50 text-sky-800"
-        )}
-      >
-        <Icon className="size-4" aria-hidden />
+      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-white">
+        <CmsProviderIcon provider={workspace.cmsProvider} size={28} />
       </span>
       <div className="min-w-0">
         <p className="text-xs font-medium tracking-wide text-[#64748B] uppercase">

@@ -69,6 +69,7 @@ import {
   MAX_VISUAL_INSTRUCTIONS_LENGTH,
 } from "@/lib/images/config";
 import type { FeaturedImagePublic } from "@/lib/images/types";
+import { formatEstimatedCost } from "@/lib/format";
 import type { TitleSuggestion } from "@/lib/titles/types";
 import type { GenerationStatus } from "@/lib/status";
 
@@ -463,7 +464,7 @@ export function ArticleForm({
     lastProgressRef.current = null;
 
     const wantFeatured =
-      isFull && generateFeaturedImage && cmsDestination !== "webflow";
+      isFull && generateFeaturedImage;
     setFeaturedImageRequested(wantFeatured);
 
     const payloadBody: Record<string, unknown> = {
@@ -569,6 +570,9 @@ export function ArticleForm({
               status: "pending",
               wpMediaId: null,
               wpMediaUrl: null,
+              webflowAssetId: null,
+              webflowAssetUrl: null,
+              cmsTransferStatus: null,
               error: null,
               fileUrl: "",
               createdAt: new Date().toISOString(),
@@ -1008,16 +1012,18 @@ export function ArticleForm({
           <div className="space-y-1">
             <p className="text-sm font-semibold text-[#0F172A]">Image à la une</p>
             {cmsDestination === "webflow" ? (
-              <p className="text-xs text-amber-800">
-                Non disponible pour Webflow dans cette version.
+              <p className="text-xs text-slate-600">
+                Génération locale réutilisant le moteur OpenAI. Le transfert
+                Assets Webflow et l’association au brouillon restent une étape
+                manuelle séparée (aucune publication automatique).
               </p>
             ) : null}
             <label className="flex cursor-pointer items-start gap-2.5 text-sm text-[#0F172A]">
               <input
                 type="checkbox"
                 className="mt-1 size-4 rounded border-[#E2E8F0] accent-naxialis"
-                checked={generateFeaturedImage && cmsDestination !== "webflow"}
-                disabled={busy || cmsDestination === "webflow"}
+                checked={generateFeaturedImage}
+                disabled={busy}
                 onChange={(event) => {
                   setGenerateFeaturedImage(event.target.checked);
                   resetOutcomeState();
@@ -1027,12 +1033,12 @@ export function ArticleForm({
             </label>
           </div>
 
-          {generateFeaturedImage && cmsDestination !== "webflow" ? (
+          {generateFeaturedImage ? (
             <div className="space-y-4">
               <p className="text-xs leading-relaxed text-slate-600">
-                L’image sera générée après la création du brouillon. Vous pourrez
-                vérifier son aperçu et son texte ALT avant de l’envoyer dans
-                WordPress. Un appel API supplémentaire sera effectué.
+                {cmsDestination === "webflow"
+                  ? "L’image sera générée après la création du brouillon Webflow. Vous pourrez vérifier son aperçu et son texte ALT avant de la transférer vers Webflow Assets. Un appel API supplémentaire sera effectué."
+                  : "L’image sera générée après la création du brouillon. Vous pourrez vérifier son aperçu et son texte ALT avant de l’envoyer dans WordPress. Un appel API supplémentaire sera effectué."}
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -1194,7 +1200,7 @@ export function ArticleForm({
               <p className="mt-1 text-xs text-emerald-900">
                 Durée : {Math.round(generation.durationMs / 1000)}s
                 {generation.estimatedCost != null
-                  ? ` · coût estimé $${generation.estimatedCost.toFixed(4)}`
+                  ? ` · coût estimé ${formatEstimatedCost(generation.estimatedCost)}`
                   : ""}
               </p>
             ) : null}
