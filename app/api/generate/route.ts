@@ -19,6 +19,7 @@ import { requireAuth } from "@/lib/require-auth";
 import {
   assertGenerationWorkspaceConsistency,
   assertModuleAllowedForWorkspace,
+  assertRequestWorkspaceMatchesActive,
   resolveActiveWorkspace,
   WorkspaceContextError,
 } from "@/lib/workspace";
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
 
   try {
     const workspace = await resolveActiveWorkspace();
+    assertRequestWorkspaceMatchesActive(request, workspace);
     assertModuleAllowedForWorkspace(workspace, "generation");
 
     const body = parseJsonBody(await request.json());

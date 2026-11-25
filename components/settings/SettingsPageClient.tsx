@@ -14,6 +14,7 @@ import {
 } from "@/components/settings/ServiceStatusSection";
 import type { PublicSettingsView } from "@/components/settings/types";
 import { WordPressSettingsSection } from "@/components/settings/WordPressSettingsSection";
+import { WorkspaceLanguageSettingsSection } from "@/components/settings/WorkspaceLanguageSettingsSection";
 
 type Props = {
   initialSettings: PublicSettingsView;
@@ -62,6 +63,8 @@ export function SettingsPageClient({
       ) : null}
 
       <GeneralSettingsSection settings={settings} onUpdated={setSettings} />
+
+      <WorkspaceLanguageSettingsSection />
 
       <OpenAiSettingsSection
         settings={settings}

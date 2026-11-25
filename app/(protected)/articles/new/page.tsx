@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { ArticleForm } from "@/components/ArticleForm";
-import { loadTopicInActiveWorkspace } from "@/lib/workspace";
+import {
+  loadTopicInActiveWorkspace,
+  resolveActiveWorkspace,
+} from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "Nouvel article",
@@ -26,6 +29,9 @@ export default async function NewArticlePage({
 }: {
   searchParams: SearchParams;
 }) {
+  const workspace = await resolveActiveWorkspace();
+  const cmsLabel =
+    workspace.cmsProvider === "webflow" ? "Webflow" : "WordPress";
   const params = await searchParams;
   const topicId = firstParam(params.topicId);
   const preferredTitleParam = firstParam(params.preferredTitle);
@@ -63,9 +69,9 @@ export default async function NewArticlePage({
           Nouvel article
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          Préparez le sujet, choisissez la destination CMS (WordPress ou
-          Webflow), lancez la génération, puis finalisez le brouillon dans le
-          CMS choisi.
+          Préparez le sujet pour l&apos;espace {workspace.name} ({cmsLabel}).
+          La destination CMS, l&apos;agent et la configuration sont déterminés
+          côté serveur à partir de l&apos;espace actif.
         </p>
         {initial?.topicId ? (
           <p className="mt-2 text-xs text-slate-500">
@@ -74,7 +80,7 @@ export default async function NewArticlePage({
           </p>
         ) : null}
       </div>
-      <ArticleForm initial={initial} />
+      <ArticleForm initial={initial} workspace={workspace} />
     </div>
   );
 }

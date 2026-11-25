@@ -15,6 +15,7 @@ import {
 import { EditorialRapprochementPanel } from "@/components/EditorialRapprochementPanel";
 import { TopicStatusBadge } from "@/components/dashboard/status-badge";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
+import { useWorkspaceOptional } from "@/components/workspace";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -88,6 +89,8 @@ function buildWriteHref(topic: TopicListItem, preferredTitle?: string) {
 
 export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
   const router = useRouter();
+  const workspaceCtx = useWorkspaceOptional();
+  const workspaceFetch = workspaceCtx?.workspaceFetch ?? fetch;
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [subject, setSubject] = useState("");
@@ -169,7 +172,7 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
     setError(null);
 
     try {
-      const response = await fetch("/api/topics", {
+      const response = await workspaceFetch("/api/topics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subject: value }),
@@ -193,7 +196,7 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
     setPendingId(id);
     setError(null);
     try {
-      const response = await fetch(`/api/topics/${id}`, {
+      const response = await workspaceFetch(`/api/topics/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "archived" }),
@@ -218,7 +221,7 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
     setPendingId(id);
     setError(null);
     try {
-      const response = await fetch(`/api/topics/${id}`, {
+      const response = await workspaceFetch(`/api/topics/${id}`, {
         method: "DELETE",
       });
       const payload = (await response.json()) as { error?: string };
@@ -248,7 +251,7 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
     setEditSaving(true);
     setEditError(null);
     try {
-      const response = await fetch(`/api/topics/${editTopic.id}`, {
+      const response = await workspaceFetch(`/api/topics/${editTopic.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -292,7 +295,7 @@ export function TopicQueue({ topics }: { topics: TopicListItem[] }) {
       if (editAngle.trim()) {
         body.angle = editAngle.trim();
       }
-      const response = await fetch("/api/titles/suggest", {
+      const response = await workspaceFetch("/api/titles/suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

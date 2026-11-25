@@ -427,13 +427,14 @@ describe("veille éditoriale", () => {
     const dialog = read("components/VeilleSuggestionDialog.tsx");
     assert.match(screen, /Rechercher les actualités/);
     assert.match(screen, /Date non vérifiée/);
-    assert.match(screen, /Aucun article WordPress/);
+    assert.match(screen, /Aucun brouillon CMS/);
     assert.match(screen, /Suggérer 3 sujets SEO/);
     assert.match(screen, /Proposer un sujet/);
     assert.match(screen, /buildTopicProposal\(article, result\.theme\)/);
     assert.match(screen, /subject: choice\.title/);
     assert.doesNotMatch(screen, /Disponible à la prochaine étape/);
-    assert.equal(screen.match(/fetch\(/g)?.length ?? 0, 1);
+    assert.equal(screen.match(/workspaceFetch\(/g)?.length ?? 0, 1);
+    assert.equal(screen.match(/(?<!workspace)fetch\(/g)?.length ?? 0, 0);
     assert.equal(dialog.match(/fetch\(/g)?.length ?? 0, 2);
     assert.match(dialog, /\/api\/veille\/suggestions/);
     assert.match(dialog, /\/api\/topics\/check-duplicates/);

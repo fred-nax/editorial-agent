@@ -104,9 +104,10 @@ describe("V7.9.0 — multi-CMS destinations (évolué V7.10.1)", () => {
     assert.match(route, /requireAuth/);
   });
 
-  it("UI Destination CMS + page intégrations", () => {
+  it("UI destination imposée par espace + page intégrations", () => {
     const form = read("components/ArticleForm.tsx");
-    assert.match(form, /CmsDestinationPicker/);
+    assert.doesNotMatch(form, /CmsDestinationPicker/);
+    assert.match(form, /ActiveWorkspaceIndicator/);
     assert.match(form, /cmsDestination/);
     const picker = read("components/cms/CmsDestinationPicker.tsx");
     assert.match(picker, /WordPress/);

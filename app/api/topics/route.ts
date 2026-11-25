@@ -13,6 +13,7 @@ import {
 } from "@/lib/topics/create";
 import {
   assertModuleAllowedForWorkspace,
+  assertRequestWorkspaceMatchesActive,
   resolveActiveWorkspace,
   WorkspaceContextError,
   workspaceWhere,
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
   const session = await requireAuth();
   try {
     const workspace = await resolveActiveWorkspace();
+    assertRequestWorkspaceMatchesActive(request, workspace);
     assertModuleAllowedForWorkspace(workspace, "topics");
     const result = await handleCreateTopic(request, {
       authenticated: Boolean(session?.user),

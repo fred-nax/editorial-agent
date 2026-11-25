@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, ExternalLink, Loader2, Radar, Search } from "lucide-react";
 import { EditorialWatchHistory } from "@/components/EditorialWatchHistory";
 import { TopicProposalDialog } from "@/components/TopicProposalDialog";
 import { VeilleHelpDialog } from "@/components/VeilleHelpDialog";
 import { SearchLoadingOverlay } from "@/components/SearchLoadingOverlay";
+import { useWorkspaceOptional } from "@/components/workspace";
 import {
   loadVeilleSuggestions,
   VeilleSuggestionDialog,
@@ -218,6 +219,9 @@ function PublicationCard({
 }
 
 export function EditorialWatch() {
+  const workspaceCtx = useWorkspaceOptional();
+  const workspaceFetch = workspaceCtx?.workspaceFetch ?? fetch;
+  const workspaceEpoch = workspaceCtx?.epoch ?? 0;
   const [theme, setTheme] = useState("");
   const [periodDays, setPeriodDays] = useState<(typeof VEILLE_PERIODS)[number]>(30);
   const [country, setCountry] = useState<(typeof VEILLE_COUNTRIES)[number]["code"]>("FR");
@@ -243,6 +247,21 @@ export function EditorialWatch() {
     country: VeilleCountryCode;
   } | null>(null);
   const searchGeneration = useRef(0);
+
+  useEffect(() => {
+    if (workspaceEpoch === 0) {
+      return;
+    }
+    searchGeneration.current += 1;
+    setResult(null);
+    setSearchOrder([]);
+    setError(null);
+    setProposal(null);
+    setSuggestion(null);
+    setOpenedSearch(null);
+    setActiveQuery(null);
+    setHistoryKey((value) => value + 1);
+  }, [workspaceEpoch]);
 
   const counts = useMemo(() => countByKind(searchOrder), [searchOrder]);
   const articles = useMemo(() => {
@@ -291,7 +310,7 @@ export function EditorialWatch() {
       country: nextCountry,
     });
     try {
-      const response = await fetch("/api/veille/search", {
+      const response = await workspaceFetch("/api/veille/search", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -343,7 +362,7 @@ export function EditorialWatch() {
             <VeilleHelpDialog />
           </div>
           <p className="max-w-2xl text-sm text-slate-600">
-            Recherche de publications récentes. Aucun article WordPress n’est créé.
+            Recherche de publications récentes. Aucun brouillon CMS n’est créé.
           </p>
         </div>
         {(historyTotal !== null || result) && (

@@ -10,16 +10,17 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Lightbulb, Loader2, Sparkles } from "lucide-react";
-import {
-  CmsDestinationPicker,
-  type CmsAgentStatusView,
-  type CmsDestinationOptionView,
-} from "@/components/cms/CmsDestinationPicker";
 import { EditorialRapprochementPanel } from "@/components/EditorialRapprochementPanel";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { TitleSuggestionsPicker } from "@/components/TitleSuggestionsPicker";
+import {
+  ActiveWorkspaceIndicator,
+  useWorkspaceOptional,
+  type WorkspaceView,
+} from "@/components/workspace";
 import type { CmsDestinationId } from "@/lib/cms/types";
 import { DEFAULT_CMS_DESTINATION } from "@/lib/cms/types";
+import { resolveFormLanguage } from "@/lib/workspace/language";
 import {
   Accordion,
   AccordionContent,
@@ -128,30 +129,42 @@ export type ArticleFormInitial = {
   preferredTitle?: string;
 };
 
+function resolveDefaultLanguage(code: string | null | undefined): string {
+  return resolveFormLanguage(code, AGENT_DECIDES_VALUE);
+}
+
 export function ArticleForm({
   layout = "full",
   initial,
+  workspace: workspaceProp,
 }: {
   /** `embedded` : version compacte pour la carte Dashboard. */
   layout?: "full" | "embedded";
   /** Préremplissage depuis la file éditoriale (`/articles/new?topicId=…`). */
   initial?: ArticleFormInitial;
+  /** Espace actif (RSC) — prioritaire sur le contexte client. */
+  workspace?: WorkspaceView;
 } = {}) {
   const router = useRouter();
+  const workspaceCtx = useWorkspaceOptional();
+  const workspace = workspaceProp ?? workspaceCtx?.active ?? null;
+  const workspaceFetch = workspaceCtx?.workspaceFetch ?? fetch;
+  const workspaceEpoch = workspaceCtx?.epoch ?? 0;
   const isFull = layout === "full";
   const reactId = useId();
   const formId = `article-generation-form-${reactId.replaceAll(":", "")}`;
   const topicId = initial?.topicId?.trim() || null;
   const [subject, setSubject] = useState(initial?.subject ?? "");
-  const [cmsDestination, setCmsDestination] = useState<CmsDestinationId>(
-    DEFAULT_CMS_DESTINATION
-  );
-  const [cmsAgents, setCmsAgents] = useState<CmsAgentStatusView[]>([]);
-  const [cmsDestinations, setCmsDestinations] = useState<
-    CmsDestinationOptionView[]
-  >([]);
+  const cmsDestination: CmsDestinationId =
+    workspace?.cmsProvider === "webflow"
+      ? "webflow"
+      : workspace?.cmsProvider === "wordpress"
+        ? "wordpress"
+        : DEFAULT_CMS_DESTINATION;
   const [angle, setAngle] = useState(initial?.angle ?? "");
-  const [language, setLanguage] = useState(AGENT_DECIDES_VALUE);
+  const [language, setLanguage] = useState(() =>
+    resolveDefaultLanguage(workspace?.defaultLanguage)
+  );
   const [audience, setAudience] = useState(AGENT_DECIDES_VALUE);
   const [audienceCustom, setAudienceCustom] = useState("");
   const [objective, setObjective] = useState(AGENT_DECIDES_VALUE);
@@ -246,55 +259,36 @@ export function ArticleForm({
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/cms/destinations", {
-          credentials: "same-origin",
-        });
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as {
-          agents?: CmsAgentStatusView[];
-          destinations?: Array<{
-            id: CmsDestinationId;
-            label: string;
-            description?: string;
-            selectable?: boolean;
-            readiness?: { ok?: boolean; reasons?: string[] } | null;
-          }>;
-        };
-        if (!cancelled && Array.isArray(payload.agents)) {
-          setCmsAgents(payload.agents);
-        }
-        if (!cancelled && Array.isArray(payload.destinations)) {
-          setCmsDestinations(
-            payload.destinations.map((item) => ({
-              id: item.id,
-              label: item.label,
-              description: item.description,
-              selectable: Boolean(item.selectable),
-              readinessReasons: item.readiness?.reasons ?? [],
-            }))
-          );
-        }
-      } catch {
-        // Silencieux : le sélecteur reste utilisable sans statut agent.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   function stopPolling() {
     if (pollRef.current) {
       window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
   }
+
+  // Changement d’espace : purge des états clients + langue de l’espace actif.
+  useEffect(() => {
+    if (workspaceEpoch === 0) {
+      return;
+    }
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    setPhase("idle");
+    setGeneration(null);
+    setError(null);
+    setStartedAt(null);
+    setFeaturedImageRequested(false);
+    setTitleSuggestions(null);
+    setSuggestionsFingerprint(null);
+    setSuggestionsStale(false);
+    setLanguage(resolveDefaultLanguage(workspace?.defaultLanguage));
+    if (workspace?.cmsProvider === "webflow") {
+      setGenerateFeaturedImage(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- epoch = bascule d’espace
+  }, [workspaceEpoch, workspace?.id, workspace?.defaultLanguage]);
 
   function resetOutcomeState() {
     if (phase === "completed" || phase === "failed") {
@@ -352,7 +346,7 @@ export function ArticleForm({
       if (obj) body.objective = obj;
       if (seoKeywords.trim()) body.seoKeywords = seoKeywords.trim();
 
-      const response = await fetch("/api/titles/suggest", {
+      const response = await workspaceFetch("/api/titles/suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -380,7 +374,7 @@ export function ArticleForm({
     stopPolling();
     pollRef.current = window.setInterval(async () => {
       try {
-        const response = await fetch(`/api/articles/${id}`);
+        const response = await workspaceFetch(`/api/articles/${id}`);
         const payload = (await response.json()) as GenerationSnapshot & {
           error?: string;
         };
@@ -508,7 +502,7 @@ export function ArticleForm({
 
     try {
       if (topicId) {
-        const syncResponse = await fetch(`/api/topics/${topicId}`, {
+        const syncResponse = await workspaceFetch(`/api/topics/${topicId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -526,7 +520,7 @@ export function ArticleForm({
         payloadBody.topicId = topicId;
       }
 
-      const response = await fetch("/api/generate", {
+      const response = await workspaceFetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payloadBody),
@@ -613,21 +607,9 @@ export function ArticleForm({
 
   const fields = (
     <>
-      <CmsDestinationPicker
-        value={cmsDestination}
-        onChange={(next) => {
-          setCmsDestination(next);
-          if (next === "webflow") {
-            setGenerateFeaturedImage(false);
-          }
-          // Réinitialise l’issue et laisse EditorialRapprochementPanel
-          // purger ses résultats via enabled=false.
-          resetOutcomeState();
-        }}
-        disabled={busy}
-        agents={cmsAgents}
-        destinations={cmsDestinations}
-      />
+      {isFull ? (
+        <ActiveWorkspaceIndicator workspace={workspace ?? undefined} />
+      ) : null}
 
       <div className="space-y-2">
         <Label htmlFor={`${formId}-subject`} className="text-[#0F172A]">

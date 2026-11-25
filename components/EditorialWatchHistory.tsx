@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { History, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { useWorkspaceOptional } from "@/components/workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +61,7 @@ export function EditorialWatchHistory({
   }) => void;
   onDeleted: (id: string) => void;
 }) {
+  const workspaceFetch = useWorkspaceOptional()?.workspaceFetch ?? fetch;
   const firstRefresh = useRef(true);
   const onMetaRef = useRef(onMeta);
   onMetaRef.current = onMeta;
@@ -87,7 +89,9 @@ export function EditorialWatchHistory({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void fetch(`/api/veille/searches?page=${page}`, { credentials: "same-origin" })
+    void workspaceFetch(`/api/veille/searches?page=${page}`, {
+      credentials: "same-origin",
+    })
       .then(async (response) => {
         const payload = (await response.json()) as HistoryPayload;
         if (!response.ok || !payload.searches) {
@@ -123,13 +127,13 @@ export function EditorialWatchHistory({
     return () => {
       cancelled = true;
     };
-  }, [page, reload]);
+  }, [page, reload, workspaceFetch]);
 
   async function openSearch(id: string) {
     setOpeningId(id);
     setError(null);
     try {
-      const response = await fetch(`/api/veille/searches/${id}`, {
+      const response = await workspaceFetch(`/api/veille/searches/${id}`, {
         credentials: "same-origin",
       });
       const payload = (await response.json()) as {
@@ -152,7 +156,7 @@ export function EditorialWatchHistory({
     setDeletingId(id);
     setError(null);
     try {
-      const response = await fetch(`/api/veille/searches/${id}`, {
+      const response = await workspaceFetch(`/api/veille/searches/${id}`, {
         method: "DELETE",
         credentials: "same-origin",
       });

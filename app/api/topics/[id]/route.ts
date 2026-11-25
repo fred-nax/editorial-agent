@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/require-auth";
 import { decideTopicDeletion } from "@/lib/topics/delete";
 import {
   assertModuleAllowedForWorkspace,
+  assertRequestWorkspaceMatchesActive,
   resolveActiveWorkspace,
   WorkspaceContextError,
   workspaceWhere,
@@ -62,6 +63,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const workspace = await resolveActiveWorkspace();
+    assertRequestWorkspaceMatchesActive(request, workspace);
     assertModuleAllowedForWorkspace(workspace, "topics");
     const { id } = await context.params;
     const existing = await db.topic.findFirst({
@@ -182,7 +184,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   if (!(await requireAuth())) {
     return unauthorized();
   }
@@ -190,6 +192,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   let workspace: Awaited<ReturnType<typeof resolveActiveWorkspace>>;
   try {
     workspace = await resolveActiveWorkspace();
+    assertRequestWorkspaceMatchesActive(request, workspace);
     assertModuleAllowedForWorkspace(workspace, "topics");
   } catch (error) {
     if (error instanceof WorkspaceContextError) {

@@ -105,14 +105,17 @@ describe("V7.9.1 — agents éditoriaux par CMS (évolué V7.10.1)", () => {
     assert.match(route, /getWebflowGenerationReadiness/);
   });
 
-  it("UI affiche l’agent associé et readiness Webflow", () => {
+  it("UI destination liée à l’espace (picker CMS retiré) + readiness Webflow côté API", () => {
     const picker = read("components/cms/CmsDestinationPicker.tsx");
     assert.match(picker, /Agent éditorial/);
     assert.match(picker, /selectable/);
     assert.match(picker, /agents/);
     const form = read("components/ArticleForm.tsx");
-    assert.match(form, /\/api\/cms\/destinations/);
-    assert.match(form, /CmsDestinationPicker/);
+    assert.doesNotMatch(form, /\/api\/cms\/destinations/);
+    assert.doesNotMatch(form, /CmsDestinationPicker/);
+    assert.match(form, /ActiveWorkspaceIndicator/);
+    const generate = read("app/api/generate/route.ts");
+    assert.match(generate, /getWebflowGenerationReadiness/);
   });
 
   it("intégrations exposent l’état agent sans secrets", () => {

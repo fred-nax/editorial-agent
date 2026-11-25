@@ -8,6 +8,18 @@ import type { PublicSettingsView } from "@/components/settings/types";
 import type { CmsDestinationDescriptor } from "@/lib/cms/types";
 import type { PublicEditorialAgentStatus } from "@/lib/agent/registry";
 
+type WorkspaceSummary = {
+  id: string;
+  name: string;
+  cmsProvider: "wordpress" | "webflow";
+  siteLabel: string | null;
+  siteUrl: string | null;
+  defaultLanguage: string;
+  openaiAgentConfigured: boolean;
+  wpConfigured: boolean;
+  webflowConfigured: boolean;
+};
+
 type Props = {
   destinations: CmsDestinationDescriptor[];
   agents: PublicEditorialAgentStatus[];
@@ -15,6 +27,7 @@ type Props = {
   wordpressUrl: string | null;
   webflow: PublicSettingsView["webflow"];
   encryptionConfigured: boolean;
+  workspaceSummaries?: WorkspaceSummary[];
 };
 
 export function CmsIntegrationsPanel({
@@ -24,6 +37,7 @@ export function CmsIntegrationsPanel({
   wordpressUrl,
   webflow: initialWebflow,
   encryptionConfigured,
+  workspaceSummaries = [],
 }: Props) {
   const [testing, setTesting] = useState(false);
   const [testOk, setTestOk] = useState<boolean | null>(null);
@@ -61,10 +75,41 @@ export function CmsIntegrationsPanel({
           Intégrations CMS
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          Destinations de publication et agents éditoriaux OpenAI associés.
-          Aucune clé API n’est affichée.
+          Administration globale des deux espaces éditoriaux. Sections distinctes
+          WordPress et Webflow — aucune modification d’un espace n’écrit dans
+          l’autre. Secrets chiffrés, jamais affichés.
         </p>
       </div>
+
+      {workspaceSummaries.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {workspaceSummaries.map((workspace) => (
+            <div
+              key={workspace.id}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+            >
+              <p className="font-semibold text-slate-900">{workspace.name}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {workspace.cmsProvider === "webflow" ? "Webflow" : "WordPress"}
+                {" · "}
+                {workspace.siteLabel ||
+                  workspace.siteUrl?.replace(/^https?:\/\//i, "") ||
+                  "—"}
+                {" · langue "}
+                {workspace.defaultLanguage.toUpperCase()}
+              </p>
+              <p className="mt-2 text-xs">
+                Agent OpenAI :{" "}
+                {workspace.openaiAgentConfigured ? "configuré" : "non configuré"}
+                {" · "}
+                {workspace.cmsProvider === "webflow"
+                  ? `CMS : ${workspace.webflowConfigured ? "prêt" : "incomplet"}`
+                  : `CMS : ${workspace.wpConfigured ? "prêt" : "incomplet"}`}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {destinations.map((destination) => {

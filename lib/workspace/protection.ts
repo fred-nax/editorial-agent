@@ -2,9 +2,10 @@ import type { EditorialWorkspaceRecord } from "./context";
 import { WorkspaceContextError } from "./errors";
 
 /**
- * Protection transitoire V7.11.1 (avant sélecteur UI V7.11.2) :
+ * Capacités par espace (V7.11.2) :
  * - WordPress : fonctionnement historique préservé ;
- * - Webflow : modules non isolés / non implémentés → refus explicite ou empty state,
+ * - Webflow : modules isolés autorisés ; modules dépendant d’un inventaire /
+ *   Google / images non implémentés → refus explicite ou empty state,
  *   jamais de données WordPress en compensation.
  */
 
@@ -20,12 +21,13 @@ export type WebflowModuleCapability =
   | "analytics"
   | "topics";
 
-/** Modules Webflow autorisés en V7.11.1 (isolation validée côté données). */
+/** Modules Webflow autorisés (isolation données validée). */
 const WEBFLOW_ENABLED_MODULES = new Set<WebflowModuleCapability>([
   "generation",
   "history",
   "dashboard",
   "topics",
+  "veille",
 ]);
 
 export function isWebflowModuleEnabled(
@@ -60,13 +62,18 @@ export function webflowEmptyState(module: WebflowModuleCapability): {
     generation: "Génération Webflow indisponible.",
     history: "Aucun historique Webflow.",
     dashboard: "Tableau de bord Webflow vide.",
-    inventory: "Inventaire Webflow non disponible dans cette version.",
-    featured_image: "Images à la une non disponibles pour Webflow.",
-    rapprochements: "Rapprochements éditoriaux non disponibles pour Webflow.",
-    opportunities: "Opportunités SEO Webflow non configurées.",
-    veille: "Veille éditoriale Webflow non disponible.",
+    inventory:
+      "Inventaire CMS Webflow non disponible dans cette version. Aucun inventaire WordPress n’est réutilisé.",
+    featured_image:
+      "Images à la une non disponibles pour Webflow dans cette version.",
+    rapprochements:
+      "Rapprochements éditoriaux (inventaire WordPress) non disponibles pour Webflow.",
+    opportunities:
+      "Opportunités SEO Webflow indisponibles : l’inventaire et le maillage Webflow ne sont pas encore implémentés. Les thématiques et opportunités WordPress ne sont pas injectées.",
+    veille:
+      "Veille éditoriale Webflow sans corpus WordPress — configurations et historique isolés par espace.",
     analytics:
-      "Analytics Webflow indisponible tant qu’aucune propriété Google dédiée n’est configurée pour cet espace.",
+      "Analytics Webflow indisponible tant qu’aucune propriété Google dédiée n’est configurée pour cet espace. Les statistiques WordPress ne sont pas affichées.",
     topics: "File éditoriale Webflow vide.",
   };
   return {

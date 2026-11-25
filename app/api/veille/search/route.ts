@@ -7,6 +7,7 @@ import { createOpenAiWatchClient } from "@/lib/veille/openai-watch";
 import { confirmArticleDates, lookupPublishedDate } from "@/lib/veille/publication-date";
 import {
   assertModuleAllowedForWorkspace,
+  assertRequestWorkspaceMatchesActive,
   resolveActiveWorkspace,
   WorkspaceContextError,
 } from "@/lib/workspace";
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
   const session = await requireAuth();
   try {
     const workspace = await resolveActiveWorkspace();
+    assertRequestWorkspaceMatchesActive(request, workspace);
     assertModuleAllowedForWorkspace(workspace, "veille");
     const result = await completeVeilleSearch(request, {
       authenticated: Boolean(session?.user),

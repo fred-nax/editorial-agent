@@ -1,5 +1,6 @@
 import { db } from "../db";
-import { WORKSPACE_IDS } from "../workspace/constants";
+import { assertWorkspaceId } from "../workspace/scope";
+import { getWorkspaceByIdOrSlug } from "../workspace/context";
 import { getWordPressInventoryDiagnostic } from "../seo/wordpress-inventory";
 import {
   checkProposals,
@@ -23,29 +24,49 @@ function httpUrl(value: string | null | undefined): string | null {
   return value;
 }
 
+/**
+ * Charge le corpus éditorial d’un espace.
+ * Webflow : topics + générations uniquement (jamais l’inventaire WordPress).
+ */
 export async function loadEditorialCorpus(
-  workspaceId: string = WORKSPACE_IDS.wordpress
+  workspaceId: string
 ): Promise<EditorialCorpus> {
+  const id = assertWorkspaceId(workspaceId);
+  const workspace = await getWorkspaceByIdOrSlug(id);
+  if (!workspace || !workspace.enabled) {
+    throw new Error("Espace éditorial absent ou incohérent pour le corpus.");
+  }
+
+  const includeWordPressInventory = workspace.cmsProvider === "wordpress";
+
   const { isWordPressInventoryUsable } = await import(
     "@/lib/settings/inventory-guard"
   );
-  const inventoryUsable = await isWordPressInventoryUsable();
+  const inventoryUsable =
+    includeWordPressInventory && (await isWordPressInventoryUsable());
 
   const [diagnostic, postCount, topicCount, generationCount, posts, topics, generations] =
     await Promise.all([
-      getWordPressInventoryDiagnostic(workspaceId),
+      includeWordPressInventory
+        ? getWordPressInventoryDiagnostic(id)
+        : Promise.resolve({
+            count: 0,
+            byStatus: {} as Record<string, number>,
+            lastSync: null,
+            running: null,
+          }),
       inventoryUsable
         ? db.wordPressPost.count({
-            where: { workspaceId, status: { in: KNOWN_POST_STATUSES } },
+            where: { workspaceId: id, status: { in: KNOWN_POST_STATUSES } },
           })
         : Promise.resolve(0),
-      db.topic.count({ where: { workspaceId, status: { not: "archived" } } }),
+      db.topic.count({ where: { workspaceId: id, status: { not: "archived" } } }),
       db.articleGeneration.count({
-        where: { workspaceId, status: { in: ["completed", "failed"] } },
+        where: { workspaceId: id, status: { in: ["completed", "failed"] } },
       }),
       inventoryUsable
         ? db.wordPressPost.findMany({
-            where: { workspaceId, status: { in: KNOWN_POST_STATUSES } },
+            where: { workspaceId: id, status: { in: KNOWN_POST_STATUSES } },
             select: {
               wpPostId: true,
               title: true,
@@ -58,12 +79,12 @@ export async function loadEditorialCorpus(
           })
         : Promise.resolve([]),
       db.topic.findMany({
-        where: { workspaceId, status: { not: "archived" } },
+        where: { workspaceId: id, status: { not: "archived" } },
         select: { id: true, subject: true, angle: true, status: true },
         take: TOPIC_LIMIT,
       }),
       db.articleGeneration.findMany({
-        where: { workspaceId, status: { in: ["completed", "failed"] } },
+        where: { workspaceId: id, status: { in: ["completed", "failed"] } },
         select: {
           id: true,
           subject: true,
@@ -74,6 +95,7 @@ export async function loadEditorialCorpus(
           wpUrl: true,
           topicId: true,
           status: true,
+          cmsExternalId: true,
         },
         take: GENERATION_LIMIT,
       }),
@@ -120,7 +142,12 @@ export async function loadEditorialCorpus(
       generationTopicId: null,
     })),
     ...generations
-      .filter((generation) => generation.status === "completed" || generation.wpPostId !== null)
+      .filter(
+        (generation) =>
+          generation.status === "completed" ||
+          generation.wpPostId !== null ||
+          Boolean(generation.cmsExternalId)
+      )
       .map((generation) => ({
         source: "generation" as const,
         title: generation.title?.trim() || generation.subject,
@@ -139,14 +166,15 @@ export async function loadEditorialCorpus(
 
 export async function assessVeilleProposal(
   input: ProposalInput,
-  workspaceId: string = WORKSPACE_IDS.wordpress
+  workspaceId: string
 ): Promise<{
   result: ProposalDuplicateResult;
   coverage: InventoryCoverage;
   coverageNote: string;
   verified: boolean;
 }> {
-  const corpus = await loadEditorialCorpus(workspaceId);
+  const id = assertWorkspaceId(workspaceId);
+  const corpus = await loadEditorialCorpus(id);
   const [result] = checkProposals([input], corpus);
   return {
     result,

@@ -16,10 +16,11 @@ function read(relativePath: string): string {
 }
 
 describe("V7.10.2 — isolation UX WordPress / Webflow", () => {
-  it("Nouvel article : plus de « WordPress uniquement » + rapprochements conditionnels", () => {
+  it("Nouvel article : destination imposée par espace + rapprochements conditionnels", () => {
     const page = read("app/(protected)/articles/new/page.tsx");
     assert.doesNotMatch(page, /WordPress uniquement pour/);
-    assert.match(page, /WordPress ou\s*\r?\n\s*Webflow|WordPress ou Webflow/);
+    assert.match(page, /déterminés\s*\r?\n\s*côté serveur|déterminés côté serveur/);
+    assert.match(page, /espace actif/);
 
     const form = read("components/ArticleForm.tsx");
     assert.match(form, /enabled=\{cmsDestination === "wordpress"\}/);
@@ -66,24 +67,25 @@ describe("V7.10.2 — isolation UX WordPress / Webflow", () => {
     assert.match(seo, /Aucun lien d’édition fabriqué/);
   });
 
-  it("historique filtre CMS + badges", () => {
+  it("historique badges CMS (filtre CMS retiré en V7.11.2 — isolé par espace)", () => {
     assert.equal(parseHistoryCmsFilter("webflow"), "webflow");
     assert.equal(parseHistoryCmsFilter("wordpress"), "wordpress");
     assert.equal(parseHistoryCmsFilter(undefined), "all");
 
     const historyPage = read("app/(protected)/articles/page.tsx");
-    assert.match(historyPage, /ArticleHistoryFilters/);
-    assert.match(historyPage, /cmsDestination: "webflow"/);
+    assert.doesNotMatch(historyPage, /ArticleHistoryFilters/);
+    assert.match(historyPage, /workspaceWhere/);
 
     const history = read("components/ArticleHistory.tsx");
     assert.match(history, /CmsDestinationBadge/);
     assert.match(history, /Réf\. CMS/);
   });
 
-  it("dashboard compte WP + Webflow et affiche le CMS", () => {
+  it("dashboard isolé par espace (plus d’agrégats WP/Webflow croisés)", () => {
     const dash = read("app/(protected)/dashboard/page.tsx");
-    assert.match(dash, /draftsWebflowThisMonth/);
-    assert.match(dash, /WordPress \$\{draftsWordpressThisMonth\}/);
+    assert.doesNotMatch(dash, /draftsWebflowThisMonth/);
+    assert.doesNotMatch(dash, /draftsWordpressThisMonth/);
+    assert.match(dash, /workspaceWhere/);
     assert.match(dash, /cmsDestination: true/);
 
     const recent = read("components/dashboard/recent-generations.tsx");

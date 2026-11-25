@@ -9,6 +9,7 @@ import {
   SIDEBAR_WIDTH_COLLAPSED,
   SIDEBAR_WIDTH_EXPANDED,
 } from "@/components/navigation";
+import { WorkspaceSelector } from "@/components/workspace";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -54,6 +55,8 @@ export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
             </div>
           )}
         </div>
+
+        <WorkspaceSelector collapsed={collapsed} />
 
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
           {navigation.map((item) => {

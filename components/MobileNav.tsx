@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { isNavActive, navigation } from "@/components/navigation";
+import { WorkspaceSelector } from "@/components/workspace";
 import {
   Sheet,
   SheetContent,
@@ -34,6 +35,8 @@ export function MobileNav({ open, onOpenChange }: MobileNavProps) {
             Content Agent
           </SheetDescription>
         </SheetHeader>
+
+        <WorkspaceSelector />
 
         <nav className="flex flex-col gap-1 p-3" aria-label="Navigation mobile">
           {navigation.map((item) => {

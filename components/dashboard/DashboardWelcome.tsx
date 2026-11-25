@@ -2,7 +2,19 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function DashboardWelcome() {
+export function DashboardWelcome({
+  workspaceName,
+  cmsLabel,
+  siteCaption,
+}: {
+  workspaceName?: string;
+  cmsLabel?: string;
+  siteCaption?: string;
+} = {}) {
+  const spaceLabel = workspaceName?.trim() || "votre espace";
+  const cms = cmsLabel?.trim() || "CMS";
+  const site = siteCaption?.trim();
+
   return (
     <section
       aria-labelledby="dashboard-welcome-title"
@@ -11,7 +23,7 @@ export function DashboardWelcome() {
       <div className="grid items-center gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-6">
         <div className="relative z-10 max-w-xl space-y-3">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-naxialis-muted uppercase">
-            Votre espace de création éditoriale
+            {site ? `${cms} · ${site}` : `Espace ${spaceLabel}`}
           </p>
           <h2
             id="dashboard-welcome-title"
@@ -22,7 +34,7 @@ export function DashboardWelcome() {
           <p className="max-w-md text-sm leading-relaxed text-slate-600 sm:text-[15px]">
             Une nouvelle idée d&apos;article&nbsp;? Votre assistant éditorial est
             prêt à vous accompagner pour rechercher, rédiger et préparer vos
-            brouillons WordPress ou Webflow.
+            brouillons {cms} dans l&apos;espace {spaceLabel}.
           </p>
           <Button
             size="lg"

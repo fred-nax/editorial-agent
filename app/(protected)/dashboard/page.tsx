@@ -65,11 +65,15 @@ export default async function DashboardPage() {
   const monthStart = startOfCurrentMonth();
   const workspace = await resolveActiveWorkspace();
   const scope = workspaceWhere(workspace.id);
+  const cmsLabel =
+    workspace.cmsProvider === "webflow" ? "Webflow" : "WordPress";
+  const siteCaption =
+    workspace.siteLabel?.trim() ||
+    workspace.siteUrl?.replace(/^https?:\/\//i, "").replace(/\/$/, "") ||
+    cmsLabel;
 
   const [
     draftsThisMonth,
-    draftsWordpressThisMonth,
-    draftsWebflowThisMonth,
     pendingTopics,
     runningGenerations,
     llmCostThisMonth,
@@ -77,28 +81,11 @@ export default async function DashboardPage() {
     recentTopics,
     recentWatchSearches,
   ] = await Promise.all([
-    // Total brouillons réussis (WP historique null + wordpress + webflow).
     db.articleGeneration.count({
       where: {
         ...scope,
         status: "completed",
         createdAt: { gte: monthStart },
-      },
-    }),
-    db.articleGeneration.count({
-      where: {
-        ...scope,
-        status: "completed",
-        createdAt: { gte: monthStart },
-        OR: [{ cmsDestination: "wordpress" }, { cmsDestination: null }],
-      },
-    }),
-    db.articleGeneration.count({
-      where: {
-        ...scope,
-        status: "completed",
-        createdAt: { gte: monthStart },
-        cmsDestination: "webflow",
       },
     }),
     db.topic.count({
@@ -165,14 +152,18 @@ export default async function DashboardPage() {
 
   return (
     <DashboardFrame>
-      <DashboardWelcome />
+      <DashboardWelcome
+        workspaceName={workspace.name}
+        cmsLabel={cmsLabel}
+        siteCaption={siteCaption}
+      />
 
       <DashboardKpiCards
         items={[
           {
             label: "Brouillons créés ce mois",
             value: draftsThisMonth,
-            hint: `WordPress ${draftsWordpressThisMonth} · Webflow ${draftsWebflowThisMonth}`,
+            hint: `Espace ${workspace.name}`,
           },
           { label: "File — en attente", value: pendingTopics },
           { label: "Générations en cours", value: runningGenerations },
@@ -184,7 +175,7 @@ export default async function DashboardPage() {
         ]}
       />
 
-      {/* Google/GSC/GA4 : phase A rattaché à WordPress — pas de données de substitution pour Webflow. */}
+      {/* Google/GSC/GA4 : rattaché à WordPress — pas de données de substitution pour Webflow. */}
       {workspace.cmsProvider === "wordpress" ? <DashboardSeoTrafficStrip /> : null}
 
       <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 lg:gap-5">

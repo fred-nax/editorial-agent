@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { WORKSPACE_IDS } from "@/lib/workspace/constants";
 import {
   isVeilleCountry,
   isVeillePeriod,
@@ -58,13 +57,19 @@ function toRecord(row: WatchRow): WatchSearchRecord | null {
 }
 
 export function prismaWatchHistoryStore(
-  workspaceId: string = WORKSPACE_IDS.wordpress
+  workspaceId: string
 ): WatchHistoryStore {
+  const scopedWorkspaceId = workspaceId?.trim();
+  if (!scopedWorkspaceId) {
+    throw new Error(
+      "workspaceId obligatoire pour la veille — tâche bloquée (espace absent)."
+    );
+  }
   return {
     async save(input) {
       const row = await db.editorialWatchSearch.create({
         data: {
-          workspaceId,
+          workspaceId: scopedWorkspaceId,
           theme: input.theme,
           periodDays: input.periodDays,
           country: input.country,
@@ -83,7 +88,7 @@ export function prismaWatchHistoryStore(
     async list(page, pageSize) {
       const [rows, total] = await Promise.all([
         db.editorialWatchSearch.findMany({
-          where: { workspaceId },
+          where: { workspaceId: scopedWorkspaceId },
           orderBy: { searchedAt: "desc" },
           skip: (page - 1) * pageSize,
           take: pageSize,
@@ -97,7 +102,9 @@ export function prismaWatchHistoryStore(
             status: true,
           },
         }),
-        db.editorialWatchSearch.count({ where: { workspaceId } }),
+        db.editorialWatchSearch.count({
+          where: { workspaceId: scopedWorkspaceId },
+        }),
       ]);
       return {
         items: rows.flatMap((row) => {
@@ -107,9 +114,9 @@ export function prismaWatchHistoryStore(
         total,
       };
     },
-    async read(id) {
+    async read(searchId) {
       const row = await db.editorialWatchSearch.findFirst({
-        where: { id, workspaceId },
+        where: { id: searchId, workspaceId: scopedWorkspaceId },
       });
       if (!row) {
         return null;
@@ -120,15 +127,15 @@ export function prismaWatchHistoryStore(
       }
       return record;
     },
-    async delete(id) {
+    async delete(searchId) {
       const existing = await db.editorialWatchSearch.findFirst({
-        where: { id, workspaceId },
+        where: { id: searchId, workspaceId: scopedWorkspaceId },
         select: { id: true },
       });
       if (!existing) {
         return false;
       }
-      await db.editorialWatchSearch.delete({ where: { id } });
+      await db.editorialWatchSearch.delete({ where: { id: searchId } });
       return true;
     },
   };

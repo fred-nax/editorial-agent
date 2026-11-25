@@ -522,7 +522,9 @@ describe("historique des recherches de veille", () => {
     assert.match(screen, /Proposer un sujet/);
     assert.match(screen, /Suggérer 3 sujets SEO/);
     assert.match(screen, /onRelaunch/);
-    assert.equal(screen.match(/fetch\(/g)?.length, 1);
+    // V7.11.2 : mutations via workspaceFetch (header d’espace) plutôt que fetch nu.
+    assert.equal(screen.match(/workspaceFetch\(/g)?.length, 1);
+    assert.equal(screen.match(/(?<!workspace)fetch\(/g)?.length ?? 0, 0);
     assert.match(history, /Recherches enregistrées/);
     assert.match(history, /Confirmer la suppression/);
     assert.match(history, /\/api\/veille\/searches\?page=/);
