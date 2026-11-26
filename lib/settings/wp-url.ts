@@ -18,7 +18,13 @@ export function normalizeWpOrigin(rawUrl: string): string {
 }
 
 export function isPrivateOrReservedIp(hostnameOrIp: string): boolean {
-  const host = hostnameOrIp.replace(/^\[|\]$/g, "").toLowerCase();
+  let host = hostnameOrIp.replace(/^\[|\]$/g, "").toLowerCase();
+
+  // IPv4-mappées (::ffff:127.0.0.1) — SEC-005
+  if (host.startsWith("::ffff:")) {
+    host = host.slice("::ffff:".length);
+  }
+
   if (
     host === "localhost" ||
     host === "0.0.0.0" ||
@@ -53,6 +59,13 @@ export function isPrivateOrReservedIp(hostnameOrIp: string): boolean {
   if (host === "::1") return true;
   if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) {
     return true;
+  }
+  // IPv4 décimal dans une forme IPv6 restante
+  if (host.includes(".")) {
+    const mapped = host.split(":").pop();
+    if (mapped && isIP(mapped) === 4) {
+      return isPrivateOrReservedIp(mapped);
+    }
   }
   return false;
 }
@@ -150,11 +163,13 @@ export async function assertSafeWordPressUrlResolved(
 
 /**
  * fetch WordPress sans suivre les redirections (anti-SSRF).
+ * Revalide l’URL/IP à chaque appel (SEC-005) — pas seulement à l’enregistrement.
  */
 export async function fetchWordPressNoRedirect(
   url: string,
   init: RequestInit = {}
 ): Promise<Response> {
+  await assertSafeWordPressUrlResolved(url);
   const response = await fetch(url, {
     ...init,
     redirect: "manual",

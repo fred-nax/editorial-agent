@@ -106,8 +106,8 @@ export async function POST(request: Request) {
         { status: 409 }
       );
     }
-    const reactivated = await db.customTheme.update({
-      where: { id: existing.id },
+    await db.customTheme.updateMany({
+      where: { id: existing.id, ...workspaceWhere(workspaceId) },
       data: {
         active: true,
         description: description ?? existing.description,
@@ -117,6 +117,9 @@ export async function POST(request: Request) {
             : existing.explorationAngles ?? undefined,
         defaultQuota: quota.value,
       },
+    });
+    const reactivated = await db.customTheme.findFirst({
+      where: { id: existing.id, ...workspaceWhere(workspaceId) },
     });
     return NextResponse.json({ theme: reactivated, reused: true });
   }

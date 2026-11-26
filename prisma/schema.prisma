@@ -926,3 +926,19 @@ model Ga4PageSourceDailyStat {
   @@index([workspaceId, propertyId, pageUrlNorm, date], map: "Ga4PageSource_ws_prop_path_date_idx")
   @@index([propertyId, pageUrlNorm, date])
 }
+
+/// Tentatives de connexion (AUTH-001) — rate-limit persistant PostgreSQL.
+model AuthLoginAttempt {
+  id          String   @id @default(cuid())
+  /// Email normalisé (minuscules) — ne prouve pas l’existence du compte.
+  loginKey    String
+  /// IP client résolue (ou "unknown" si proxy non de confiance).
+  ipAddress   String
+  /// Clé composite ip|loginKey
+  bucketKey   String
+  success     Boolean  @default(false)
+  attemptedAt DateTime @default(now())
+
+  @@index([bucketKey, attemptedAt])
+  @@index([attemptedAt])
+}

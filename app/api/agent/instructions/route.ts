@@ -26,8 +26,15 @@ async function resolveAgentContext() {
   };
 }
 
+function unauthorized() {
+  return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+}
+
 export async function GET(request: Request) {
   const session = await requireAuth();
+  if (!session?.user) {
+    return unauthorized();
+  }
   const context = await resolveAgentContext();
   if (!context) {
     return NextResponse.json(
@@ -36,7 +43,7 @@ export async function GET(request: Request) {
     );
   }
   const result = await handleGetAgentInstructions(request, {
-    authenticated: Boolean(session?.user),
+    authenticated: true,
     agentId: context.agentId,
     client: context.client,
   });
@@ -45,6 +52,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const session = await requireAuth();
+  if (!session?.user) {
+    return unauthorized();
+  }
   const context = await resolveAgentContext();
   if (!context) {
     return NextResponse.json(
@@ -53,7 +63,7 @@ export async function POST(request: Request) {
     );
   }
   const result = await handlePostAgentInstructions(request, {
-    authenticated: Boolean(session?.user),
+    authenticated: true,
     agentId: context.agentId,
     client: context.client,
   });

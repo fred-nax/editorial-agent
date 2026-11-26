@@ -175,9 +175,16 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   // Ne jamais permettre de modifier legacyKey via l’API publique.
-  const theme = await db.customTheme.update({
-    where: { id },
+  // DB-004 — where composé workspace (défense en profondeur).
+  const updated = await db.customTheme.updateMany({
+    where: { id, ...workspaceWhere(workspace.id) },
     data,
+  });
+  if (updated.count === 0) {
+    return NextResponse.json({ error: "Thématique introuvable." }, { status: 404 });
+  }
+  const theme = await db.customTheme.findFirst({
+    where: { id, ...workspaceWhere(workspace.id) },
   });
 
   if (data.name && data.name !== existing.name) {
@@ -215,9 +222,12 @@ export async function DELETE(request: Request, context: RouteContext) {
   const dependencies = await getThemeDependencies(id, workspace.id);
 
   if (!dependencies.canDelete || forceDeactivate) {
-    const theme = await db.customTheme.update({
-      where: { id },
+    await db.customTheme.updateMany({
+      where: { id, ...workspaceWhere(workspace.id) },
       data: { active: false },
+    });
+    const theme = await db.customTheme.findFirst({
+      where: { id, ...workspaceWhere(workspace.id) },
     });
     return NextResponse.json({
       theme,
@@ -230,7 +240,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
   }
 
-  await db.customTheme.delete({ where: { id } });
+  await db.customTheme.deleteMany({
+    where: { id, ...workspaceWhere(workspace.id) },
+  });
   return NextResponse.json({
     deleted: true,
     deactivated: false,

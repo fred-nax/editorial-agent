@@ -133,8 +133,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
-  const config = await db.researchConfig.update({
-    where: { id },
+  const updated = await db.researchConfig.updateMany({
+    where: { id, ...workspaceWhere(workspace.id) },
     data: {
       name,
       mode: validated.value.mode as ResearchMode,
@@ -146,7 +146,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       customThemeId: validated.value.customThemeId,
     },
   });
+  if (updated.count === 0) {
+    return NextResponse.json({ error: "Configuration introuvable." }, { status: 404 });
+  }
 
+  const config = await db.researchConfig.findFirst({
+    where: { id, ...workspaceWhere(workspace.id) },
+  });
   return NextResponse.json({ config });
 }
 
@@ -174,6 +180,11 @@ export async function DELETE(_request: Request, context: RouteContext) {
     where: { configId: id, ...workspaceWhere(workspace.id) },
     data: { configId: null },
   });
-  await db.researchConfig.delete({ where: { id } });
+  const deleted = await db.researchConfig.deleteMany({
+    where: { id, ...workspaceWhere(workspace.id) },
+  });
+  if (deleted.count === 0) {
+    return NextResponse.json({ error: "Configuration introuvable." }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

@@ -3,6 +3,7 @@ import {
   resolveWpSeoPlugin,
   type WordPressConfig,
 } from "@/lib/settings/app-settings";
+import { sanitizeEditorialHtml } from "@/lib/cms/sanitize-editorial-html";
 import { fetchWordPressNoRedirect } from "@/lib/settings/wp-url";
 import {
   buildSeoRestMeta,
@@ -117,10 +118,12 @@ export async function createWordPressDraft(
   const seoPlugin = await resolveWpSeoPlugin();
   const seoFields = { meta_title, meta_description };
   const adapter = buildSeoRestMeta(seoPlugin, seoFields);
+  // CMS-005 — sanitisation à la création (pas de réécriture massive en base locale).
+  const safeContent = sanitizeEditorialHtml(content).html;
 
   const payload: Record<string, unknown> = {
     title,
-    content,
+    content: safeContent,
     excerpt,
     slug,
     status: "draft" as const,

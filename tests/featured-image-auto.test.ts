@@ -87,9 +87,14 @@ describe("V7.1 — option image avec l’article", () => {
 
   it("échec article annule l’image ; échec image laisse l’article completed", () => {
     const generation = readSource("lib/generation.ts");
+    // V7.16.1 AI-007 : annulation image seulement si aucun brouillon CMS.
     assert.match(
       generation,
-      /status: "failed"[\s\S]*cancelPendingFeaturedImagesForFailedArticle/
+      /if \(!draftAlreadyCreated\)[\s\S]*cancelPendingFeaturedImagesForFailedArticle/
+    );
+    assert.match(
+      generation,
+      /draftAlreadyCreated \? "completed" : "failed"/
     );
     assert.match(
       generation,

@@ -8,6 +8,7 @@ import type {
   CmsDraftInput,
   CmsDraftResult,
 } from "@/lib/cms/types";
+import { sanitizeEditorialHtml } from "@/lib/cms/sanitize-editorial-html";
 import { resolveWebflowConfig } from "@/lib/settings/app-settings";
 import {
   createWebflowClient,
@@ -30,6 +31,7 @@ export function createWebflowConnector(): CmsConnector {
       }
 
       const client = createWebflowClient({ apiToken: config.apiToken });
+      const safeContent = sanitizeEditorialHtml(input.content).html;
 
       try {
         const created = await createWebflowCollectionDraft({
@@ -38,7 +40,7 @@ export function createWebflowConnector(): CmsConnector {
           mapping: config.fieldMapping,
           input: {
             title: input.title,
-            content: input.content,
+            content: safeContent,
             excerpt: input.excerpt ?? "",
             slug: input.slug ?? "",
             meta_title: input.meta_title ?? "",

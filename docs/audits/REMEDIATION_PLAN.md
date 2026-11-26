@@ -1,34 +1,37 @@
-# Plan de remédiation — post V7.16.0
+# Plan de remédiation — post V7.16.0 / V7.16.1
 
-Baseline audit : **P0=0 · P1=2 · P2=24 · P3=17** (43 anomalies) — matrice `AUDIT_GLOBAL.md` §12.
+Baseline audit V7.16.0 : **P0=0 · P1=2 · P2=24 · P3=17** (43) — matrice `AUDIT_GLOBAL.md` §12 (photographie historique).
 
-Aucun correctif applicatif dans V7.16.0 (publication documentaire seule). Attendre GO utilisateur avant démarrage V7.16.1+.
+**V7.16.1 publiée** — voir `REMEDIATION_V7.16.1.md` et `releases/V7.16.1-REPORT.md`.  
+Recette : technique **797/0/1** · utilisateur **43/43**.
 
 Charge indicative homme-jours (1 dev familier du repo).
 
 ---
 
-## V7.16.1 — Sécurité et intégrité (3–6 j)
+## V7.16.1 — Sécurité et intégrité — **LIVRÉ**
 
-| ID | Priorité | Action | Complexité | Critère d’acceptation | Tests |
-|----|----------|--------|------------|----------------------|-------|
-| AUTH-001 | P1 | Rate-limit / lockout login (+ option allowlist) | M | 10 échecs → blocage temporaire ; login légitime OK | tests unitaires limiteur + manuel |
-| AUTH-002 | P2 | Doc + vérif `AUTH_URL` / trustHost | F | checklist deploy | test config |
-| AUTH-003 | P2 | Middleware ou garde API central | M | route oubliée simulée → 401 | test middleware |
-| AUTH-005 | P3 | Timing-safe email + dummy bcrypt | F | pas d’oracle email mesurable | test |
-| SEC-001 | P2 | `maxAge` / `updateAge` session JWT explicites | F | session expire selon politique | test auth |
-| SEC-002 | P2 | 401 avant tout resolve OpenAI sur `/api/agent/instructions` | F | non-auth → 401 uniquement | test HTTP |
-| SEC-003 | P2 | Throttle routes OpenAI payantes (par session/IP) | M | plafond/heure respecté | test |
-| SEC-004 | P3 | `.gitignore` `.env*` + `.dockerignore` passwords | F | `git check-ignore .env.local` | — |
-| SEC-005 | P2 | SSRF : revalider URL/IP à chaque fetch WP | M | IPs privées refusées | tests unitaires |
-| CMS-005 | P2 | Sanitize HTML WP à la création draft | M | scripts/on* retirés ou escapés | tests |
-| DB-003 | P2 | Vérifier FK workspace sur generation/image dans tracker | F–M | insert cross-ws refuse | test Prisma |
-| GOOG-003 | P2 | Politique secret cron + rotation | F | secret absent → 401 ; secret OK → 202 | déjà partiel |
-| INFRA-001 | P2 | Garde deploy anti `drop_ai_visibility` | F/M | migrate refuse / doc CI | script check |
-| INFRA-004 | P2 | CI schéma neuf sans tables Visibility* orphelines | M | migrate from scratch clean | CI |
-| WS-001 | P2 | Clarifier non-SaaS dans docs produit | F | texte publié | — |
-
-**Régression :** auth, Google cron, cookies session.
+| ID | Priorité | Statut | Notes |
+|----|----------|--------|-------|
+| AUTH-001 | P1 | **Corrigé** | Rate-limit `authorize` + PostgreSQL |
+| AUTH-003 | P2 | **Corrigé** | Middleware API |
+| AUTH-005 | P3 | **Corrigé** | Dummy bcrypt |
+| SEC-001 | P2 | **Corrigé** | maxAge session |
+| SEC-002 | P2 | **Corrigé** | 401 avant config OpenAI |
+| SEC-004 | P3 | **Corrigé** | `.env*` gitignore |
+| SEC-005 / CMS-006 | P2/P3 | **Corrigé** | SSRF fetch + IPv4-mappées |
+| CMS-005 | P2 | **Corrigé** | sanitize-html éditorial |
+| CMS-001 / AI-006 | P2 | **Corrigé** | Idempotence draft |
+| DB-003 | P2 | **Corrigé** | Tracker parents workspace |
+| DB-004 | P2 | **Corrigé** | updateMany/deleteMany + ws |
+| AI-005 | P2 | **Corrigé** | Tracking échecs session |
+| AI-007 | P3 | **Corrigé** | Draft OK ≠ failed |
+| AUTH-002 | P2 | **Partiel** | Doc `.env.example` ; ops V7.16.3 |
+| WS-003 | P3 | **Partiel** | Écritures critiques ; suite V7.16.2 |
+| SEC-003 | P2 | **Reporté** | Throttle OpenAI → V7.16.2 / VPS |
+| GOOG-003 | P2 | **Reporté** | V7.16.3 |
+| INFRA-001 / 004 | P2 | **Reporté** | V7.16.3 |
+| WS-001 | P2 | **NO GO SaaS** | Doc / V8+ |
 
 ---
 
@@ -39,16 +42,15 @@ Charge indicative homme-jours (1 dev familier du repo).
 | PERF-001 | P2 | Profilage Analytics/inventaires + index/pagination | M–L | benches isolés |
 | TEST-001 | P2 | Smoke Next+DB+events en CI isolée | M | nouveau smoke |
 | AI-001 | P2 | Durcissement entrées outils / fixtures injection | M | tests adversariaux mock |
-| AI-005 | P2 | Persister usage aussi sur chemins d’échec observables | M | tests tracker |
-| AI-006 / CMS-001 | P2 | Idempotence / un seul draft tool call par session | M | tests connecteur mock réseau |
-| AI-007 | P3 | Ne pas marquer failed si draft CMS OK + usage KO | M | tests génération |
-| DB-004 | P2 | `where: { id, workspaceId }` sur updates/deletes | M | tests isolation |
+| SEC-003 | P2 | Throttle routes OpenAI payantes (session/IP) | M | plafond/heure |
 | DB-005 | P2 | Documenter / revoir unicité stats Google vs workspace | M | doc + test collision |
 | DEP-001 | P2 | Suivre patch Prisma/effect (pas force-fix aveugle) | M | CI audit |
 | QUAL-002 | P3 | Découper `run-session.ts` | L | non-régression génération |
 | QUAL-001 | P3 | Ajouter `npm run lint` | F | CI |
 | UX-001 | P3 | Revue double-submit actions payantes | F–M | UI tests légers |
 | AI-003 | P3 | Revue tarifs OpenAI périodique | F | fixture pricing |
+| WS-003 | P3 | Compléter revue lectures `id` | M | isolation |
+| DB-002 | P3 | Cascade image / fichiers | M | tests |
 
 ---
 
@@ -57,25 +59,26 @@ Charge indicative homme-jours (1 dev familier du repo).
 | ID | Priorité | Action | Complexité | Critère |
 |----|----------|--------|------------|---------|
 | BACKUP-001 | P1 | Procédure + restore drill base neuve | M | compteurs + login + `/usage` |
-| BACKUP-002 | P2 | Sécuriser stockage dumps | F | pas de dump dans git |
+| BACKUP-002 | P2 | Sécuriser stockage dumps | F | pas de dump dans git (déjà partiel) |
+| AUTH-002 | P2 | Checklist `AUTH_URL` / trustHost VPS | F | login derrière proxy |
 | OBS-001 | P2 | Alerting minimal uptime/5xx/sync | M | alerte test |
 | INFRA-002/003 | P2–P3 | Harmoniser runbooks Docker/VPS | M | une procédure |
+| INFRA-001/004 | P2 | Garde GEO / schéma neuf | M | CI migrate scratch |
 | DOC-001 | P3 | Ranger scripts deploy | F | index docs |
-| GOOG-001 | INFO | Recette GSC/GA4 Webflow quand prêt | externe | fiche recette |
+| GOOG-003 | P2 | Rotation secret cron | F | secret absent → 401 |
 
 ---
 
 ## Hors scope immédiat
 
-- Transformation multi-tenant SaaS (WS-001 XL).
+- Transformation multi-tenant SaaS (WS-001 XL) — **NO GO**.
 - Refonte microservices.
 - Mise à jour force dépendances sans besoin.
 
 ---
 
-## Ordre recommandé
+## Ordre recommandé (suite)
 
-1. AUTH-001 + BACKUP-001 (bloquants GO Internet).  
-2. AUTH-003 / SEC-001 / INFRA-001.  
-3. TEST-001 + PERF-001.  
-4. Reste V7.16.2 / V7.16.3.
+1. **V7.16.3** BACKUP-001 (bloquant GO Internet) + AUTH_URL.  
+2. **V7.16.2** perf / SEC-003 / DEP-001 / qualité.  
+3. Ne pas démarrer sans GO utilisateur explicite.

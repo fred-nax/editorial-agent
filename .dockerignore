@@ -19,6 +19,14 @@ npm-debug.log*
 .DS_Store
 *.tar.gz
 naxialis-release-*.tar.gz
+backups/
+*.dump
+*.sql.gz
+auth-cookies.txt
+callback-body.txt
+password.txt
+.tmp-admin-password.txt
+generation-id.txt
 
 # Destructive GEO drop — must never enter a production image build context.
 # Also gitignored; keep this explicit because .gitignore alone does not filter Docker COPY.

@@ -162,7 +162,8 @@ export class AgentSessionError extends Error {
     | "no_draft"
     | "missing_session"
     | "tool_not_allowed_for_cms"
-    | "tool_not_allowed_for_agent";
+    | "tool_not_allowed_for_agent"
+    | "cms_draft_uncertain";
   /** Consommation récupérée après un échec local (ex. brouillon CMS manquant). */
   usageSnapshot: {
     model: string | null;
@@ -964,6 +965,35 @@ export async function runAgentSession(
               throw new Error("Identifiants WordPress manquants.");
             }
 
+            // AI-006 / CMS-001 — un seul brouillon par session.
+            if (cmsResultNormalized || wordpressResult) {
+              log(
+                onLog,
+                "⚠️ create_wordpress_draft déjà exécuté — réutilisation du résultat (idempotence)."
+              );
+              await openai.beta.agents.sessions.events.create(sessionId, {
+                events: [
+                  {
+                    type: "agent.session.input.tool_result",
+                    turn_id: action.turn_id,
+                    call_id: action.call_id,
+                    success: true,
+                    output: JSON.stringify(
+                      wordpressResult ?? {
+                        success: true,
+                        post_id: Number(cmsResultNormalized!.externalId),
+                        status: cmsResultNormalized!.status,
+                        title: cmsResultNormalized!.title,
+                        link: cmsResultNormalized!.link,
+                        idempotent_replay: true,
+                      }
+                    ),
+                  },
+                ],
+              });
+              continue;
+            }
+
             await emitProgress(
               onProgress,
               "creating_wordpress",
@@ -1022,16 +1052,46 @@ export async function runAgentSession(
             );
 
             // Connecteur CMS WordPress — même createWordPressDraft sous-jacent.
-            const cmsResult = await getCmsConnector(
-              "wordpress",
-              wordpressCredentials
-            ).createDraft({
-              ...args,
-              categoryIds,
-              ...(wpAuthorIdForDraft != null
-                ? { authorId: wpAuthorIdForDraft }
-                : {}),
-            });
+            let cmsResult;
+            try {
+              cmsResult = await getCmsConnector(
+                "wordpress",
+                wordpressCredentials
+              ).createDraft({
+                ...args,
+                categoryIds,
+                ...(wpAuthorIdForDraft != null
+                  ? { authorId: wpAuthorIdForDraft }
+                  : {}),
+              });
+            } catch (draftError) {
+              const uncertain = new AgentSessionError(
+                `Création WordPress incertaine ou échouée : ${
+                  draftError instanceof Error
+                    ? draftError.message
+                    : "erreur réseau"
+                }. Ne pas rappeler create_wordpress_draft sans réconciliation.`,
+                "cms_draft_uncertain",
+                sessionId
+              );
+              await openai.beta.agents.sessions.events.create(sessionId, {
+                events: [
+                  {
+                    type: "agent.session.input.tool_result",
+                    turn_id: action.turn_id,
+                    call_id: action.call_id,
+                    success: false,
+                    output: JSON.stringify({
+                      success: false,
+                      error: uncertain.message,
+                      uncertain: true,
+                      retry_create_forbidden: true,
+                    }),
+                  },
+                ],
+              });
+              throw uncertain;
+            }
             if (!cmsResult.wordpress) {
               throw new Error("Réponse CMS WordPress incomplète.");
             }
@@ -1121,6 +1181,32 @@ export async function runAgentSession(
               );
             }
 
+            // AI-006 / CMS-001 — un seul brouillon Webflow par session.
+            if (cmsResultNormalized) {
+              log(
+                onLog,
+                "⚠️ create_webflow_draft déjà exécuté — réutilisation du résultat (idempotence)."
+              );
+              await openai.beta.agents.sessions.events.create(sessionId, {
+                events: [
+                  {
+                    type: "agent.session.input.tool_result",
+                    turn_id: action.turn_id,
+                    call_id: action.call_id,
+                    success: true,
+                    output: JSON.stringify({
+                      success: true,
+                      item_id: cmsResultNormalized.externalId,
+                      status: cmsResultNormalized.status,
+                      title: cmsResultNormalized.title,
+                      idempotent_replay: true,
+                    }),
+                  },
+                ],
+              });
+              continue;
+            }
+
             await emitProgress(
               onProgress,
               "creating_webflow",
@@ -1135,11 +1221,42 @@ export async function runAgentSession(
             log(onLog, `Meta title : ${args.meta_title}`);
             log(onLog, `Meta description : ${args.meta_description}`);
 
-            const cmsResult = await getCmsConnector("webflow").createDraft({
-              ...args,
-              webflowCategoryItemId,
-              webflowAuthorItemId,
-            });
+            let cmsResult;
+            try {
+              cmsResult = await getCmsConnector("webflow").createDraft({
+                ...args,
+                webflowCategoryItemId,
+                webflowAuthorItemId,
+              });
+            } catch (draftError) {
+              // État distant incertain — ne pas recréer automatiquement.
+              const uncertain = new AgentSessionError(
+                `Création Webflow incertaine ou échouée : ${
+                  draftError instanceof Error
+                    ? draftError.message
+                    : "erreur réseau"
+                }. Ne pas rappeler create_webflow_draft sans réconciliation.`,
+                "cms_draft_uncertain",
+                sessionId
+              );
+              await openai.beta.agents.sessions.events.create(sessionId, {
+                events: [
+                  {
+                    type: "agent.session.input.tool_result",
+                    turn_id: action.turn_id,
+                    call_id: action.call_id,
+                    success: false,
+                    output: JSON.stringify({
+                      success: false,
+                      error: uncertain.message,
+                      uncertain: true,
+                      retry_create_forbidden: true,
+                    }),
+                  },
+                ],
+              });
+              throw uncertain;
+            }
             if (!cmsResult.webflow) {
               throw new Error("Réponse CMS Webflow incomplète.");
             }
@@ -1210,21 +1327,72 @@ export async function runAgentSession(
         log(onLog, "❌ Tour échoué");
         log(onLog, inspect(event, { depth: null }));
         await emitProgress(onProgress, "failed", PROGRESS_MESSAGES.failed);
-        throw new AgentSessionError(
+        // AI-005 — collecter la conso observable avant de lever.
+        const failed = new AgentSessionError(
           "Tour OpenAI échoué.",
           "turn_failed",
           sessionId
         );
+        if (sessionId) {
+          try {
+            const failedUsage = await collectSessionUsage(sessionId, openai);
+            const failedCost =
+              failedUsage.usage !== null
+                ? estimateLlmCostUsd(failedUsage.model, {
+                    inputTokens: failedUsage.usage.inputTokens,
+                    cachedInputTokens: failedUsage.usage.cachedInputTokens,
+                    outputTokens: failedUsage.usage.outputTokens,
+                  })
+                : null;
+            failed.usageSnapshot = {
+              model: failedUsage.model,
+              inputTokens: failedUsage.usage?.inputTokens ?? null,
+              cachedInputTokens: failedUsage.usage?.cachedInputTokens ?? null,
+              outputTokens: failedUsage.usage?.outputTokens ?? null,
+              reasoningTokens: failedUsage.usage?.reasoningTokens ?? null,
+              totalTokens: failedUsage.usage?.totalTokens ?? null,
+              estimatedCost: failedCost,
+            };
+          } catch {
+            // Ne jamais relancer OpenAI ni masquer l’échec métier.
+          }
+        }
+        throw failed;
       }
 
       if (event.type === "agent.session.turn.cancelled") {
         log(onLog, "⚠️ Tour annulé.");
         await emitProgress(onProgress, "failed", PROGRESS_MESSAGES.failed);
-        throw new AgentSessionError(
+        const cancelled = new AgentSessionError(
           "Tour OpenAI annulé.",
           "turn_cancelled",
           sessionId
         );
+        if (sessionId) {
+          try {
+            const failedUsage = await collectSessionUsage(sessionId, openai);
+            const failedCost =
+              failedUsage.usage !== null
+                ? estimateLlmCostUsd(failedUsage.model, {
+                    inputTokens: failedUsage.usage.inputTokens,
+                    cachedInputTokens: failedUsage.usage.cachedInputTokens,
+                    outputTokens: failedUsage.usage.outputTokens,
+                  })
+                : null;
+            cancelled.usageSnapshot = {
+              model: failedUsage.model,
+              inputTokens: failedUsage.usage?.inputTokens ?? null,
+              cachedInputTokens: failedUsage.usage?.cachedInputTokens ?? null,
+              outputTokens: failedUsage.usage?.outputTokens ?? null,
+              reasoningTokens: failedUsage.usage?.reasoningTokens ?? null,
+              totalTokens: failedUsage.usage?.totalTokens ?? null,
+              estimatedCost: failedCost,
+            };
+          } catch {
+            // ignore
+          }
+        }
+        throw cancelled;
       }
     }
   } catch (error) {

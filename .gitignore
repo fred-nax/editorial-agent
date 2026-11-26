@@ -1,5 +1,7 @@
 node_modules/
 .env
+.env.*
+!.env.example
 storage/featured-images/*
 !storage/featured-images/.gitkeep
 .tmp-admin-password.txt
@@ -17,3 +19,6 @@ prisma/migrations/20261103173400_drop_ai_visibility_monitor/
 # Local release archives / dumps — never commit.
 *.tar.gz
 naxialis-release-*.tar.gz
+backups/
+*.dump
+*.sql.gz

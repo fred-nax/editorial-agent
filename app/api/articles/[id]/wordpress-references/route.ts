@@ -229,8 +229,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         categoryIds: patched.categories,
         authorId: patched.author,
       });
-      await db.articleGeneration.update({
-        where: { id: generation.id },
+      await db.articleGeneration.updateMany({
+        where: { id: generation.id, workspaceId: workspace.id },
         data: {
           categories: labels.categories.map((c) => ({
             categoryId: c.id,

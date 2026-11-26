@@ -406,11 +406,16 @@ export async function processArticleGeneration(
       latest?.progressStage
     );
 
+    // AI-007 — si un brouillon CMS existe déjà, ne pas marquer `failed`
+    // uniquement pour un échec post-création (usage / persistance).
+    const draftAlreadyCreated = Boolean(storedTrace.wpPostId);
     await db.articleGeneration.update({
       where: { id },
       data: {
-        status: "failed",
-        error: toStoredError(error),
+        status: draftAlreadyCreated ? "completed" : "failed",
+        error: draftAlreadyCreated
+          ? `Brouillon CMS créé ; post-traitement : ${toStoredError(error)}`
+          : toStoredError(error),
         durationMs,
         sessionId,
         trace: storedTrace.trace as Prisma.InputJsonValue,
@@ -425,16 +430,24 @@ export async function processArticleGeneration(
           : {}),
         // Conserve recherche/rédaction/création — ne pas écraser en "failed"
         // sinon l’UI affiche à tort un échec pendant la préparation.
-        progressStage: preservedStage,
-        progressMessage: toStoredError(error) || PROGRESS_MESSAGES.failed,
+        progressStage: draftAlreadyCreated ? "completed" : preservedStage,
+        progressMessage: draftAlreadyCreated
+          ? PROGRESS_MESSAGES.completed
+          : toStoredError(error) || PROGRESS_MESSAGES.failed,
         progressUpdatedAt: new Date(),
       },
     });
 
-    await syncTopicStatus(generation.topicId, workspaceId, "pending");
-    await cancelPendingFeaturedImagesForFailedArticle(id);
+    await syncTopicStatus(
+      generation.topicId,
+      workspaceId,
+      draftAlreadyCreated ? "completed" : "pending"
+    );
+    if (!draftAlreadyCreated) {
+      await cancelPendingFeaturedImagesForFailedArticle(id);
+    }
 
-    logError("generation", "failed", {
+    logError("generation", draftAlreadyCreated ? "completed_with_warning" : "failed", {
       generationId: id,
       workspaceId,
       sessionId,
@@ -442,41 +455,79 @@ export async function processArticleGeneration(
       message: toStoredError(error),
     });
 
-    // Conserver une consommation OpenAI déjà retournée malgré l’échec local.
-    if (
-      error instanceof AgentSessionError &&
-      error.usageSnapshot &&
-      (error.usageSnapshot.inputTokens !== null ||
-        error.usageSnapshot.outputTokens !== null)
-    ) {
-      await recordArticleGenerationLlmUsage({
-        workspaceId,
-        generationId: id,
-        sessionId,
-        model: error.usageSnapshot.model,
-        status: "failed",
-        inputTokens: error.usageSnapshot.inputTokens,
-        cachedInputTokens: error.usageSnapshot.cachedInputTokens,
-        outputTokens: error.usageSnapshot.outputTokens,
-        reasoningTokens: error.usageSnapshot.reasoningTokens,
-        totalTokens: error.usageSnapshot.totalTokens,
-        estimatedCostUsd: error.usageSnapshot.estimatedCost,
-      });
-      const failedTrace = storedTrace.trace as
-        | { ids?: { webSearchCallIds?: string[] } }
-        | null;
-      const webSearchCalls = countWebSearchCallsFromTraceIds(
-        failedTrace?.ids?.webSearchCallIds
-      );
-      if (webSearchCalls > 0) {
-        await recordArticleGenerationWebSearchUsage({
+    // AI-005 — conserver toute conso observable (tokens ou coût), même partielle.
+    if (error instanceof AgentSessionError && error.usageSnapshot) {
+      const snap = error.usageSnapshot;
+      const hasObservable =
+        snap.inputTokens !== null ||
+        snap.outputTokens !== null ||
+        snap.totalTokens !== null ||
+        (typeof snap.estimatedCost === "number" &&
+          Number.isFinite(snap.estimatedCost));
+      if (hasObservable) {
+        const llmTrack = await recordArticleGenerationLlmUsage({
           workspaceId,
           generationId: id,
           sessionId,
-          model: error.usageSnapshot.model,
-          billableCallCount: webSearchCalls,
-          status: "failed",
+          model: snap.model,
+          status: draftAlreadyCreated ? "partial" : "failed",
+          inputTokens: snap.inputTokens,
+          cachedInputTokens: snap.cachedInputTokens,
+          outputTokens: snap.outputTokens,
+          reasoningTokens: snap.reasoningTokens,
+          totalTokens: snap.totalTokens,
+          estimatedCostUsd: snap.estimatedCost,
         });
+        const failedTrace = storedTrace.trace as
+          | { ids?: { webSearchCallIds?: string[] } }
+          | null;
+        const webSearchCalls = countWebSearchCallsFromTraceIds(
+          failedTrace?.ids?.webSearchCallIds
+        );
+        let webSearchTrack: {
+          recorded: boolean;
+          duplicate: boolean;
+          error: string | null;
+        } | null = null;
+        if (webSearchCalls > 0) {
+          webSearchTrack = await recordArticleGenerationWebSearchUsage({
+            workspaceId,
+            generationId: id,
+            sessionId,
+            model: snap.model,
+            billableCallCount: webSearchCalls,
+            status: draftAlreadyCreated ? "partial" : "failed",
+          });
+        }
+        const trackingFailures: Array<{ operationType: string; error: string }> =
+          [];
+        if (!llmTrack.recorded && !llmTrack.duplicate && llmTrack.error) {
+          trackingFailures.push({
+            operationType: "article_generation",
+            error: llmTrack.error,
+          });
+        }
+        if (
+          webSearchTrack &&
+          !webSearchTrack.recorded &&
+          !webSearchTrack.duplicate &&
+          webSearchTrack.error
+        ) {
+          trackingFailures.push({
+            operationType: "web_search",
+            error: webSearchTrack.error,
+          });
+        }
+        if (trackingFailures.length > 0) {
+          let traceValue: unknown = storedTrace.trace;
+          for (const failure of trackingFailures) {
+            traceValue = mergeUsageTrackingFailure(traceValue, failure);
+          }
+          await db.articleGeneration.updateMany({
+            where: { id, workspaceId },
+            data: { trace: traceValue as Prisma.InputJsonValue },
+          });
+        }
       }
     }
   }

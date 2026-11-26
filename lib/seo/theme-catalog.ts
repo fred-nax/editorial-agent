@@ -258,8 +258,8 @@ export async function reorderThemes(
 
   await db.$transaction(
     unique.map((id, index) =>
-      db.customTheme.update({
-        where: { id },
+      db.customTheme.updateMany({
+        where: { id, workspaceId },
         data: { sortOrder: index },
       })
     )

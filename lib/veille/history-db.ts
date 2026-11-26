@@ -135,7 +135,9 @@ export function prismaWatchHistoryStore(
       if (!existing) {
         return false;
       }
-      await db.editorialWatchSearch.delete({ where: { id: searchId } });
+      await db.editorialWatchSearch.deleteMany({
+        where: { id: searchId, workspaceId: scopedWorkspaceId },
+      });
       return true;
     },
   };

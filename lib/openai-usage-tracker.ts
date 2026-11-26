@@ -148,13 +148,45 @@ export async function recordOpenAiUsageEvent(
       };
     }
 
+    // DB-003 — défense en profondeur : parents ∈ workspaceId fourni.
+    const generationId = input.generationId?.trim() || null;
+    const featuredImageId = input.featuredImageId?.trim() || null;
+    if (generationId) {
+      const generation = await db.articleGeneration.findFirst({
+        where: { id: generationId, workspaceId },
+        select: { id: true },
+      });
+      if (!generation) {
+        return {
+          recorded: false,
+          duplicate: false,
+          eventId: null,
+          error: "generationId hors workspace",
+        };
+      }
+    }
+    if (featuredImageId) {
+      const image = await db.articleFeaturedImage.findFirst({
+        where: { id: featuredImageId, workspaceId },
+        select: { id: true },
+      });
+      if (!image) {
+        return {
+          recorded: false,
+          duplicate: false,
+          eventId: null,
+          error: "featuredImageId hors workspace",
+        };
+      }
+    }
+
     const created = await db.openAiUsageEvent.create({
       data: {
         workspaceId,
         operationType: input.operationType,
         operationKey: input.operationKey ?? null,
-        generationId: input.generationId ?? null,
-        featuredImageId: input.featuredImageId ?? null,
+        generationId,
+        featuredImageId,
         requestedModel: input.requestedModel ?? null,
         usedModel: input.usedModel ?? null,
         endpoint: input.endpoint,
