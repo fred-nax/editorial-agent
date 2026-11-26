@@ -206,9 +206,12 @@ export default async function DashboardPage() {
               {usageMonth.knownEstimatedCostLabel}
             </p>
             <p className="mt-1 max-w-2xl text-xs text-slate-600">
-              Estimation locale connue (registre + legacy LLM).{" "}
-              {usageMonth.unknownOrPartialCount} opération(s) inconnue(s) ou
-              partielle(s). Ce n’est pas une facture OpenAI.
+              Estimation locale connue — registre :{" "}
+              {usageMonth.registryEventCount} événement(s) (
+              {formatEstimatedCost(usageMonth.registryKnownCostUsd)}) ; LLM
+              historiques : {usageMonth.legacyLlmCount} (
+              {formatEstimatedCost(usageMonth.legacyLlmCostUsd)}). Ce n’est pas
+              une facture OpenAI.
             </p>
           </div>
           <Link

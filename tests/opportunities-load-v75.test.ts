@@ -7,7 +7,7 @@ describe("V7.5 — chargement opportunités (non-régression)", () => {
   it("le client Prisma détecte le catalogue V7.5 (sortOrder / themeId)", async () => {
     const source = await readFile("lib/db.ts", "utf8");
     assert.match(source, /PRISMA_CLIENT_TOKEN/);
-    assert.match(source, /openai-usage-events-v7150/);
+    assert.match(source, /openai-usage-events-v715/);
     assert.match(source, /seoThemeCatalogV75Ready/);
     assert.match(source, /googleIntegrationsReady/);
     assert.match(source, /wordpressContentTypeReady/);

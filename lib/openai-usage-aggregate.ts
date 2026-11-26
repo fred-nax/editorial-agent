@@ -71,6 +71,9 @@ export type UsageSummary = {
   legacyLlmIncluded: boolean;
   legacyLlmCount: number;
   legacyLlmCostUsd: number;
+  /** Événements réellement persistés dans OpenAiUsageEvent (hors legacy). */
+  registryEventCount: number;
+  registryKnownCostUsd: number;
   coverageNote: string;
 };
 
@@ -384,6 +387,14 @@ export async function getUsageSummary(
         })()
       : null;
 
+  let registryKnownCostUsd = 0;
+  for (const event of events) {
+    const cost = decimalToNumber(event.estimatedCostUsd);
+    if (typeof cost === "number") {
+      registryKnownCostUsd += cost;
+    }
+  }
+
   return {
     knownEstimatedCostUsd,
     knownEstimatedCostLabel: formatEstimatedCost(knownEstimatedCostUsd),
@@ -407,8 +418,10 @@ export async function getUsageSummary(
     legacyLlmIncluded: legacy.length > 0,
     legacyLlmCount: legacy.length,
     legacyLlmCostUsd,
+    registryEventCount: events.length,
+    registryKnownCostUsd,
     coverageNote:
-      "Total estimé connu uniquement — les opérations à coût inconnu ou partiel ne sont pas une dépense totale certaine. Jamais un montant facturé OpenAI.",
+      "Total estimé connu = registre OpenAiUsageEvent + éventuels coûts LLM historiques. Les lignes legacy ne sont pas de nouveaux événements registre. Jamais un montant facturé OpenAI.",
   };
 }
 

@@ -31,6 +31,7 @@ import { resolvePublishedUrlForGeneration } from "@/lib/google/published-url-map
 import { toFeaturedImagePublic } from "@/lib/images/types";
 import { formatModelLabel } from "@/lib/openai-pricing";
 import { getArticleCostBreakdown } from "@/lib/openai-usage-aggregate";
+import { readUsageTrackingFromTrace } from "@/lib/openai-usage-tracking-status";
 import { CmsDestinationBadge } from "@/components/cms/CmsDestinationBadge";
 import {
   getArticleDetailTabs,
@@ -116,6 +117,7 @@ export default async function ArticleDetailPage({
     generationId: article.id,
     historicalEstimatedCost: article.estimatedCost,
   });
+  const usageTracking = readUsageTrackingFromTrace(article.trace);
 
   const visibleTabs = getArticleDetailTabs(cmsDestination);
   const requestedTab: ArticleDetailTabId =
@@ -258,6 +260,14 @@ export default async function ArticleDetailPage({
               <h3 className="mb-3 text-sm font-semibold text-slate-900">
                 Ventilation OpenAI (article)
               </h3>
+              {usageTracking && usageTracking.failures.length > 0 ? (
+                <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Suivi de consommation incomplet pour{" "}
+                  {usageTracking.failures.length} opération(s) — le contenu
+                  généré est conservé, mais l’enregistrement registre a échoué.
+                  Ce n’est pas un coût nul.
+                </p>
+              ) : null}
               <ArticleCostBreakdownPanel breakdown={costBreakdown} />
             </div>
           </div>

@@ -12,7 +12,71 @@ const globalForPrisma = globalThis as unknown as {
 
 /** Change quand le schéma Prisma change, pour ne pas réutiliser un client généré avant. */
 const PRISMA_CLIENT_TOKEN =
-  "openai-usage-events-v7150-20261125";
+  "openai-usage-events-v7151-20261125";
+
+/**
+ * Nom de base uniquement (sans identifiants) pour logs de démarrage.
+ * Ne jamais logger la DATABASE_URL complète.
+ */
+export function databaseNameFromUrl(url: string | undefined): string | null {
+  if (!url?.trim()) {
+    return null;
+  }
+  try {
+    const pathname = new URL(url).pathname.replace(/^\//, "");
+    return pathname.split("/")[0] || null;
+  } catch {
+    const match = url.match(/\/([^/?]+)(?:\?|$)/);
+    return match?.[1] ?? null;
+  }
+}
+
+export function isMigtestDatabaseUrl(url: string | undefined): boolean {
+  const name = databaseNameFromUrl(url)?.toLowerCase() ?? "";
+  return name.includes("migtest");
+}
+
+function isAutomatedTestProcess(): boolean {
+  // tsx --test isole les workers : argv n’a plus "--test", mais execArgv
+  // conserve les flags --test-* (ex. --test-isolation=process).
+  const hasTestFlag = (args: readonly string[]) =>
+    args.some((arg) => arg === "--test" || arg.startsWith("--test-"));
+  const hasTestFile = process.argv.some(
+    (arg) => arg.endsWith(".test.ts") || arg.endsWith(".test.mts")
+  );
+  return (
+    process.env.NODE_ENV === "test" ||
+    process.env.npm_lifecycle_event === "test" ||
+    hasTestFlag(process.argv) ||
+    hasTestFlag(process.execArgv) ||
+    hasTestFile
+  );
+}
+
+/**
+ * Garde runtime : le serveur applicatif ne doit pas pointer vers migtest
+ * sauf tests automatisés ou autorisation explicite (validation Cursor).
+ */
+export function assertApplicationDatabaseAllowed(
+  url: string | undefined = process.env.DATABASE_URL
+): void {
+  if (!isMigtestDatabaseUrl(url)) {
+    return;
+  }
+  if (process.env.ALLOW_MIGTEST_DATABASE === "1" || isAutomatedTestProcess()) {
+    logInfo("db", "migtest database allowed", {
+      database: databaseNameFromUrl(url),
+      allowFlag: process.env.ALLOW_MIGTEST_DATABASE === "1" ? 1 : 0,
+      automatedTest: isAutomatedTestProcess() ? 1 : 0,
+    });
+    return;
+  }
+  throw new Error(
+    `DATABASE_URL pointe vers une base de test (${databaseNameFromUrl(url)}). ` +
+      "Le serveur applicatif doit utiliser naxialis_agent. " +
+      "Pour forcer migtest (validation uniquement) : ALLOW_MIGTEST_DATABASE=1."
+  );
+}
 
 type PrismaModule = {
   PrismaClient: typeof PrismaClient;
@@ -148,6 +212,14 @@ function createPrismaClient(Client: typeof PrismaClient): PrismaClient {
   if (!connectionString) {
     throw new Error("Variable d'environnement manquante : DATABASE_URL");
   }
+
+  assertApplicationDatabaseAllowed(connectionString);
+
+  const database = databaseNameFromUrl(connectionString);
+  logInfo("db", "prisma connecting", {
+    database: database ?? "(unknown)",
+    migtest: isMigtestDatabaseUrl(connectionString) ? 1 : 0,
+  });
 
   const adapter = new PrismaPg({ connectionString });
   return new Client({ adapter });

@@ -33,6 +33,8 @@ type Summary = {
   }>;
   legacyLlmCount: number;
   legacyLlmCostUsd: number;
+  registryEventCount: number;
+  registryKnownCostUsd: number;
   coverageNote: string;
 };
 
@@ -241,12 +243,15 @@ export function UsagePageClient({
           <p className="mt-1 text-xs text-slate-500">{summary.coverageNote}</p>
         </article>
         <article className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="text-xs font-medium text-slate-500">Opérations</p>
+          <p className="text-xs font-medium text-slate-500">
+            Registre OpenAiUsageEvent
+          </p>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
-            {summary.operationCount}
+            {summary.registryEventCount}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            {summary.unknownOrPartialCount} inconnues / partielles
+            {formatEstimatedCost(summary.registryKnownCostUsd)} estimé registre ·{" "}
+            {summary.unknownOrPartialCount} inconnues / partielles (total lignes)
           </p>
         </article>
         <article className="rounded-xl border border-slate-200 bg-white p-4">
@@ -272,11 +277,22 @@ export function UsagePageClient({
         </article>
       </div>
 
+      {summary.registryEventCount === 0 ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          Aucun événement dans le registre <code>OpenAiUsageEvent</code> pour
+          cette période. Les montants éventuels ci-dessous peuvent provenir
+          uniquement des coûts LLM historiques (
+          <code>ArticleGeneration.estimatedCost</code>), pas de nouvelles
+          consommations persistées.
+        </p>
+      ) : null}
+
       {summary.legacyLlmCount > 0 ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {summary.legacyLlmCount} coût(s) LLM historique(s) inclus (
-          {formatEstimatedCost(summary.legacyLlmCostUsd)}) — couverture partielle
-          (hors web_search / images).
+          {summary.legacyLlmCount} coût(s) LLM historique(s) inclus via lecture
+          unifiée ({formatEstimatedCost(summary.legacyLlmCostUsd)}) — ce ne sont
+          pas des événements registre. Couverture partielle (hors web_search /
+          images). Total lignes affichées : {summary.operationCount}.
         </p>
       ) : null}
 

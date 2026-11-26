@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { resolveEditorialIdentity } from "@/lib/editorial/identity";
 import {
@@ -278,7 +279,11 @@ async function runImageGenerationCore(input: {
     const { recordImageGenerationUsage, recordImageAltUsage } = await import(
       "@/lib/openai-usage-tracker"
     );
-    await recordImageGenerationUsage({
+    const { mergeUsageTrackingFailure } = await import(
+      "@/lib/openai-usage-tracking-status"
+    );
+    const { logError } = await import("@/lib/logger");
+    const imageTrack = await recordImageGenerationUsage({
       workspaceId: generation.workspaceId,
       generationId: generation.id,
       featuredImageId: imageId,
@@ -297,7 +302,7 @@ async function runImageGenerationCore(input: {
       languageLabel: languageLabel(editorial?.language ?? null),
     });
 
-    await recordImageAltUsage({
+    const altTrack = await recordImageAltUsage({
       workspaceId: generation.workspaceId,
       generationId: generation.id,
       featuredImageId: imageId,
@@ -305,6 +310,42 @@ async function runImageGenerationCore(input: {
       status: alt.altText ? "succeeded" : "failed",
       usage: alt.usage,
     });
+
+    const imageTrackingFailures: Array<{
+      operationType: string;
+      error: string;
+    }> = [];
+    if (!imageTrack.recorded && !imageTrack.duplicate && imageTrack.error) {
+      imageTrackingFailures.push({
+        operationType: "image_generation",
+        error: imageTrack.error,
+      });
+    }
+    if (!altTrack.recorded && !altTrack.duplicate && altTrack.error) {
+      imageTrackingFailures.push({
+        operationType: "image_alt",
+        error: altTrack.error,
+      });
+    }
+    if (imageTrackingFailures.length > 0) {
+      const current = await db.articleGeneration.findUnique({
+        where: { id: generation.id },
+        select: { trace: true },
+      });
+      let traceValue: unknown = current?.trace ?? null;
+      for (const failure of imageTrackingFailures) {
+        traceValue = mergeUsageTrackingFailure(traceValue, failure);
+      }
+      await db.articleGeneration.update({
+        where: { id: generation.id },
+        data: { trace: traceValue as Prisma.InputJsonValue },
+      });
+      logError("images", "usage tracking incomplete", {
+        generationId: generation.id,
+        imageId,
+        failures: imageTrackingFailures.length,
+      });
+    }
 
     const updated = await db.articleFeaturedImage.update({
       where: { id: imageId },

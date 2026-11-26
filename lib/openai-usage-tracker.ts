@@ -33,6 +33,19 @@ export {
   type OpenAiUsageStatus,
 } from "@/lib/openai-usage-types";
 
+function assertUsageEventDelegateAvailable(): string | null {
+  const hasModel = Prisma.dmmf.datamodel.models.some(
+    (model) => model.name === "OpenAiUsageEvent"
+  );
+  if (!hasModel) {
+    return "client Prisma sans modèle OpenAiUsageEvent (régénérer + redémarrer Next.js)";
+  }
+  if (typeof (db as { openAiUsageEvent?: unknown }).openAiUsageEvent !== "object") {
+    return "délégué openAiUsageEvent indisponible sur le client Prisma";
+  }
+  return null;
+}
+
 export type RecordOpenAiUsageInput = {
   workspaceId: string;
   operationType: OpenAiUsageOperationType;
@@ -119,6 +132,22 @@ export async function recordOpenAiUsageEvent(
       };
     }
 
+    const delegateError = assertUsageEventDelegateAvailable();
+    if (delegateError) {
+      logError("openai-usage", "record unavailable", {
+        operationType: input.operationType,
+        generationId: input.generationId ?? null,
+        featuredImageId: input.featuredImageId ?? null,
+        error: delegateError,
+      });
+      return {
+        recorded: false,
+        duplicate: false,
+        eventId: null,
+        error: delegateError,
+      };
+    }
+
     const created = await db.openAiUsageEvent.create({
       data: {
         workspaceId,
@@ -186,6 +215,9 @@ export async function recordOpenAiUsageEvent(
     logError("openai-usage", "record failed", {
       operationType: input.operationType,
       idempotencyKey: input.idempotencyKey,
+      generationId: input.generationId ?? null,
+      featuredImageId: input.featuredImageId ?? null,
+      workspaceId: input.workspaceId,
       error: message,
     });
     return {

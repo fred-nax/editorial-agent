@@ -35,6 +35,7 @@ import {
   recordArticleGenerationLlmUsage,
   recordArticleGenerationWebSearchUsage,
 } from "./openai-usage-tracker";
+import { mergeUsageTrackingFailure } from "./openai-usage-tracking-status";
 
 export type ArticleRunner = (
   subject: string
@@ -323,8 +324,8 @@ export async function processArticleGeneration(
       usageRetries: result.usageCollection.retries,
     });
 
-    // V7.15.0 — registre consommations (ne relance jamais OpenAI).
-    await recordArticleGenerationLlmUsage({
+    // V7.15.x — registre consommations (ne relance jamais OpenAI).
+    const llmTrack = await recordArticleGenerationLlmUsage({
       workspaceId,
       generationId: id,
       sessionId: result.sessionId,
@@ -340,14 +341,50 @@ export async function processArticleGeneration(
     const webSearchCalls = countWebSearchCallsFromTraceIds(
       result.trace?.ids.webSearchCallIds
     );
+    let webSearchTrack: { recorded: boolean; duplicate: boolean; error: string | null } | null =
+      null;
     if (webSearchCalls > 0) {
-      await recordArticleGenerationWebSearchUsage({
+      webSearchTrack = await recordArticleGenerationWebSearchUsage({
         workspaceId,
         generationId: id,
         sessionId: result.sessionId,
         model: result.model,
         billableCallCount: webSearchCalls,
         status: "succeeded",
+      });
+    }
+
+    const trackingFailures: Array<{ operationType: string; error: string }> = [];
+    if (!llmTrack.recorded && !llmTrack.duplicate && llmTrack.error) {
+      trackingFailures.push({
+        operationType: "article_generation",
+        error: llmTrack.error,
+      });
+    }
+    if (
+      webSearchTrack &&
+      !webSearchTrack.recorded &&
+      !webSearchTrack.duplicate &&
+      webSearchTrack.error
+    ) {
+      trackingFailures.push({
+        operationType: "web_search",
+        error: webSearchTrack.error,
+      });
+    }
+    if (trackingFailures.length > 0) {
+      let traceValue: unknown = storedTrace.trace;
+      for (const failure of trackingFailures) {
+        traceValue = mergeUsageTrackingFailure(traceValue, failure);
+      }
+      await db.articleGeneration.update({
+        where: { id },
+        data: { trace: traceValue as Prisma.InputJsonValue },
+      });
+      logError("generation", "usage tracking incomplete", {
+        generationId: id,
+        workspaceId,
+        failures: trackingFailures.length,
       });
     }
 
