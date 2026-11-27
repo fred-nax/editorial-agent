@@ -1,66 +1,39 @@
-# Plan de remédiation — post V7.16.0 / V7.16.1 / V7.16.2
+# Plan de remédiation — suivi post V7.16.3
 
-Baseline audit V7.16.0 : **P0=0 · P1=2 · P2=24 · P3=17** (43) — matrice `AUDIT_GLOBAL.md` §12 (photographie historique).
+Baseline audit V7.16.0 : photographie historique `AUDIT_GLOBAL.md` (conservée).
 
-**V7.16.1 publiée** — `REMEDIATION_V7.16.1.md` · `releases/V7.16.1-REPORT.md`.  
-**V7.16.2 publiée** — `REMEDIATION_V7.16.2.md` · `releases/V7.16.2-REPORT.md` · `PERFORMANCE_BENCHMARK_V7.16.2.md`.  
-Recette V7.16.2 : **43/43** applicables · 1 N/A (thème clair/sombre) · 0 anomalie.
-
----
-
-## V7.16.1 — Sécurité et intégrité — **LIVRÉ**
-
-| ID | Priorité | Statut |
-|----|----------|--------|
-| AUTH-001, AUTH-003, AUTH-005, SEC-001/002/004/005, CMS-*, DB-003/004, AI-005/006/007 | P1–P3 | **Corrigé** |
-| AUTH-002 | P2 | **Partiel** (renforcé V7.16.2 garde prod) |
-| WS-003 | P3 | **Partiel** (renforcé V7.16.2 API article) |
-| WS-001 | P2 | **NO GO SaaS** |
+| Version | Statut |
+|---------|--------|
+| V7.16.1 | **Publiée** — sécurité / intégrité |
+| V7.16.2 | **Publiée** — perf / deps |
+| V7.16.3 | **Publiée (Git)** — production readiness locale ; **pas de deploy VPS** |
 
 ---
 
-## V7.16.2 — Performance et qualité — **LIVRÉ**
+## V7.16.3 — synthèse
 
-| ID | Priorité | Statut |
-|----|----------|--------|
-| PERF-001/002/003 | P2–INFO | **Corrigé** |
-| SEC-003 | P2 | **Corrigé** |
-| DEP-001 | P2 | **Corrigé** (`effect@3.22.5`) |
-| QUAL-001 | P3 | **Corrigé** |
-| TEST-001 | P2 | **Corrigé** |
-| UX-001 | P3 | **Corrigé** (confirmé) |
-| AUTH-002 | P2 | **Partiel** |
-| WS-003 | P3 | **Partiel** |
-| QUAL-002, AI-001/003, DB-002/005 | P2–P3 | **Reporté** |
+| ID | Statut | Bloquant VPS privé |
+|----|--------|-------------------|
+| BACKUP-001 | Clos tech / **ouvert ops** | **Oui** (ops) |
+| BACKUP-002 | Corrigé | Non |
+| AUTH-002 | Partiel (proxy VPS) | Non si smoke avant cutover |
+| WS-003 | Corrigé (revue) | Non |
+| WS-001 | Hors périmètre SaaS | N/A |
+| INFRA-001/002/003 | Corrigé | Non |
+| INFRA-004 | Partiel (inventaire VPS) | **Oui** (contrôle) |
+| OBS-001 | Partiel (alertes) | Non |
+| DOC-001 | Corrigé | Non |
+| QUAL-002 | Reporté | Non |
+| AI-001/003 | Partiel / ouvert | Non |
+| DB-002/005 | Doc / ouvert | Non |
+| GOOG-003 | Doc rotation | Non |
 
----
-
-## V7.16.3 — Production readiness — **NON DÉMARRÉ**
-
-| ID | Priorité | Action |
-|----|----------|--------|
-| BACKUP-001 | P1 | Procédure + restore drill + runbook VPS |
-| BACKUP-002 | P2 | Sécuriser stockage dumps |
-| AUTH-002 | P2 | Checklist `AUTH_URL` / trustHost VPS |
-| OBS-001 | P2 | Alerting uptime/5xx/sync |
-| INFRA-* | P2–P3 | Docker/VPS, garde GEO, schéma neuf |
-| DOC-001 | P3 | Ranger scripts deploy |
-| GOOG-003 | P2 | Rotation secret cron |
-| Secrets / rollback | — | Procédures déploiement privé |
-
-Conditions minimales VPS privé sûr : BACKUP-001 prouvé, AUTH_URL + TLS proxy, secrets hors image, monitoring 5xx, rollback documenté.
+Détail : `REMEDIATION_V7.16.3.md` · `releases/V7.16.3-REPORT.md`.
 
 ---
 
-## Hors scope
+## Suite
 
-- SaaS multi-tenant (WS-001) — **NO GO**.
-- V8.
-- Mode sombre (hors produit actuel).
-
----
-
-## Ordre recommandé (suite)
-
-1. Attendre GO utilisateur explicite pour **V7.16.3**.  
-2. Ne pas démarrer V8 sans GO.
+1. Pré-audit VPS **uniquement** après autorisation explicite.  
+2. Déploiement VPS **uniquement** après GO explicite + checklist B.  
+3. Ne pas démarrer V8 sans GO.

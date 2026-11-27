@@ -1,0 +1,85 @@
+# Stack ISOLÉE — scénario V7.16.2 → V7.16.3 → V7.16.2
+# Ne pointe jamais vers naxialis_agent.
+# Usage :
+#   docker compose -p naxialis-upgrade -f docker-compose.upgrade.yml up -d postgres
+#   (restore dump + images)
+#   APP_IMAGE=naxialis-agent:v7.16.2-local docker compose -p naxialis-upgrade -f docker-compose.upgrade.yml up -d app
+# Tear-down : docker compose -p naxialis-upgrade -f docker-compose.upgrade.yml down -v
+
+name: naxialis-upgrade
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: upgrade
+      POSTGRES_PASSWORD: upgrade_only_local
+      POSTGRES_DB: naxialis_agent_upgrade
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - upgrade_postgres_data:/var/lib/postgresql/data
+    networks:
+      - upgrade_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U upgrade -d naxialis_agent_upgrade"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: ${APP_IMAGE:-naxialis-agent:v7.16.2-local}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4310:3000"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      DATABASE_URL: postgresql://upgrade:upgrade_only_local@postgres:5432/naxialis_agent_upgrade
+      AUTH_SECRET: upgrade-auth-secret-32chars-min!!
+      AUTH_URL: http://127.0.0.1:4310
+      AUTH_TRUST_HOST: "true"
+      ADMIN_EMAIL: ${UPGRADE_ADMIN_EMAIL:-validate@example.invalid}
+      ADMIN_PASSWORD_HASH: ${UPGRADE_ADMIN_PASSWORD_HASH:-JDJiJDEwJHAxOUEvQmVTT0Jic3lnUzlzamFCcHVUaFAxQkhmZ2dmbnpKNGwwczNKazh2bno3OUlJaksu}
+      APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY}
+      FEATURED_IMAGE_STORAGE_DIR: /app/storage/featured-images
+      SKIP_PRISMA_MIGRATE: ${SKIP_PRISMA_MIGRATE:-0}
+      # Bloquer intégrations externes
+      OPENAI_API_KEY: ""
+      OPENAI_AGENT_ID: ""
+      WP_URL: ""
+      WP_USERNAME: ""
+      WP_APP_PASSWORD: ""
+      WEBFLOW_TOKEN: ""
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      CRON_SECRET: ""
+    volumes:
+      - upgrade_images_data:/app/storage/featured-images
+    networks:
+      - upgrade_net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/auth/csrf').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s
+
+volumes:
+  upgrade_postgres_data:
+  upgrade_images_data:
+
+networks:
+  upgrade_net:
+    name: naxialis-upgrade-net

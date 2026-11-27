@@ -23,21 +23,28 @@ function sanitize(
 }
 
 function write(
-  level: "info" | "error",
+  level: "info" | "warn" | "error",
   scope: string,
   event: string,
   fields?: Record<string, unknown>
 ): void {
+  const correlationId =
+    typeof fields?.correlationId === "string"
+      ? fields.correlationId
+      : undefined;
   const payload = {
     level,
     scope,
     event,
     ts: new Date().toISOString(),
+    ...(correlationId ? { correlationId } : {}),
     ...sanitize(fields),
   };
   const line = `[${scope}] ${event}`;
   if (level === "error") {
     console.error(line, payload);
+  } else if (level === "warn") {
+    console.warn(line, payload);
   } else {
     console.info(line, payload);
   }
@@ -49,6 +56,14 @@ export function logInfo(
   fields?: Record<string, unknown>
 ): void {
   write("info", scope, event, fields);
+}
+
+export function logWarn(
+  scope: string,
+  event: string,
+  fields?: Record<string, unknown>
+): void {
+  write("warn", scope, event, fields);
 }
 
 export function logError(

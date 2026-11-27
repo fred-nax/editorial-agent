@@ -18,6 +18,10 @@ function isPublicApiPath(pathname: string): boolean {
   if (pathname.startsWith("/api/auth")) return true;
   if (pathname === "/api/google/oauth/callback") return true;
   if (pathname === "/api/google/sync/cron") return true;
+  // Healthchecks Docker / reverse-proxy (informations minimales uniquement).
+  if (pathname === "/api/health/live" || pathname === "/api/health/ready") {
+    return true;
+  }
   return false;
 }
 

@@ -45,8 +45,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/docker-start.mjs ./scripts/docker-start.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/assert-no-geo-drop-migration.mjs ./scripts/assert-no-geo-drop-migration.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/dotenv ./node_modules/dotenv
+
+# INFRA-001 — refuse l’image si la migration destructive GEO a fuité dans le contexte.
+RUN node scripts/assert-no-geo-drop-migration.mjs
 
 USER nextjs
 EXPOSE 3000

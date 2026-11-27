@@ -62,6 +62,17 @@ describe("V7.14.0 — GSC Prisma isolation (migtest)", () => {
       },
       update: {},
     });
+    // FK GoogleSyncRun_connectionId — base migtest neuve sans connexion.
+    await db.googleConnection.upsert({
+      where: { id: "default" },
+      create: {
+        id: "default",
+        accessTokenEncrypted: "test-only-not-a-secret",
+        scopes: "https://www.googleapis.com/auth/webmasters.readonly",
+        status: "disconnected",
+      },
+      update: {},
+    });
   });
 
   after(async () => {
