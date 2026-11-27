@@ -78,7 +78,9 @@ describe("V7.10.2 — isolation UX WordPress / Webflow", () => {
 
     const historyPage = read("app/(protected)/articles/page.tsx");
     assert.doesNotMatch(historyPage, /ArticleHistoryFilters/);
-    assert.match(historyPage, /workspaceWhere/);
+    assert.match(historyPage, /listArticleHistory|resolveActiveWorkspace/);
+    const historyQuery = read("lib/articles/history-query.ts");
+    assert.match(historyQuery, /workspaceWhere/);
 
     const history = read("components/ArticleHistory.tsx");
     assert.match(history, /CmsDestinationBadge/);

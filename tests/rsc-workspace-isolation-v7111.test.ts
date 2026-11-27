@@ -57,7 +57,12 @@ describe("V7.11.1 — isolation RSC / accès hors espace", () => {
     assert.match(topics, /assertModuleAllowedForWorkspace/);
 
     const history = read("app/(protected)/articles/page.tsx");
-    assert.match(history, /workspaceWhere\(workspace\.id\)/);
+    assert.match(history, /listArticleHistory/);
+    assert.match(history, /workspaceId:\s*workspace\.id/);
+    assert.match(
+      read("lib/articles/history-query.ts"),
+      /workspaceWhere\(input\.workspaceId\)/
+    );
 
     const analytics = read("app/(protected)/analytics/page.tsx");
     assert.match(analytics, /webflowEmptyState\("analytics"\)/);
@@ -68,6 +73,10 @@ describe("V7.11.1 — isolation RSC / accès hors espace", () => {
     assert.match(
       read("app/api/articles/[id]/route.ts"),
       /assertSameWorkspace|resolveActiveWorkspace/
+    );
+    assert.match(
+      read("app/api/articles/[id]/route.ts"),
+      /workspaceId:\s*workspace\.id/
     );
     assert.match(
       read("app/api/opportunities/[id]/route.ts"),

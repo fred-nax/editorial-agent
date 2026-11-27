@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { parseEditorialContext } from "@/lib/editorial-context";
+import {
+  assertPaidRouteAllowed,
+  paidRouteTooManyRequestsResponse,
+} from "@/lib/auth/paid-route-rate-limit";
 import { requireAuth } from "@/lib/require-auth";
 import {
   suggestEditorialTitles,
@@ -32,6 +36,17 @@ export async function POST(request: Request) {
 
   try {
     const workspace = await resolveActiveWorkspace();
+    const paidLimit = assertPaidRouteAllowed({
+      workspaceId: workspace.id,
+      routeKey: "titles-suggest",
+    });
+    if (!paidLimit.allowed) {
+      const denied = paidRouteTooManyRequestsResponse(paidLimit);
+      return NextResponse.json(denied.body, {
+        status: denied.status,
+        headers: denied.headers,
+      });
+    }
     const body = parseJsonBody(await request.json());
     const editorial = parseEditorialContext({
       angle: body.angle,

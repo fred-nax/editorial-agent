@@ -155,6 +155,20 @@ async function loadLegacyLlmRows(filters: UsageQueryFilters): Promise<
     return [];
   }
 
+  // Exclusion set : générations déjà couvertes par un event LLM (anti double comptage).
+  const covered = await db.openAiUsageEvent.findMany({
+    where: {
+      ...workspaceWhere(filters.workspaceId),
+      operationType: "article_generation",
+      generationId: { not: null },
+    },
+    select: { generationId: true },
+    distinct: ["generationId"],
+  });
+  const coveredIds = covered
+    .map((row) => row.generationId)
+    .filter((id): id is string => Boolean(id));
+
   const gens = await db.articleGeneration.findMany({
     where: {
       ...workspaceWhere(filters.workspaceId),
@@ -162,6 +176,7 @@ async function loadLegacyLlmRows(filters: UsageQueryFilters): Promise<
       ...(filters.model && filters.model !== "all"
         ? { model: filters.model }
         : {}),
+      ...(coveredIds.length > 0 ? { id: { notIn: coveredIds } } : {}),
     },
     select: {
       id: true,
@@ -171,16 +186,10 @@ async function loadLegacyLlmRows(filters: UsageQueryFilters): Promise<
       inputTokens: true,
       cachedInputTokens: true,
       outputTokens: true,
-      openAiUsageEvents: {
-        where: { operationType: "article_generation" },
-        select: { id: true },
-        take: 1,
-      },
     },
   });
 
   return gens
-    .filter((g) => g.openAiUsageEvents.length === 0)
     .filter((g) => {
       // Pas de ligne legacy sans signal de coût/tokens (évite le bruit).
       if (
@@ -212,6 +221,51 @@ async function loadLegacyLlmRows(filters: UsageQueryFilters): Promise<
       cachedInputTokens: g.cachedInputTokens,
       outputTokens: g.outputTokens,
     }));
+}
+
+/**
+ * Totaux connus pour le dashboard (sans byModel / séries journalières).
+ * Évite de matérialiser tous les événements en JS.
+ */
+export async function getUsageDashboardTotals(
+  filters: UsageQueryFilters
+): Promise<{
+  knownEstimatedCostUsd: number;
+  knownEstimatedCostLabel: string;
+  legacyLlmCount: number;
+  legacyLlmCostUsd: number;
+  registryEventCount: number;
+  registryKnownCostUsd: number;
+}> {
+  const where = eventWhere(filters);
+  const [agg, legacy] = await Promise.all([
+    db.openAiUsageEvent.aggregate({
+      where,
+      _sum: { estimatedCostUsd: true },
+      _count: true,
+    }),
+    loadLegacyLlmRows(filters),
+  ]);
+
+  const registrySum = decimalToNumber(agg._sum.estimatedCostUsd);
+  const registryKnownCostUsd = typeof registrySum === "number" ? registrySum : 0;
+
+  let legacyLlmCostUsd = 0;
+  for (const row of legacy) {
+    if (typeof row.estimatedCost === "number") {
+      legacyLlmCostUsd += row.estimatedCost;
+    }
+  }
+
+  const knownEstimatedCostUsd = registryKnownCostUsd + legacyLlmCostUsd;
+  return {
+    knownEstimatedCostUsd,
+    knownEstimatedCostLabel: formatEstimatedCost(knownEstimatedCostUsd),
+    legacyLlmCount: legacy.length,
+    legacyLlmCostUsd,
+    registryEventCount: agg._count,
+    registryKnownCostUsd,
+  };
 }
 
 export async function getUsageSummary(
@@ -425,44 +479,119 @@ export async function getUsageSummary(
   };
 }
 
+/** Plafond export / pages larges — PERF-003. */
+export const USAGE_HISTORY_MAX_PAGE_SIZE = 5000;
+
 export async function listUsageHistory(
   filters: UsageQueryFilters
 ): Promise<{ rows: UsageHistoryRow[]; total: number; page: number; pageSize: number }> {
   const page = Math.max(1, filters.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 25));
+  const pageSize = Math.min(
+    USAGE_HISTORY_MAX_PAGE_SIZE,
+    Math.max(1, filters.pageSize ?? 25)
+  );
   const where = eventWhere(filters);
 
-  const [events, legacy, eventCount] = await Promise.all([
+  // Index léger (id + date) + legacy, puis hydrate uniquement la page.
+  const [eventIndex, legacy, eventCount] = await Promise.all([
     db.openAiUsageEvent.findMany({
       where,
       orderBy: { consumedAt: "desc" },
-      select: {
-        id: true,
-        consumedAt: true,
-        workspaceId: true,
-        operationType: true,
-        usedModel: true,
-        requestedModel: true,
-        operationKey: true,
-        generationId: true,
-        inputTokens: true,
-        cachedInputTokens: true,
-        outputTokens: true,
-        toolCallCount: true,
-        estimatedCostUsd: true,
-        completeness: true,
-        pricingVersion: true,
-        costSource: true,
-        status: true,
-      },
+      select: { id: true, consumedAt: true },
     }),
     loadLegacyLlmRows(filters),
     db.openAiUsageEvent.count({ where }),
   ]);
 
-  const legacyRows: UsageHistoryRow[] = legacy.map((row) => {
+  type IndexEntry =
+    | { kind: "event"; id: string; at: number }
+    | { kind: "legacy"; id: string; at: number };
+
+  const index: IndexEntry[] = [
+    ...eventIndex.map((row) => ({
+      kind: "event" as const,
+      id: row.id,
+      at: row.consumedAt.getTime(),
+    })),
+    ...legacy.map((row) => ({
+      kind: "legacy" as const,
+      id: row.id,
+      at: row.createdAt.getTime(),
+    })),
+  ].sort((a, b) => b.at - a.at);
+
+  const total = eventCount + legacy.length;
+  const start = (page - 1) * pageSize;
+  const pageIndex = index.slice(start, start + pageSize);
+  const eventIds = pageIndex
+    .filter((row) => row.kind === "event")
+    .map((row) => row.id);
+  const legacyIds = new Set(
+    pageIndex.filter((row) => row.kind === "legacy").map((row) => row.id)
+  );
+
+  const events =
+    eventIds.length === 0
+      ? []
+      : await db.openAiUsageEvent.findMany({
+          where: { id: { in: eventIds }, ...workspaceWhere(filters.workspaceId) },
+          select: {
+            id: true,
+            consumedAt: true,
+            workspaceId: true,
+            operationType: true,
+            usedModel: true,
+            requestedModel: true,
+            operationKey: true,
+            generationId: true,
+            inputTokens: true,
+            cachedInputTokens: true,
+            outputTokens: true,
+            toolCallCount: true,
+            estimatedCostUsd: true,
+            completeness: true,
+            pricingVersion: true,
+            costSource: true,
+            status: true,
+          },
+        });
+
+  const eventById = new Map(events.map((event) => [event.id, event]));
+  const legacyById = new Map(legacy.map((row) => [row.id, row]));
+
+  const rows: UsageHistoryRow[] = [];
+  for (const entry of pageIndex) {
+    if (entry.kind === "event") {
+      const event = eventById.get(entry.id);
+      if (!event) continue;
+      const cost = decimalToNumber(event.estimatedCostUsd);
+      rows.push({
+        id: event.id,
+        consumedAt: event.consumedAt.toISOString(),
+        workspaceId: event.workspaceId,
+        operationType: event.operationType,
+        model: event.usedModel ?? event.requestedModel,
+        operationKey: event.operationKey,
+        generationId: event.generationId,
+        inputTokens: event.inputTokens,
+        cachedInputTokens: event.cachedInputTokens,
+        outputTokens: event.outputTokens,
+        toolCallCount: event.toolCallCount,
+        estimatedCostUsd: cost,
+        estimatedCostLabel: formatEstimatedCost(cost),
+        completeness: event.completeness,
+        pricingVersion: event.pricingVersion,
+        costSource: event.costSource,
+        status: event.status,
+        isLegacy: false,
+      });
+      continue;
+    }
+    if (!legacyIds.has(entry.id)) continue;
+    const row = legacyById.get(entry.id);
+    if (!row) continue;
     const cost = row.estimatedCost;
-    return {
+    rows.push({
       id: `legacy:${row.id}`,
       consumedAt: row.createdAt.toISOString(),
       workspaceId: filters.workspaceId,
@@ -481,40 +610,9 @@ export async function listUsageHistory(
       costSource: "legacy_mirror",
       status: "succeeded",
       isLegacy: true,
-    };
-  });
+    });
+  }
 
-  const eventRows: UsageHistoryRow[] = events.map((event) => {
-    const cost = decimalToNumber(event.estimatedCostUsd);
-    return {
-      id: event.id,
-      consumedAt: event.consumedAt.toISOString(),
-      workspaceId: event.workspaceId,
-      operationType: event.operationType,
-      model: event.usedModel ?? event.requestedModel,
-      operationKey: event.operationKey,
-      generationId: event.generationId,
-      inputTokens: event.inputTokens,
-      cachedInputTokens: event.cachedInputTokens,
-      outputTokens: event.outputTokens,
-      toolCallCount: event.toolCallCount,
-      estimatedCostUsd: cost,
-      estimatedCostLabel: formatEstimatedCost(cost),
-      completeness: event.completeness,
-      pricingVersion: event.pricingVersion,
-      costSource: event.costSource,
-      status: event.status,
-      isLegacy: false,
-    };
-  });
-
-  const merged = [...eventRows, ...legacyRows].sort(
-    (a, b) =>
-      new Date(b.consumedAt).getTime() - new Date(a.consumedAt).getTime()
-  );
-  const total = eventCount + legacyRows.length;
-  const start = (page - 1) * pageSize;
-  const rows = merged.slice(start, start + pageSize);
   return { rows, total, page, pageSize };
 }
 

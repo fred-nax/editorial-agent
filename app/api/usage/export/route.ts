@@ -64,12 +64,16 @@ export async function GET(request: Request) {
 
     const csv = buildUsageCsv(history.rows);
     const stamp = new Date().toISOString().slice(0, 10);
+    const truncated = history.total > history.rows.length;
     return new Response(csv, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="naxialis-openai-usage-${workspace.id}-${stamp}.csv"`,
         "Cache-Control": "no-store",
+        "X-Export-Row-Count": String(history.rows.length),
+        "X-Export-Total": String(history.total),
+        "X-Export-Truncated": truncated ? "1" : "0",
       },
     });
   } catch (error) {

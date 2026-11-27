@@ -3,10 +3,22 @@ import { INTERRUPTED_ERROR, STALE_GENERATION_MS } from "./generation-errors";
 import { recoverFeaturedImageJobs } from "./images/pipeline";
 import { logInfo } from "./logger";
 
+/** Évite de rejouer recovery + featured-image sur chaque navigation RSC. */
+const PAGE_RECOVERY_MIN_INTERVAL_MS = 60_000;
+let lastPageRecoveryAt = 0;
+
 export async function recoverStaleGenerations(
   options: { fromBoot?: boolean } = {}
 ): Promise<number> {
   const fromBoot = options.fromBoot === true;
+  if (!fromBoot) {
+    const now = Date.now();
+    if (now - lastPageRecoveryAt < PAGE_RECOVERY_MIN_INTERVAL_MS) {
+      return 0;
+    }
+    lastPageRecoveryAt = now;
+  }
+
   const cutoff = new Date(Date.now() - STALE_GENERATION_MS);
 
   const stale = await db.articleGeneration.findMany({

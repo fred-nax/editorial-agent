@@ -207,23 +207,18 @@ export async function recoverFeaturedImageJobs(
     },
   });
 
-  // Demandes pending orphelines d’articles échoués.
-  const failedArticles = await db.articleGeneration.findMany({
-    where: { status: "failed" },
-    select: { id: true },
+  // Demandes pending/generating liées à un article failed — 1 updateMany relationnel
+  // (évite de charger tous les ids « failed » en mémoire, PERF/V7.16.2).
+  await db.articleFeaturedImage.updateMany({
+    where: {
+      status: { in: ["pending", "generating"] },
+      generation: { status: "failed" },
+    },
+    data: {
+      status: "failed",
+      error: "Article non terminé : aucune image générée.",
+    },
   });
-  if (failedArticles.length > 0) {
-    await db.articleFeaturedImage.updateMany({
-      where: {
-        generationId: { in: failedArticles.map((item) => item.id) },
-        status: { in: ["pending", "generating"] },
-      },
-      data: {
-        status: "failed",
-        error: "Article non terminé : aucune image générée.",
-      },
-    });
-  }
 
   const requeueCandidates = await db.articleFeaturedImage.findMany({
     where: {

@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  assertPaidRouteAllowed,
+  paidRouteTooManyRequestsResponse,
+} from "@/lib/auth/paid-route-rate-limit";
 import { requireAuth } from "@/lib/require-auth";
 import { logError } from "@/lib/logger";
 import { prismaWatchHistoryStore } from "@/lib/veille/history-db";
@@ -22,6 +26,17 @@ export async function POST(request: Request) {
     const workspace = await resolveActiveWorkspace();
     assertRequestWorkspaceMatchesActive(request, workspace);
     assertModuleAllowedForWorkspace(workspace, "veille");
+    const paidLimit = assertPaidRouteAllowed({
+      workspaceId: workspace.id,
+      routeKey: "veille-search",
+    });
+    if (!paidLimit.allowed) {
+      const denied = paidRouteTooManyRequestsResponse(paidLimit);
+      return NextResponse.json(denied.body, {
+        status: denied.status,
+        headers: denied.headers,
+      });
+    }
     const result = await completeVeilleSearch(request, {
       authenticated: Boolean(session?.user),
       client: createOpenAiWatchClient(workspace.id),

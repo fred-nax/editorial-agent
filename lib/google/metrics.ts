@@ -45,6 +45,12 @@ async function latestPageStatDate(
   return latest?.date ?? null;
 }
 
+function wsScope(workspaceId?: string): { workspaceId: string } | Record<string, never> {
+  return workspaceId != null && workspaceId.length > 0
+    ? { workspaceId }
+    : {};
+}
+
 function endOfTodayUTC(): Date {
   const now = new Date();
   return new Date(
@@ -236,8 +242,17 @@ export async function getDashboardSeoSummary(
           where: {
             propertyUrl: gscProperty,
             date: { gte: start, lte: end },
+            ...wsScope(workspaceId),
           },
           orderBy: { date: "asc" },
+          select: {
+            date: true,
+            clicks: true,
+            impressions: true,
+            ctr: true,
+            position: true,
+            hasData: true,
+          },
         })
       : [];
   const gsc = aggregateGscRows(propertyRows);
@@ -246,45 +261,78 @@ export async function getDashboardSeoSummary(
       ? buildPropertyDailySeries(propertyRows, start, end)
       : [];
 
-  // Classement pages : stats par URL sur la même fenêtre disponible.
-  const pageRows =
+  // Top pages : agrégation SQL LIMIT 5 (évite de charger toutes les lignes journalières).
+  const topGrouped =
     gscProperty && start && end
-      ? await db.gscPageDailyStat.findMany({
-          where: { propertyUrl: gscProperty, date: { gte: start, lte: end } },
+      ? await db.gscPageDailyStat.groupBy({
+          by: ["pageUrlNorm"],
+          where: {
+            propertyUrl: gscProperty,
+            date: { gte: start, lte: end },
+            ...wsScope(workspaceId),
+          },
+          _sum: { clicks: true, impressions: true },
+          orderBy: { _sum: { clicks: "desc" } },
+          take: 5,
         })
       : [];
-  const byPage = new Map<
-    string,
-    {
-      pageUrlNorm: string;
-      clicks: number;
-      impressions: number;
-      wpPostId: number | null;
-    }
-  >();
-  for (const row of pageRows) {
-    const cur = byPage.get(row.pageUrlNorm) ?? {
-      pageUrlNorm: row.pageUrlNorm,
-      clicks: 0,
-      impressions: 0,
-      wpPostId: null,
-    };
-    cur.clicks += row.clicks;
-    cur.impressions += row.impressions;
-    if (cur.wpPostId == null && typeof row.wpPostId === "number") {
-      cur.wpPostId = row.wpPostId;
-    }
-    byPage.set(row.pageUrlNorm, cur);
-  }
-  const topRaw = [...byPage.values()]
-    .sort((a, b) => b.clicks - a.clicks)
-    .slice(0, 5);
 
-  // Enrichissement titres / fiches : 2 requêtes batch (pas de N+1).
-  const publishedPosts = await db.wordPressPost.findMany({
-    where: { status: "publish" },
-    select: { wpPostId: true, title: true, url: true },
-  });
+  const topNorms = topGrouped.map((row) => row.pageUrlNorm);
+  const wpIdHints =
+    topNorms.length > 0 && gscProperty && start && end
+      ? await db.gscPageDailyStat.findMany({
+          where: {
+            propertyUrl: gscProperty,
+            date: { gte: start, lte: end },
+            pageUrlNorm: { in: topNorms },
+            wpPostId: { not: null },
+            ...wsScope(workspaceId),
+          },
+          select: { pageUrlNorm: true, wpPostId: true },
+          distinct: ["pageUrlNorm"],
+        })
+      : [];
+  const wpIdByNorm = new Map(
+    wpIdHints
+      .filter((row) => typeof row.wpPostId === "number")
+      .map((row) => [row.pageUrlNorm, row.wpPostId as number] as const)
+  );
+
+  const topRaw = topGrouped.map((row) => ({
+    pageUrlNorm: row.pageUrlNorm,
+    clicks: row._sum.clicks ?? 0,
+    impressions: row._sum.impressions ?? 0,
+    wpPostId: wpIdByNorm.get(row.pageUrlNorm) ?? null,
+  }));
+
+  // Enrichissement titres : uniquement les posts liés au top 5 (scopé workspace).
+  const hintWpIds = [
+    ...new Set(
+      topRaw
+        .map((page) => page.wpPostId)
+        .filter((id): id is number => typeof id === "number" && id > 0)
+    ),
+  ];
+  const publishedPosts =
+    topRaw.length === 0
+      ? []
+      : await db.wordPressPost.findMany({
+          where: {
+            status: "publish",
+            ...(workspaceId ? { workspaceId } : {}),
+            OR: [
+              ...(hintWpIds.length > 0
+                ? [{ wpPostId: { in: hintWpIds } }]
+                : []),
+              {
+                url: {
+                  in: topRaw.map((page) => page.pageUrlNorm),
+                },
+              },
+            ],
+          },
+          select: { wpPostId: true, title: true, url: true },
+        });
   const postsByNorm = indexPublishedPostsByNorm(publishedPosts);
   const postsById = new Map(
     publishedPosts.map((post) => [post.wpPostId, post] as const)
@@ -304,7 +352,10 @@ export async function getDashboardSeoSummary(
   const articles =
     wpIds.length > 0
       ? await db.articleGeneration.findMany({
-          where: { wpPostId: { in: wpIds } },
+          where: {
+            wpPostId: { in: wpIds },
+            ...(workspaceId ? { workspaceId } : {}),
+          },
           select: { id: true, wpPostId: true },
           orderBy: { createdAt: "desc" },
         })
@@ -324,6 +375,7 @@ export async function getDashboardSeoSummary(
         where: {
           propertyId: ga4Property,
           date: { gte: ga4Start, lte: ga4End },
+          ...wsScope(workspaceId),
         },
         _sum: { aiSessions: true },
       })
@@ -332,9 +384,10 @@ export async function getDashboardSeoSummary(
   const lastSync = await db.googleSyncRun.findFirst({
     where: {
       status: "completed",
-      ...(workspaceId ? { workspaceId } : {}),
+      ...wsScope(workspaceId),
     },
     orderBy: { finishedAt: "desc" },
+    select: { finishedAt: true },
   });
 
   return {

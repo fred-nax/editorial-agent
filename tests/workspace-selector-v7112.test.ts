@@ -133,7 +133,10 @@ describe("V7.11.2 — sélecteur global et isolation UI", () => {
   it("historique : filtre CMS retiré, badges conservés", () => {
     const page = read("app/(protected)/articles/page.tsx");
     assert.doesNotMatch(page, /ArticleHistoryFilters|parseHistoryCmsFilter/);
-    assert.match(page, /workspaceWhere/);
+    assert.match(page, /listArticleHistory/);
+    assert.match(page, /resolveActiveWorkspace/);
+    const historyQuery = read("lib/articles/history-query.ts");
+    assert.match(historyQuery, /workspaceWhere/);
     const history = read("components/ArticleHistory.tsx");
     assert.match(history, /CmsDestinationBadge/);
   });

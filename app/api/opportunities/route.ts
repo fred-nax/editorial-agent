@@ -6,6 +6,10 @@ import {
   type OpportunityStatus,
   type TrendType,
 } from "@prisma/client";
+import {
+  assertPaidRouteAllowed,
+  paidRouteTooManyRequestsResponse,
+} from "@/lib/auth/paid-route-rate-limit";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/require-auth";
 import { defaultDomainQuotas } from "@/lib/seo/domains";
@@ -276,6 +280,18 @@ export async function POST(request: Request) {
       return workspaceErrorResponse(error);
     }
     throw error;
+  }
+
+  const paidLimit = assertPaidRouteAllowed({
+    workspaceId,
+    routeKey: "opportunities-search",
+  });
+  if (!paidLimit.allowed) {
+    const denied = paidRouteTooManyRequestsResponse(paidLimit);
+    return NextResponse.json(denied.body, {
+      status: denied.status,
+      headers: denied.headers,
+    });
   }
 
   const existing = await db.opportunitySearchRun.findFirst({

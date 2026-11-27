@@ -8,6 +8,10 @@ import {
   resolveFeaturedImageWorkspace,
   workspaceContextErrorResponse,
 } from "@/lib/images/route-workspace";
+import {
+  assertPaidRouteAllowed,
+  paidRouteTooManyRequestsResponse,
+} from "@/lib/auth/paid-route-rate-limit";
 import { requireAuth } from "@/lib/require-auth";
 import { WorkspaceContextError } from "@/lib/workspace";
 
@@ -31,6 +35,17 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const workspace = await resolveFeaturedImageWorkspace();
+    const paidLimit = assertPaidRouteAllowed({
+      workspaceId: workspace.id,
+      routeKey: "featured-image-generate",
+    });
+    if (!paidLimit.allowed) {
+      const denied = paidRouteTooManyRequestsResponse(paidLimit);
+      return NextResponse.json(denied.body, {
+        status: denied.status,
+        headers: denied.headers,
+      });
+    }
     const { id } = await context.params;
     const body = (await request.json()) as Record<string, unknown>;
     const style =

@@ -31,8 +31,39 @@ export async function GET(_request: Request, context: RouteContext) {
   try {
     const workspace = await resolveActiveWorkspace();
     const { id } = await context.params;
-    const article = await db.articleGeneration.findUnique({
-      where: { id },
+    // WS-003 — filtre workspace dès la lecture (pas findUnique id seul).
+    const article = await db.articleGeneration.findFirst({
+      where: { id, workspaceId: workspace.id },
+      select: {
+        id: true,
+        workspaceId: true,
+        subject: true,
+        status: true,
+        title: true,
+        excerpt: true,
+        slug: true,
+        wpPostId: true,
+        wpUrl: true,
+        cmsDestination: true,
+        cmsExternalId: true,
+        categories: true,
+        metaTitle: true,
+        metaDescription: true,
+        durationMs: true,
+        sessionId: true,
+        inputTokens: true,
+        cachedInputTokens: true,
+        outputTokens: true,
+        reasoningTokens: true,
+        estimatedCost: true,
+        model: true,
+        error: true,
+        progressStage: true,
+        progressMessage: true,
+        progressUpdatedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     if (!article) {
@@ -46,6 +77,26 @@ export async function GET(_request: Request, context: RouteContext) {
         workspaceId: workspace.id,
       },
       orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        generationId: true,
+        style: true,
+        aspectRatio: true,
+        size: true,
+        model: true,
+        prompt: true,
+        altText: true,
+        altModel: true,
+        status: true,
+        wpMediaId: true,
+        wpMediaUrl: true,
+        webflowAssetId: true,
+        webflowAssetUrl: true,
+        cmsTransferStatus: true,
+        error: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     return NextResponse.json({

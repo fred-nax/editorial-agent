@@ -15,6 +15,10 @@ import { parseFeaturedImageRequest } from "@/lib/images/request";
 import { resolveEditorialAgentForDestination } from "@/lib/agent/registry";
 import { parseCmsDestinationInput } from "@/lib/cms";
 import { getWebflowGenerationReadiness } from "@/lib/webflow/readiness";
+import {
+  assertPaidRouteAllowed,
+  paidRouteTooManyRequestsResponse,
+} from "@/lib/auth/paid-route-rate-limit";
 import { requireAuth } from "@/lib/require-auth";
 import {
   assertGenerationWorkspaceConsistency,
@@ -51,6 +55,18 @@ export async function POST(request: Request) {
     const workspace = await resolveActiveWorkspace();
     assertRequestWorkspaceMatchesActive(request, workspace);
     assertModuleAllowedForWorkspace(workspace, "generation");
+
+    const paidLimit = assertPaidRouteAllowed({
+      workspaceId: workspace.id,
+      routeKey: "generate",
+    });
+    if (!paidLimit.allowed) {
+      const denied = paidRouteTooManyRequestsResponse(paidLimit);
+      return NextResponse.json(denied.body, {
+        status: denied.status,
+        headers: denied.headers,
+      });
+    }
 
     const body = parseJsonBody(await request.json());
     const topicId =

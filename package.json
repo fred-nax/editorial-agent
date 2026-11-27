@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit --pretty false",
     "test": "tsx --test tests/**/*.test.ts",
+    "bench:seed": "tsx scripts/seed-benchmark-v7162.ts",
     "generate:cli": "tsx scripts/generate-cli.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -49,5 +51,8 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "effect": "3.22.5"
   }
 }

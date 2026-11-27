@@ -77,8 +77,11 @@ describe("V7.13.1 — non-régression coûts Webflow Sol", () => {
     );
 
     const history = read("app/(protected)/articles/page.tsx");
-    assert.match(history, /findMany/);
+    assert.match(history, /listArticleHistory/);
     assert.doesNotMatch(history, /cmsDestination:\s*[\"']wordpress[\"']/);
+    const historyQuery = read("lib/articles/history-query.ts");
+    assert.match(historyQuery, /findMany/);
+    assert.match(historyQuery, /estimatedCost:\s*true/);
 
     const detail = read("app/(protected)/articles/[id]/page.tsx");
     assert.match(detail, /formatEstimatedCost\(article\.estimatedCost\)/);

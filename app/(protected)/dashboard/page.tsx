@@ -14,7 +14,7 @@ import { db } from "@/lib/db";
 import { formatEstimatedCost } from "@/lib/format";
 import { recoverStaleGenerations } from "@/lib/generation-recovery";
 import {
-  getUsageSummary,
+  getUsageDashboardTotals,
   resolveUsagePeriod,
 } from "@/lib/openai-usage-aggregate";
 import { parseWatchSnapshot } from "@/lib/veille/history";
@@ -118,7 +118,7 @@ export default async function DashboardPage() {
       },
       _sum: { estimatedCost: true },
     }),
-    getUsageSummary({
+    getUsageDashboardTotals({
       workspaceId: workspace.id,
       from: monthPeriod.from,
       to: monthPeriod.to,
@@ -161,7 +161,7 @@ export default async function DashboardPage() {
     db.editorialWatchSearch.findMany({
       where: { ...scope, status: "completed" },
       orderBy: { searchedAt: "desc" },
-      take: 8,
+      take: 4,
       select: {
         searchedAt: true,
         results: true,

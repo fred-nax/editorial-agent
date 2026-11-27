@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { db } from "@/lib/db";
 import {
   WORKSPACE_COOKIE_MAX_AGE_SEC,
@@ -134,12 +135,18 @@ export async function resolveActiveWorkspaceIdFromCookie(
   return { workspaceId: workspace.id, fromCookie: true, raw };
 }
 
-export async function resolveActiveWorkspace(
-  cookieHeader?: string | null
-): Promise<EditorialWorkspaceRecord> {
-  const resolved = await resolveActiveWorkspaceIdFromCookie(cookieHeader);
-  return requireWorkspace(resolved.workspaceId);
-}
+/**
+ * Déduplique les résolutions d’espace dans un même rendu RSC
+ * (layout + page ne refont pas 4 requêtes workspace).
+ */
+export const resolveActiveWorkspace = cache(
+  async (
+    cookieHeader?: string | null
+  ): Promise<EditorialWorkspaceRecord> => {
+    const resolved = await resolveActiveWorkspaceIdFromCookie(cookieHeader);
+    return requireWorkspace(resolved.workspaceId);
+  }
+);
 
 /** Options Set-Cookie pour mémoriser l’espace actif. */
 export function buildWorkspaceCookieOptions(workspaceId: string): {
