@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { resolveSecureSessionCookie } from "@/lib/auth/secure-cookie";
 
 /**
  * Défense en profondeur (AUTH-003) : les routes API privées exigent une session
  * même si une route oublie requireAuth.
  *
  * Utilise getToken (Edge-compatible) plutôt que d’importer auth.ts (bcrypt).
+ *
+ * OPS-03A : passer `secureCookie` explicitement — derrière un reverse-proxy TLS,
+ * `getToken` sans ce flag lit `authjs.session-token` alors que le navigateur
+ * envoie `__Secure-authjs.session-token` → 401 faux négatif.
  *
  * Exceptions légitimes :
  * - Auth.js (/api/auth/*)
@@ -44,7 +49,16 @@ export async function middleware(req: NextRequest) {
     );
   }
 
-  const token = await getToken({ req, secret });
+  const secureCookie = resolveSecureSessionCookie({
+    authUrl: process.env.AUTH_URL,
+    nextAuthUrl: process.env.NEXTAUTH_URL,
+    forwardedProto: req.headers.get("x-forwarded-proto"),
+    requestProtocol: req.nextUrl.protocol,
+    nodeEnv: process.env.NODE_ENV,
+  });
+
+  // salt = cookieName (défaut Auth.js) — aligné sur defaultCookies(secureCookie)
+  const token = await getToken({ req, secret, secureCookie });
   if (!token) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }

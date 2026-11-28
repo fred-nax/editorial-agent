@@ -12,6 +12,7 @@ out/
 tsconfig.tsbuildinfo
 auth-cookies.txt
 callback-body.txt
+scripts/ops/validate-https/certs/
 
 # Prepared locally; must not be shipped or applied in production.
 prisma/migrations/20261103173400_drop_ai_visibility_monitor/
