@@ -16,8 +16,12 @@ describe("V7.8.1 — page Login maquette", () => {
     assert.match(page, /LoginHero/);
     assert.match(page, /login-page/);
     assert.match(page, /className="layout"/);
-    assert.match(page, /Bienvenue/);
+    assert.match(page, /Bienvenue\./);
+    assert.doesNotMatch(page, /Bienvenue dans votre espace/);
     assert.match(page, /Espace privé/);
+    assert.match(page, /Plateformes compatibles/);
+    assert.match(page, /\/icons\/wordpress\.svg/);
+    assert.match(page, /\/icons\/webflow\.svg/);
     assert.doesNotMatch(page, /flex min-h-screen items-center justify-center bg-slate-50/);
   });
 
@@ -41,9 +45,32 @@ describe("V7.8.1 — page Login maquette", () => {
   it("inclut le hero vidéo et le responsive de la maquette", () => {
     assert.match(hero, /\/login\/background\.mp4/);
     assert.match(hero, /prefers-reduced-motion/);
+    assert.match(hero, /ROTATE_MS\s*=\s*5500/);
+    assert.match(hero, /l&apos;IA à vos côtés|l'IA à vos côtés/);
+    assert.match(hero, /WORDPRESS · WEBFLOW/);
     assert.match(css, /grid-template-columns:\s*55%\s*45%/);
     assert.match(css, /@media \(max-width:\s*850px\)/);
     assert.match(css, /\.hero \{\s*[\s\S]*display:\s*none/);
+    assert.match(css, /\.platforms-list/);
+    assert.match(css, /#dce5ed/);
+  });
+
+  it("expose neuf fonctionnalités hero et le libellé du bouton", () => {
+    const titles = [
+      "Création de contenus IA",
+      "WordPress & Webflow",
+      "Espaces éditoriaux",
+      "Optimisation SEO & GEO",
+      "Maillage interne intelligent",
+      "Veille éditoriale",
+      "Opportunités SEO",
+      "Performances éditoriales",
+      "Pilotage des coûts IA",
+    ];
+    for (const title of titles) {
+      assert.match(hero, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+    assert.match(form, /Accéder à mon espace/);
   });
 
   it("embarque l’asset vidéo public", () => {

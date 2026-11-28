@@ -4,39 +4,49 @@ import { useEffect, useState } from "react";
 
 const FEATURES = [
   {
-    title: "Génération d’articles IA",
+    title: "Création de contenus IA",
     description:
-      "Création d’articles complets à partir d’un sujet grâce à l’agent OpenAI existant.",
+      "Générez des articles structurés et documentés grâce à vos agents éditoriaux OpenAI.",
   },
   {
-    title: "Maillage interne contrôlé",
+    title: "WordPress & Webflow",
     description:
-      "Sélection de liens vers des articles WordPress réellement existants et pertinents.",
+      "Créez vos brouillons directement dans votre CMS et gardez le contrôle de vos publications.",
   },
   {
-    title: "Recherche web",
+    title: "Espaces éditoriaux",
     description:
-      "Recherche d’informations et de sources pour enrichir les contenus.",
+      "Pilotez vos environnements WordPress et Webflow depuis des espaces indépendants.",
   },
   {
-    title: "Optimisation SEO / GEO",
+    title: "Optimisation SEO & GEO",
     description:
-      "Génération des titres, descriptions SEO, slugs, catégories WordPress, FAQ et tableaux HTML.",
+      "Structurez vos contenus pour les moteurs de recherche et les nouvelles interfaces de recherche IA.",
   },
   {
-    title: "File éditoriale",
+    title: "Maillage interne intelligent",
     description:
-      "Gestion des idées d’articles, priorités, angles éditoriaux et sujets à traiter.",
-  },
-  {
-    title: "Recherche d’opportunités SEO",
-    description:
-      "Identification de sujets et d’opportunités pour développer le contenu du site.",
+      "Identifiez les contenus existants et créez des liens internes pertinents.",
   },
   {
     title: "Veille éditoriale",
     description:
-      "Analyse les publications récentes du web grâce à l’IA pour identifier des opportunités de contenu, proposer des idées d’articles SEO et GEO.",
+      "Analysez l’actualité et identifiez de nouvelles idées de contenus adaptées à votre activité.",
+  },
+  {
+    title: "Opportunités SEO",
+    description:
+      "Identifiez les sujets à fort potentiel éditorial et développez votre couverture thématique.",
+  },
+  {
+    title: "Performances éditoriales",
+    description:
+      "Analysez vos résultats grâce à Google Search Console et Google Analytics.",
+  },
+  {
+    title: "Pilotage des coûts IA",
+    description:
+      "Suivez vos consommations OpenAI et les coûts estimés de vos générations.",
   },
 ] as const;
 
@@ -74,9 +84,9 @@ export function LoginHero() {
       </video>
 
       <div className="hero-content">
-        <div className="eyebrow">STRATÉGIE ÉDITORIALE · SEO / GEO</div>
+        <div className="eyebrow">STRATÉGIE ÉDITORIALE · INTELLIGENCE ARTIFICIELLE</div>
         <h2>
-          De la veille à la visibilité propulsé <span>par l&apos;IA.</span>
+          De la stratégie à la visibilité, <span>l&apos;IA à vos côtés.</span>
         </h2>
 
         <div
@@ -109,8 +119,8 @@ export function LoginHero() {
       </div>
 
       <div className="hero-bottom">
-        <span>IA · SEO / GEO · WORDPRESS</span>
-        <span>Naxialis Votre intelligence éditoriale.</span>
+        <span>IA · SEO · GEO · WORDPRESS · WEBFLOW</span>
+        <span>Naxialis — Votre intelligence éditoriale.</span>
       </div>
     </section>
   );

@@ -56,15 +56,30 @@ export default async function LoginPage() {
             <p className="intro">CONTENT AGENT · INTELLIGENCE ÉDITORIALE</p>
             <h1>Bienvenue.</h1>
             <p className="sub">
-              Connectez-vous pour accéder à votre espace de création et de
-              gestion éditoriale.
+              Pilotez votre stratégie éditoriale, créez vos contenus avec
+              l&apos;IA et suivez leurs performances depuis un espace unique.
             </p>
+
+            <div className="platforms" aria-label="Plateformes compatibles">
+              <p className="platforms-title">Plateformes compatibles</p>
+              <ul className="platforms-list">
+                <li className="platform-item">
+                  {/* alt vide : le nom est déjà présent en texte adjacent */}
+                  <img src="/icons/wordpress.svg" alt="" width={26} height={26} />
+                  <span>WordPress</span>
+                </li>
+                <li className="platform-item">
+                  <img src="/icons/webflow.svg" alt="" width={26} height={26} />
+                  <span>Webflow</span>
+                </li>
+              </ul>
+            </div>
 
             <LoginForm />
 
             <div className="footer">
               <div className="line" />
-              Votre espace de travail, <strong>sécurisé et privé.</strong>
+              Votre intelligence éditoriale, dans un espace sécurisé.
               <br />© 2026 Naxialis
             </div>
           </div>

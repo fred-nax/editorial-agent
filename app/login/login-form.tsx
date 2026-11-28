@@ -58,7 +58,7 @@ export function LoginForm() {
       </div>
 
       <button className="submit" type="submit" disabled={pending}>
-        {pending ? "Connexion…" : "Se connecter"}
+        {pending ? "Connexion…" : "Accéder à mon espace"}
         {!pending ? (
           <svg
             viewBox="0 0 24 24"
